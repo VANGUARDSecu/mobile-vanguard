@@ -4,3 +4,8 @@ export { EmptyAppsState } from './empty-apps-state';
 export { PulseDot, PulseDotProps } from './pulse-dot';
 export { ConnectedAppCard, ConnectedAppCardProps } from './connected-app-card';
 export { ConnectedAppsSection, ConnectedAppsSectionProps } from './connected-apps-section';
+export {
+  AddPersonalAppModal,
+  AddPersonalAppModalProps,
+  PersonalAppPreset,
+} from './add-personal-app-modal';

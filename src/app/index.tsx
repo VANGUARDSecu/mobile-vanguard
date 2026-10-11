@@ -19,9 +19,10 @@ import {
   AppCard,
   EmptyAppsState,
   ConnectedAppsSection,
+  AddPersonalAppModal,
 } from '@/components/apps';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
-import { SaaSApp, UserConnectedApp } from '@/models/apps.models';
+import { SaaSApp, UserConnectedApp, PersonalAppInput } from '@/models/apps.models';
 
 export default function ApplicationsScreen() {
   const {
@@ -33,6 +34,7 @@ export default function ApplicationsScreen() {
     filteredApps,
     activeConnectedApps,
     findCredentialsForDomain,
+    addPersonalApp,
     deletePersonalApp,
     disconnectConnectedApp,
     syncConnectedApps,
@@ -42,6 +44,7 @@ export default function ApplicationsScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [syncingSso, setSyncingSso] = useState(false);
+  const [showAddPersonalAppModal, setShowAddPersonalAppModal] = useState(false);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -120,16 +123,17 @@ export default function ApplicationsScreen() {
 
   const handleActionPress = () => {
     if (isPersonalWorkspace) {
-      Alert.alert(
-        'Add Application',
-        'Quick Preset application modal will open (Ticket SCRUM-65).'
-      );
+      setShowAddPersonalAppModal(true);
     } else {
       Alert.alert(
         'Request Application Access',
         'Enterprise access request modal will open (Ticket SCRUM-66).'
       );
     }
+  };
+
+  const handleAddPersonalApp = async (input: PersonalAppInput) => {
+    await addPersonalApp(input);
   };
 
   return (
@@ -240,6 +244,13 @@ export default function ApplicationsScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* Add Personal Application Modal (SCRUM-65) */}
+      <AddPersonalAppModal
+        visible={showAddPersonalAppModal}
+        onClose={() => setShowAddPersonalAppModal(false)}
+        onAdd={handleAddPersonalApp}
+      />
     </View>
   );
 }

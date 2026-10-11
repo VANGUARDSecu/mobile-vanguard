@@ -25,9 +25,15 @@ import {
   AddPersonalAppModal,
   RequestAppModal,
   RequestAppInput,
+  RequestedAppsSection,
 } from '@/components/apps';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
-import { SaaSApp, UserConnectedApp, PersonalAppInput } from '@/models/apps.models';
+import {
+  SaaSApp,
+  UserConnectedApp,
+  PersonalAppInput,
+  AppAccessRequest,
+} from '@/models/apps.models';
 
 export default function ApplicationsScreen() {
   const { currentUser, isAuthenticated, isLoading: authLoading, logout } = useAuth();
@@ -45,6 +51,9 @@ export default function ApplicationsScreen() {
     disconnectConnectedApp,
     syncConnectedApps,
     submitAppRequest,
+    apps,
+    accessRequests,
+    pendingRequestsCount,
     refreshApps,
     isLoading,
   } = useApps();
@@ -156,6 +165,24 @@ export default function ApplicationsScreen() {
 
   const handleRequestApp = async (input: RequestAppInput) => {
     await submitAppRequest(input);
+  };
+
+  const handleLaunchApprovedRequest = async (request: AppAccessRequest) => {
+    const matchingApp = apps.find(
+      (a) => a.name.toLowerCase() === request.appName.toLowerCase()
+    );
+    const targetUrl = matchingApp?.launchUrl || request.launchUrl || 'https://vanguard.security';
+
+    try {
+      await WebBrowser.openBrowserAsync(targetUrl, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+        toolbarColor: CyberColors.background,
+      });
+    } catch {
+      Linking.openURL(targetUrl).catch(() => {
+        Alert.alert('Error', `Could not open ${targetUrl}`);
+      });
+    }
   };
 
   return (
@@ -295,6 +322,15 @@ export default function ApplicationsScreen() {
               ))
             )}
           </View>
+
+          {/* Requested Applications & Zero-Trust Governance Queue (SCRUM-67) */}
+          {!isPersonalWorkspace && accessRequests.length > 0 && (
+            <RequestedAppsSection
+              requests={accessRequests}
+              pendingCount={pendingRequestsCount}
+              onLaunch={handleLaunchApprovedRequest}
+            />
+          )}
         </ScrollView>
       </SafeAreaView>
 

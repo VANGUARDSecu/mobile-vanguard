@@ -15,4 +15,10 @@ export {
   RequestAppInput,
   ENTERPRISE_APP_SUGGESTIONS,
 } from './request-app-modal';
+export { RequestCard, RequestCardProps } from './request-card';
+export {
+  RequestedAppsSection,
+  RequestedAppsSectionProps,
+} from './requested-apps-section';
+
 

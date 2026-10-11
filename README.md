@@ -133,7 +133,9 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
   - `ConnectedAppsSection`: Header banner with pulsing active count badge (`X Active Connection(s)`), live sync button, and responsive connected client card list.
   - `AddPersonalAppModal`: Slide-up cyber bottom sheet modal for personal application creation with quick presets (Figma, Facebook, GitHub, Notion, Google, Custom), URL format normalization, category selector, and error alerts.
   - `RequestAppModal`: Modal bottom sheet for enterprise organization mode allowing users to request access to corporate SaaS tools (Figma Enterprise, Salesforce CRM, Snowflake, Datadog, Splunk) with business justification and live governance queueing.
+  - `RequestCard`: Governance queue card rendering status-based visual themes (`Pending Approval`, `Approved`, `Rejected`), protocol tags, audit dates, disabled launch guards, zero-trust assertion blocked badges, and admin rejection notes.
+  - `RequestedAppsSection`: Organization queue section with counter badge (`X Pending Review`) and reactive list of submitted access requests.
   - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
   - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
   - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
-- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`).

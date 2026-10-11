@@ -80,11 +80,25 @@ npx expo start
 
 ## 🧪 Testing & Code Quality
 
-### Automated Unit Test Suite
-Run the test suite verifying data models, connected SSO apps, deduplication logic, and storage services:
+### Automated Test Suites
+Run the full automated test suite verifying authentication, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (66 automated tests):
 ```bash
 npm test
 ```
+
+#### Test Suite Breakdown
+| Suite File | Scope & Capabilities Verified |
+| :--- | :--- |
+| `src/__tests__/auth.test.ts` | Demo account credentials, email/password validation, 1-tap SSO federation, session persistence, logout |
+| `src/__tests__/apps-data.test.ts` | SaaS app deduplication, connected app deduplication by origin/client ID, category filtering, URL prefix normalization |
+| `src/__tests__/apps-ui.test.ts` | Dynamic category counters, vault auto-fill badge computation, live connection indicators, workspace-aware empty states |
+| `src/__tests__/connected-apps.test.ts` | Active SSO client discovery, Acme Dummy Web OIDC metadata, disconnection handling, active client counter badges |
+| `src/__tests__/personal-app-modal.test.ts` | Quick app presets (Figma, GitHub, Notion, etc.), input validation, protocol formatting, auto-fill domain extraction |
+| `src/__tests__/request-app-modal.test.ts` | Enterprise app suggestions, business justification validation, user metadata association, pending request creation |
+| `src/__tests__/governance-queue.test.ts` | Access request states (`Pending`, `Approved`, `Rejected`), launch guard enforcement, zero-trust blocked banners |
+| `src/__tests__/app-launcher.test.ts` | URL normalization, in-app browser dispatching, external linking fallback, personal vault domain matching |
+| `src/__tests__/my-apps-screen.test.ts` | Header titles, workspace switching, pull-to-refresh lifecycle, bottom tab navigation triggers |
+| `src/__tests__/e2e-workflow.test.ts` | Complete end-to-end user journey across authentication, app addition, enterprise request, SSO launch, and logout |
 
 ### Static Analysis & Type Checking
 - Run ESLint:
@@ -141,5 +155,5 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
   - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
   - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
   - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
-- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 

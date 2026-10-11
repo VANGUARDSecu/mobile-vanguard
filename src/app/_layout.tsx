@@ -12,9 +12,9 @@ import { CyberColors } from '@/constants/cyber-theme';
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isInitializing } = useAuth();
 
-  if (isLoading) {
+  if (isInitializing) {
     return (
       <View style={styles.loadingScreen}>
         <ActivityIndicator size="large" color={CyberColors.cyan} />

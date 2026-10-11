@@ -22,6 +22,7 @@ interface AuthContextType {
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isInitializing: boolean;
   login: (credentials: LoginCredentials) => Promise<LoginResult>;
   verifyOtp: (request: VerifyOtpRequest) => Promise<AuthUser>;
   verifyTotp: (request: VerifyTotpRequest) => Promise<AuthUser>;
@@ -34,7 +35,8 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Restore session from AsyncStorage on app boot
   useEffect(() => {
@@ -48,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
       .finally(() => {
         if (isMounted) {
-          setIsLoading(false);
+          setIsInitializing(false);
         }
       });
 
@@ -122,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentUser,
       isAuthenticated: !!currentUser,
       isLoading,
+      isInitializing,
       login,
       verifyOtp,
       verifyTotp,
@@ -129,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithSSO,
       logout,
     }),
-    [currentUser, isLoading, login, verifyOtp, verifyTotp, resendOtp, loginWithSSO, logout]
+    [currentUser, isLoading, isInitializing, login, verifyOtp, verifyTotp, resendOtp, loginWithSSO, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

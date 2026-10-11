@@ -19,7 +19,7 @@ import type { MfaChallengeResponse } from '@/models/auth.models';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 export default function LoginScreen() {
-  const { login, isLoading } = useAuth();
+  const { login } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -163,10 +163,10 @@ export default function LoginScreen() {
                 style={({ pressed }) => [
                   styles.signInBtn,
                   pressed && styles.signInBtnPressed,
-                  (submitting || isLoading) && styles.signInBtnDisabled,
+                  submitting && styles.signInBtnDisabled,
                 ]}
                 onPress={handleSignIn}
-                disabled={submitting || isLoading}
+                disabled={submitting}
                 accessibilityRole="button"
                 accessibilityLabel="Sign In"
               >
@@ -355,6 +355,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     padding: 4,
+    cursor: 'pointer' as any,
   },
   eyeIcon: {
     fontSize: 16,
@@ -371,6 +372,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 6,
     elevation: 3,
+    cursor: 'pointer' as any,
   },
   signInBtnPressed: {
     opacity: 0.85,
@@ -408,6 +410,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: CyberRadius.sm,
+    cursor: 'pointer' as any,
   },
   demoPillText: {
     color: CyberColors.textSecondary,

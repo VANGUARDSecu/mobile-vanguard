@@ -5,6 +5,7 @@ import {
   ScrollView,
   RefreshControl,
   Pressable,
+  TouchableOpacity,
   StyleSheet,
   Alert,
   Platform,
@@ -35,7 +36,7 @@ import {
 } from '@/models/apps.models';
 
 export default function MyAppsScreen() {
-  const { currentUser, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { currentUser, isAuthenticated, isInitializing: authInitializing, logout } = useAuth();
   const {
     isPersonalWorkspace,
     setIsPersonalWorkspace,
@@ -74,7 +75,7 @@ export default function MyAppsScreen() {
     }
   };
 
-  if (authLoading) {
+  if (authInitializing) {
     return (
       <View style={[styles.screen, styles.loadingScreen]}>
         <ActivityIndicator size="large" color={CyberColors.cyan} />
@@ -176,15 +177,15 @@ export default function MyAppsScreen() {
               </View>
             </View>
 
-            <Pressable
-              style={({ pressed }) => [
+            <TouchableOpacity
+              style={[
                 styles.logoutBtn,
-                pressed && styles.logoutBtnPressed,
                 isLoggingOut && styles.logoutBtnDisabled,
               ]}
               onPress={handleLogout}
               disabled={isLoggingOut}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
               accessibilityRole="button"
               accessibilityLabel="Sign Out"
             >
@@ -193,7 +194,7 @@ export default function MyAppsScreen() {
               ) : (
                 <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
               )}
-            </Pressable>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -517,6 +518,7 @@ const styles = StyleSheet.create({
     minWidth: 84,
     alignItems: 'center',
     justifyContent: 'center',
+    cursor: 'pointer' as any,
   },
   logoutBtnPressed: {
     backgroundColor: 'rgba(239, 68, 68, 0.25)',

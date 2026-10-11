@@ -90,5 +90,9 @@ npm test
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data and deduplication safeguards.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, and request queueing.
-- `src/components/`: Reusable cyber-themed UI components and navigation bars.
+- `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards).
+- `src/components/apps/`: Reusable applications directory UI components:
+  - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
+  - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
+  - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
 - `src/__tests__/`: Automated unit and integration test specifications.

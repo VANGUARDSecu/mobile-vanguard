@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
@@ -43,6 +44,7 @@ export default function VerifyOtpScreen({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [countdown, setCountdown] = useState<number>(45);
+  const [pastedSuccess, setPastedSuccess] = useState(false);
 
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
@@ -62,27 +64,82 @@ export default function VerifyOtpScreen({
   }, [countdown]);
 
   const handleDigitChange = (val: string, index: number) => {
-    // Handle paste or multi-digit input
     const cleanDigits = val.replace(/\D/g, '');
-    if (cleanDigits.length > 1) {
+
+    // Handle full multi-digit paste (e.g. 6 or 8 digits) or typing over an empty box
+    if (cleanDigits.length > 2 || (cleanDigits.length === 2 && !digits[index])) {
+      const startIdx = cleanDigits.length >= 4 ? 0 : index;
       const newDigits = [...digits];
-      for (let i = 0; i < cleanDigits.length && index + i < codeLength; i++) {
-        newDigits[index + i] = cleanDigits[i];
+      for (let i = 0; i < cleanDigits.length && startIdx + i < codeLength; i++) {
+        newDigits[startIdx + i] = cleanDigits[i];
       }
       setDigits(newDigits);
-      const nextIdx = Math.min(index + cleanDigits.length, codeLength - 1);
-      inputRefs.current[nextIdx]?.focus();
+      setErrorMessage(null);
+
+      const lastFilled = Math.min(startIdx + cleanDigits.length, codeLength) - 1;
+      inputRefs.current[Math.min(lastFilled + 1, codeLength - 1)]?.focus();
       return;
     }
 
+    // Single digit or typing over existing digit
+    const char = cleanDigits.slice(-1);
     const newDigits = [...digits];
-    newDigits[index] = cleanDigits.slice(-1);
+    newDigits[index] = char;
     setDigits(newDigits);
     setErrorMessage(null);
 
     // Auto-advance to next input
-    if (cleanDigits && index < codeLength - 1) {
+    if (char && index < codeLength - 1) {
       inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handlePasteEvent = (e: any) => {
+    const text = e?.clipboardData?.getData?.('text') || '';
+    const clean = text.replace(/\D/g, '');
+    if (clean.length > 1) {
+      e.preventDefault?.();
+      const newDigits = [...digits];
+      for (let i = 0; i < clean.length && i < codeLength; i++) {
+        newDigits[i] = clean[i];
+      }
+      setDigits(newDigits);
+      setErrorMessage(null);
+      setPastedSuccess(true);
+      setTimeout(() => setPastedSuccess(false), 2000);
+
+      const lastFilled = Math.min(clean.length, codeLength) - 1;
+      inputRefs.current[Math.min(lastFilled + 1, codeLength - 1)]?.focus();
+    }
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      let clipText = '';
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+        clipText = await navigator.clipboard.readText();
+      } else {
+        clipText = await Clipboard.getStringAsync();
+      }
+      const clean = clipText.replace(/\D/g, '');
+      if (!clean) {
+        setErrorMessage('No numeric code found on clipboard.');
+        return;
+      }
+
+      const newDigits = new Array(codeLength).fill('');
+      for (let i = 0; i < clean.length && i < codeLength; i++) {
+        newDigits[i] = clean[i];
+      }
+      setDigits(newDigits);
+      setErrorMessage(null);
+      setPastedSuccess(true);
+      setTimeout(() => setPastedSuccess(false), 2000);
+
+      const lastFilled = Math.min(clean.length, codeLength) - 1;
+      inputRefs.current[Math.min(lastFilled + 1, codeLength - 1)]?.focus();
+    } catch {
+      setErrorMessage('Unable to access clipboard. Please paste directly into the boxes.');
     }
   };
 
@@ -200,7 +257,14 @@ export default function VerifyOtpScreen({
               ) : null}
 
               {/* OTP Digits Input Boxes */}
-              <View style={styles.digitsRow}>
+              <View
+                style={[
+                  styles.digitsRow,
+                  method === 'email_otp'
+                    ? styles.digitsRowEmail
+                    : styles.digitsRowTotp,
+                ]}
+              >
                 {digits.map((digit, index) => {
                   const isSeparator = method !== 'totp' && index === 3;
                   return (
@@ -211,14 +275,20 @@ export default function VerifyOtpScreen({
                         }}
                         style={[
                           styles.digitBox,
+                          method === 'totp'
+                            ? styles.digitBoxTotp
+                            : styles.digitBoxEmail,
                           digit ? styles.digitBoxFilled : null,
                           index === 0 && !digit ? styles.digitBoxActive : null,
                         ]}
                         value={digit}
                         onChangeText={(val) => handleDigitChange(val, index)}
                         onKeyPress={(e) => handleKeyPress(e, index)}
+                        {...(Platform.OS === 'web'
+                          ? ({ onPaste: handlePasteEvent } as any)
+                          : {})}
                         keyboardType="number-pad"
-                        maxLength={1}
+                        maxLength={codeLength}
                         selectTextOnFocus
                         textAlign="center"
                         accessibilityLabel={`Verification digit ${index + 1}`}
@@ -231,6 +301,29 @@ export default function VerifyOtpScreen({
                     </React.Fragment>
                   );
                 })}
+              </View>
+
+              {/* Paste From Clipboard Action */}
+              <View style={styles.pasteActionRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.pasteBtn,
+                    pressed && styles.pasteBtnPressed,
+                    pastedSuccess && styles.pasteBtnSuccess,
+                  ]}
+                  onPress={handlePasteFromClipboard}
+                  accessibilityRole="button"
+                  accessibilityLabel="Paste verification code from clipboard"
+                >
+                  <Text
+                    style={[
+                      styles.pasteBtnText,
+                      pastedSuccess && styles.pasteBtnTextSuccess,
+                    ]}
+                  >
+                    {pastedSuccess ? '✓ Code Pasted!' : '📋 Paste from Clipboard'}
+                  </Text>
+                </Pressable>
               </View>
 
               {/* Resend Row (for Email OTP) */}
@@ -453,20 +546,51 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
     marginVertical: 14,
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
+  },
+  digitsRowTotp: {
+    gap: 8,
+  },
+  digitsRowEmail: {
+    gap: 4,
   },
   digitBox: {
-    width: 36,
-    height: 46,
     backgroundColor: 'rgba(15, 23, 42, 0.95)',
     borderColor: 'rgba(59, 130, 246, 0.35)',
     borderWidth: 1.5,
-    borderRadius: CyberRadius.sm,
+    borderRadius: CyberRadius.md,
     color: CyberColors.cyan,
-    fontSize: 20,
     fontWeight: '800',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    margin: 0,
+    includeFontPadding: false,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    ...(Platform.OS === 'web'
+      ? {
+          outlineStyle: 'none' as any,
+          boxSizing: 'border-box' as any,
+          caretColor: CyberColors.cyan,
+        }
+      : {}),
+  },
+  digitBoxTotp: {
+    width: 44,
+    height: 54,
+    fontSize: 22,
+    ...(Platform.OS === 'web' ? { lineHeight: '54px' as any } : {}),
+  },
+  digitBoxEmail: {
+    width: 36,
+    height: 48,
+    fontSize: 19,
+    ...(Platform.OS === 'web' ? { lineHeight: '48px' as any } : {}),
   },
   digitBoxFilled: {
     borderColor: CyberColors.cyan,
@@ -483,6 +607,38 @@ const styles = StyleSheet.create({
     color: CyberColors.textMuted,
     fontSize: 18,
     fontWeight: '700',
+  },
+  pasteActionRow: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  pasteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: CyberRadius.full,
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderWidth: 1,
+    cursor: 'pointer' as any,
+  },
+  pasteBtnPressed: {
+    opacity: 0.75,
+  },
+  pasteBtnSuccess: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: CyberColors.green,
+  },
+  pasteBtnText: {
+    color: CyberColors.cyan,
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  pasteBtnTextSuccess: {
+    color: CyberColors.green,
   },
   resendRow: {
     alignItems: 'center',

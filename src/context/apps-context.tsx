@@ -17,6 +17,7 @@ import {
   AppItemCategory,
 } from '@/models/apps.models';
 import { AppsStorageService } from '@/services/apps-storage.service';
+import { AppLauncherService } from '@/services/app-launcher.service';
 import { AuthContext } from './auth-context';
 
 interface AppsContextType {
@@ -162,29 +163,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   // Matching Vault Credential Detection (for Auto-Fill Ready badge)
   const findCredentialsForDomain = useCallback(
     (domainOrUrl: string): PersonalVaultItem[] => {
-      if (!domainOrUrl) return [];
-      const cleanTarget = domainOrUrl
-        .toLowerCase()
-        .trim()
-        .replace(/^(https?:\/\/)?(www\.)?/, '')
-        .split('/')[0]
-        .split('?')[0];
-
-      return vaultCredentials.filter((item) => {
-        const itemUrl = (item.url || '')
-          .toLowerCase()
-          .trim()
-          .replace(/^(https?:\/\/)?(www\.)?/, '')
-          .split('/')[0]
-          .split('?')[0];
-
-        const itemTitle = item.title.toLowerCase();
-        return (
-          (cleanTarget && itemUrl.includes(cleanTarget)) ||
-          (cleanTarget && cleanTarget.includes(itemUrl)) ||
-          itemTitle.includes(cleanTarget)
-        );
-      });
+      return AppLauncherService.findMatchingVaultCredentials(domainOrUrl, vaultCredentials);
     },
     [vaultCredentials]
   );

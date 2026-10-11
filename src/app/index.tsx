@@ -11,9 +11,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 
+import { AppLauncherService } from '@/services/app-launcher.service';
 import { useAuth } from '@/context/auth-context';
 import { useApps } from '@/context/apps-context';
 import LoginScreen from './login';
@@ -83,39 +82,11 @@ export default function ApplicationsScreen() {
   };
 
   const handleLaunchApp = async (app: SaaSApp) => {
-    if (!app.launchUrl) {
-      Alert.alert('Unable to Launch', 'No launch URL configured for this application.');
-      return;
-    }
-
-    try {
-      await WebBrowser.openBrowserAsync(app.launchUrl, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-        toolbarColor: CyberColors.background,
-      });
-    } catch {
-      Linking.openURL(app.launchUrl).catch(() => {
-        Alert.alert('Error', `Could not open ${app.launchUrl}`);
-      });
-    }
+    await AppLauncherService.launchApp(app);
   };
 
   const handleLaunchConnectedApp = async (app: UserConnectedApp) => {
-    if (!app.originUrl) {
-      Alert.alert('Unable to Launch', 'No target origin URL configured for this connected client.');
-      return;
-    }
-
-    try {
-      await WebBrowser.openBrowserAsync(app.originUrl, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-        toolbarColor: CyberColors.background,
-      });
-    } catch {
-      Linking.openURL(app.originUrl).catch(() => {
-        Alert.alert('Error', `Could not open ${app.originUrl}`);
-      });
-    }
+    await AppLauncherService.launchConnectedApp(app);
   };
 
   const handleDisconnectConnectedApp = (clientId: string, clientName: string) => {
@@ -168,21 +139,7 @@ export default function ApplicationsScreen() {
   };
 
   const handleLaunchApprovedRequest = async (request: AppAccessRequest) => {
-    const matchingApp = apps.find(
-      (a) => a.name.toLowerCase() === request.appName.toLowerCase()
-    );
-    const targetUrl = matchingApp?.launchUrl || request.launchUrl || 'https://vanguard.security';
-
-    try {
-      await WebBrowser.openBrowserAsync(targetUrl, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-        toolbarColor: CyberColors.background,
-      });
-    } catch {
-      Linking.openURL(targetUrl).catch(() => {
-        Alert.alert('Error', `Could not open ${targetUrl}`);
-      });
-    }
+    await AppLauncherService.launchApprovedRequest(request, apps);
   };
 
   return (

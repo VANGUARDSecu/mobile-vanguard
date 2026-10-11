@@ -122,6 +122,7 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
 - `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`), SSO federation, and AsyncStorage token/user session management.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
+- `src/services/app-launcher.service.ts`: Centralized application launch dispatcher integrating Expo's in-app browser (`expo-web-browser`) and external linking (`expo-linking`) with Cyber Dark theme styling, URL normalization, and personal vault credential matching.
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, SSO, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
 - `src/app/login.tsx`: Cyber Dark login screen with email/password validation, show/hide password toggle, Vanguard SSO button, and quick demo account selector.
@@ -138,4 +139,4 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
   - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
   - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
   - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
-- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`).

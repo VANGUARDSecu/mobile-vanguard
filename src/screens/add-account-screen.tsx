@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Platform,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
@@ -19,6 +21,7 @@ import {
 } from '@/components/cyber';
 import { TotpAccount, TotpAlgorithm } from '@/models/vault.models';
 import vaultService from '@/services/vault.service';
+import { TotpEngine } from '@/services/totp-engine.service';
 
 export interface AddAccountScreenProps {
   onClose: () => void;
@@ -43,6 +46,37 @@ export function AddAccountScreen({
   const [selectedIcon, setSelectedIcon] = useState('🛡️');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [pasteSuccess, setPasteSuccess] = useState(false);
+
+  const handlePasteKey = async () => {
+    try {
+      let clipText = '';
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        clipText = await navigator.clipboard.readText();
+      } else {
+        clipText = await Clipboard.getStringAsync();
+      }
+
+      if (!clipText || !clipText.trim()) {
+        setValidationError('Clipboard is empty. Copy a Base32 secret key first.');
+        return;
+      }
+
+      const cleaned = TotpEngine.cleanSecret(clipText);
+      setSecret(cleaned);
+      setPasteSuccess(true);
+      setTimeout(() => setPasteSuccess(false), 2000);
+
+      const check = vaultService.validateSecret(cleaned);
+      if (!check.valid) {
+        setValidationError(check.error || 'Invalid Base32 secret key');
+      } else {
+        setValidationError(null);
+      }
+    } catch {
+      setValidationError('Unable to read clipboard. Please paste manually.');
+    }
+  };
 
   const handleSecretChange = (text: string) => {
     setSecret(text);
@@ -233,7 +267,22 @@ export function AddAccountScreen({
               <View style={styles.fieldGroup}>
                 <View style={styles.fieldLabelRow}>
                   <Text style={styles.fieldLabel}>BASE32 SECRET KEY *</Text>
-                  <Badge label="A-Z, 2-7" variant="indigo" size="sm" />
+                  <View style={styles.labelActionsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.pasteKeyBtn,
+                        pasteSuccess && styles.pasteKeyBtnSuccess,
+                      ]}
+                      onPress={handlePasteKey}
+                      activeOpacity={0.7}
+                      testID="paste-secret-key-button"
+                    >
+                      <Text style={styles.pasteKeyBtnText}>
+                        {pasteSuccess ? 'PASTED! ✓' : '📋 Paste Key'}
+                      </Text>
+                    </TouchableOpacity>
+                    <Badge label="A-Z, 2-7" variant="indigo" size="sm" />
+                  </View>
                 </View>
                 <TextInput
                   style={[styles.input, styles.secretInput]}
@@ -556,5 +605,27 @@ const styles = StyleSheet.create({
   },
   simulateBtn: {
     marginTop: 8,
+  },
+  labelActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pasteKeyBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: CyberRadius.sm,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: CyberColors.cyan,
+  },
+  pasteKeyBtnSuccess: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: CyberColors.green,
+  },
+  pasteKeyBtnText: {
+    color: CyberColors.cyan,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

@@ -18,9 +18,12 @@ import {
   CyberCard,
   Badge,
   StatusIndicator,
+  CircularCountdown,
+  ManualEntryModal,
 } from '@/components/cyber';
 import { TotpAccount } from '@/models/vault.models';
 import vaultService from '@/services/vault.service';
+import { TotpEngine } from '@/services/totp-engine.service';
 
 export interface VaultScreenProps {
   onSelectAccount?: (account: TotpAccount) => void;
@@ -40,6 +43,8 @@ export function VaultScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [remainingSeconds, setRemainingSeconds] = useState(30);
   const [copiedAccountId, setCopiedAccountId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showManualModal, setShowManualModal] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -56,20 +61,21 @@ export function VaultScreen({
     loadAccounts();
   }, [loadAccounts]);
 
-  // Dynamic TOTP countdown timer tick
+  // Dynamic offline TOTP countdown timer tick with instant cycle rollover
   useEffect(() => {
     const updateCountdown = () => {
-      const rem = vaultService.getRemainingSeconds(30);
+      const rem = TotpEngine.getRemainingSeconds(30);
       setRemainingSeconds(rem);
     };
 
     updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
+    const interval = setInterval(updateCountdown, 250);
     return () => clearInterval(interval);
   }, []);
 
   const handleCopyCode = async (account: TotpAccount) => {
     const rawCode = vaultService.generateCode(account);
+    const formattedCode = vaultService.formatCode(rawCode);
     try {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(rawCode);
@@ -77,8 +83,12 @@ export function VaultScreen({
         await Clipboard.setStringAsync(rawCode);
       }
       setCopiedAccountId(account.id);
+      setToastMessage('Copied to clipboard');
       setTimeout(() => {
         setCopiedAccountId((prev) => (prev === account.id ? null : prev));
+      }, 2500);
+      setTimeout(() => {
+        setToastMessage((prev) => (prev === 'Copied to clipboard' ? null : prev));
       }, 2500);
     } catch {
       // Fallback
@@ -128,13 +138,31 @@ export function VaultScreen({
           <CyberCard variant="glass" style={styles.timerCard}>
             <View style={styles.timerRow}>
               <View style={styles.timerLeft}>
-                <Text style={styles.timerLabel}>TOKEN ROTATION CYCLE</Text>
-                <Text style={styles.timerValue}>
-                  {remainingSeconds}s{' '}
-                  <Text style={styles.timerUnit}>remaining</Text>
-                </Text>
+                <CircularCountdown
+                  remainingSeconds={remainingSeconds}
+                  size={46}
+                  strokeWidth={3.5}
+                  testID="vault-main-countdown"
+                />
+                <View style={styles.timerTextWrap}>
+                  <Text style={styles.timerLabel}>TOKEN ROTATION CYCLE</Text>
+                  <Text style={styles.timerValue}>
+                    {remainingSeconds}s{' '}
+                    <Text style={styles.timerUnit}>remaining</Text>
+                  </Text>
+                </View>
               </View>
               <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.iconBtn}
+                  onPress={() => setShowManualModal(true)}
+                  activeOpacity={0.7}
+                  testID="vault-manual-entry-button"
+                  accessibilityLabel="Manual Code Entry"
+                >
+                  <Text style={styles.iconBtnText}>⌨️</Text>
+                </TouchableOpacity>
+
                 {onOpenSettings ? (
                   <TouchableOpacity
                     style={styles.iconBtn}
@@ -218,15 +246,25 @@ export function VaultScreen({
                   ? 'Try searching with a different issuer or username keyword.'
                   : 'Add your first 2FA authenticator token to begin securing your accounts.'}
               </Text>
-              {onAddAccount ? (
+              <View style={styles.emptyActionsRow}>
                 <CyberButton
-                  title="+ Add First Token"
-                  variant="primary"
+                  title="+ Quick Manual Entry ⌨️"
+                  variant="outline"
                   size="md"
-                  onPress={onAddAccount}
-                  style={styles.emptyAddBtn}
+                  onPress={() => setShowManualModal(true)}
+                  testID="vault-empty-manual-entry-button"
                 />
-              ) : null}
+                {onAddAccount ? (
+                  <CyberButton
+                    title="+ Add Token"
+                    variant="primary"
+                    size="md"
+                    onPress={onAddAccount}
+                    style={styles.emptyAddBtn}
+                    testID="vault-empty-add-button"
+                  />
+                ) : null}
+              </View>
             </CyberCard>
           ) : (
             <View style={styles.accountsList}>
@@ -264,27 +302,45 @@ export function VaultScreen({
                       />
                     </View>
 
-                    {/* TOTP Code Display */}
+                    {/* TOTP Code Display, Circular Countdown & Tap-to-Copy */}
                     <View style={styles.codeRow}>
-                      <View style={styles.codeWrap}>
+                      <TouchableOpacity
+                        style={styles.codeWrap}
+                        onPress={() => handleCopyCode(account)}
+                        activeOpacity={0.7}
+                        testID={`totp-code-touchable-${account.id}`}
+                        accessibilityLabel={`Copy TOTP code for ${account.issuer}`}
+                      >
                         <Text style={styles.totpCode} testID={`totp-code-${account.id}`}>
                           {formattedCode}
                         </Text>
-                      </View>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.copyButton,
-                          isCopied && styles.copyButtonActive,
-                        ]}
-                        onPress={() => handleCopyCode(account)}
-                        activeOpacity={0.7}
-                        testID={`copy-button-${account.id}`}
-                      >
-                        <Text style={styles.copyButtonText}>
-                          {isCopied ? 'COPIED! ✓' : 'COPY 📋'}
-                        </Text>
                       </TouchableOpacity>
+
+                      <View style={styles.codeActions}>
+                        <CircularCountdown
+                          remainingSeconds={remainingSeconds}
+                          period={account.period || 30}
+                          size={34}
+                          strokeWidth={3}
+                          textSize={9}
+                          testID={`countdown-ring-${account.id}`}
+                        />
+
+                        <TouchableOpacity
+                          style={[
+                            styles.copyButton,
+                            isCopied && styles.copyButtonActive,
+                          ]}
+                          onPress={() => handleCopyCode(account)}
+                          activeOpacity={0.7}
+                          testID={`copy-button-${account.id}`}
+                          accessibilityLabel="Copy code to clipboard"
+                        >
+                          <Text style={styles.copyButtonText}>
+                            {isCopied ? 'COPIED! ✓' : 'COPY 📋'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </CyberCard>
                 );
@@ -292,6 +348,27 @@ export function VaultScreen({
             </View>
           )}
         </ScrollView>
+
+        {/* Floating Toast Notification */}
+        {toastMessage && (
+          <View style={styles.toastContainer} testID="vault-toast-notification">
+            <View style={styles.toastContent}>
+              <Text style={styles.toastIcon}>📋</Text>
+              <Text style={styles.toastText}>{toastMessage}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Manual Code Entry Modal */}
+        <ManualEntryModal
+          visible={showManualModal}
+          onClose={() => setShowManualModal(false)}
+          onAccountSaved={() => {
+            loadAccounts();
+            setShowManualModal(false);
+          }}
+          testID="vault-manual-entry-modal"
+        />
       </SafeAreaView>
     </View>
   );
@@ -355,6 +432,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   timerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  timerTextWrap: {
     flex: 1,
   },
   timerLabel: {
@@ -548,6 +631,49 @@ const styles = StyleSheet.create({
   copyButtonText: {
     color: CyberColors.cyan,
     fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  codeActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  emptyActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  toastContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.96)',
+    borderWidth: 1,
+    borderColor: CyberColors.cyan,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: CyberRadius.full,
+    gap: 8,
+    shadowColor: CyberColors.cyan,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  toastIcon: {
+    fontSize: 14,
+  },
+  toastText: {
+    color: CyberColors.cyan,
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
   },

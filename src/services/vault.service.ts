@@ -10,6 +10,7 @@ import {
   createDefaultSecureProvider,
   MockKeychainProvider,
 } from './secure-storage.provider.ts';
+import { TotpEngine } from './totp-engine.service.ts';
 
 const KEYCHAIN_MASTER_KEY = '@vanguard:keychain_master_key_v1';
 const SECURE_VAULT_PAYLOAD_KEY = '@vanguard:encrypted_totp_vault_v1';
@@ -321,43 +322,27 @@ export class VaultService {
   }
 
   /**
-   * Generates a 6-digit or 8-digit TOTP code based on secret and timestamp
+   * Generates offline RFC 6238 TOTP code matching standard Google Authenticator output (SCRUM-19)
    */
   generateCode(
-    account: TotpAccount | { secret: string; period?: number; digits?: number },
+    account: TotpAccount | { secret: string; period?: number; digits?: number; algorithm?: any },
     timestamp: number = Date.now()
   ): string {
-    const period = account.period || 30;
-    const digits = account.digits || 6;
-    const epoch = Math.floor(timestamp / 1000);
-    const counter = Math.floor(epoch / period);
-
-    const cleanSecret = (account.secret || 'VANGUARD').replace(/\s+/g, '').toUpperCase();
-
-    let hash = 0;
-    for (let i = 0; i < cleanSecret.length; i++) {
-      hash = (hash * 31 + cleanSecret.charCodeAt(i) + counter) >>> 0;
-    }
-    hash = (hash ^ (counter * 2654435761)) >>> 0;
-
-    const codeInt = hash % Math.pow(10, digits);
-    return codeInt.toString().padStart(digits, '0');
+    return TotpEngine.generate({
+      secret: account.secret,
+      period: account.period || 30,
+      digits: account.digits || 6,
+      algorithm: (account as any).algorithm || 'SHA1',
+      timestamp,
+    });
   }
 
   formatCode(code: string): string {
-    if (code.length === 6) {
-      return `${code.slice(0, 3)} ${code.slice(3)}`;
-    }
-    if (code.length === 8) {
-      return `${code.slice(0, 4)} ${code.slice(4)}`;
-    }
-    return code;
+    return TotpEngine.formatCode(code);
   }
 
   getRemainingSeconds(period: number = 30, timestamp: number = Date.now()): number {
-    const epoch = Math.floor(timestamp / 1000);
-    const elapsed = epoch % period;
-    return period - elapsed;
+    return TotpEngine.getRemainingSeconds(period, timestamp);
   }
 
   validateSecret(secret: string): { valid: boolean; error?: string } {

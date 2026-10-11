@@ -43,10 +43,12 @@ The application works out-of-the-box with offline local storage and pre-seeded e
    *Core Dependencies included:*
    - `expo`: `~57.0.24`
    - `expo-router`: `~57.0.22`
-   - `expo-secure-store`: `~57.0.2`
+   - `expo-secure-store`: `~57.0.4`
    - `expo-web-browser`: `~57.0.3`
    - `expo-linking`: `~57.0.10`
    - `expo-clipboard`: `~57.0.2`
+   - `otpauth`: `^9.5.2`
+   - `react-native-svg`: `~15.11.2`
    - `@react-native-async-storage/async-storage`: `2.2.0`
    - `react-native`: `0.86.3`
    - `react`: `19.2.3`
@@ -82,7 +84,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, and end-to-end workflows (112 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, and end-to-end workflows (119 automated tests):
 ```bash
 npm test
 ```
@@ -90,6 +92,7 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
+| `src/__tests__/offline-totp-generator.test.ts` | Offline RFC 6238 TOTP engine, standard test vector validation against Google Authenticator, circular countdown color shift warnings (Cyan/Amber/Red), Base32 decoding, clock drift tolerance (±1 window), and tap-to-copy code formatting (SCRUM-19) |
 | `src/__tests__/secure-vault-keychain.test.ts` | Hardware-backed iOS Keychain & Android Keystore integration (`expo-secure-store`), AES-GCM 256-bit envelope encryption/decryption, zero plaintext secret leakage, mock keychain adapters, and complete CRUD operations (`saveAccount`, `getAccounts`, `getAccountById`, `updateAccount`, `deleteAccount`) (SCRUM-18) |
 | `src/__tests__/otp-paste-centering.test.ts` | Digit input horizontal and vertical centering, multi-digit 6-digit/8-digit clipboard paste distribution, and 1-tap clipboard extraction (SCRUM-81) |
 | `src/__tests__/authenticator-cyber-theme.test.ts` | Design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, glass cards), reusable cyber components, Vault CRUD, RFC 6238 TOTP generation, Base32 validation, and screen navigation transitions (SCRUM-17) |
@@ -205,6 +208,35 @@ The Authenticator Vault implements native hardware-backed encrypted storage to s
 
 ---
 
+## ⏱️ Offline TOTP Generator Engine & Circular Countdown Visualizer (SCRUM-19)
+
+The Authenticator features an offline RFC 6238 Time-Based One-Time Password (TOTP) generator engine and dynamic circular countdown UI:
+
+### 1. Offline RFC 6238 TOTP Engine (`TotpEngine`)
+- **HMAC Algorithms**: Standard RFC 6238 HMAC calculation supporting `SHA1`, `SHA256`, and `SHA512` via `@noble/hashes` (`otpauth`).
+- **Standard Test Vectors**: Validated against official RFC 6238 test vectors (e.g. $T=59\text{s} \rightarrow 287082$, $T=1111111109\text{s} \rightarrow 081804$, $T=1234567890\text{s} \rightarrow 005924$) matching standard Google Authenticator and Microsoft Authenticator outputs.
+- **Base32 Normalization**: Automatic uppercase conversion, whitespace removal, padding unpadding, and character set validation (`[A-Z2-7]`).
+- **Clock Drift Tolerance**: Verification window support ($\pm 1$ step window) guaranteeing seamless code verification during second-boundary rollovers.
+- **Zero Latency**: 100% offline generation with zero network requests or external dependencies.
+
+### 2. Animated Circular Countdown Visualizer (`CircularCountdown`)
+- **SVG Circular Progress Bar**: Responsive SVG ring rendered via `react-native-svg` counting down clockwise from 30s to 0s based on Unix epoch time steps.
+- **Dynamic Color Warning Shift**:
+  - `> 10 seconds remaining`: Cyber Cyan (`#00e5ff`)
+  - `≤ 10 seconds remaining`: Caution Amber (`#f59e0b`)
+  - `≤ 5 seconds remaining`: Urgent Red (`#ef4444`)
+- **Tabular Centered Display**: Centered seconds display with tabular numerals (`tabular-nums`) matching warning colors.
+
+### 3. Tap-to-Copy & Toast Notification
+- **One-Tap Code Copy**: Tapping the code text or dedicated `COPY 📋` button formats and copies the token directly to the system clipboard via `expo-clipboard` (and Web Clipboard API fallback).
+- **Floating Toast Notification**: Dismissable cyber floating toast chip (`"Copied to clipboard"`) with tactile button status update (`COPIED! ✓`).
+
+### 4. Manual Code Entry Modal (`ManualEntryModal`)
+- Modal sheet allowing users to input an account identifier, issuer name, and Base32 secret key.
+- Dedicated 1-tap **"📋 Paste Key"** button reads clipboard, normalizes characters, and validates Base32 syntax instantly before saving.
+
+---
+
 ## 🔐 Authentication, Authorization & 2-Step Verification (OTP / TOTP)
 
 The application features a complete Zero-Trust continuous authentication architecture mirrored from `frontend-vanguard`, connected directly to `backend-vanguard` and the live Supabase authentication database with mandatory second-factor verification.
@@ -234,6 +266,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
 - `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, `EncryptedVaultEnvelope`, and `ISecureStorageProvider`.
+- `src/services/totp-engine.service.ts`: Standalone RFC 6238 TOTP calculation engine with Base32 decoding, countdown calculations, warning color shifts, and drift tolerance.
 - `src/services/aes-gcm.service.ts`: Authenticated 256-bit AES-GCM encryption/decryption service with 96-bit random IVs and WebCrypto compatibility.
 - `src/services/secure-storage.provider.ts`: Pluggable secure storage layer with `ExpoSecureStoreAdapter` (iOS Keychain / Android Keystore) and `MockKeychainProvider`.
 - `src/services/vault.service.ts`: Standalone hardware-backed Authenticator Vault service with AES-GCM encryption, full CRUD operations, Base32 validation, and RFC 6238 TOTP computation.
@@ -243,10 +276,10 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
 - `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards, shadows, radius).
-- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`).
-- `src/screens/vault-screen.tsx`: Air-gapped TOTP authenticator screen with live codes, countdown timer, and search filter.
+- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`).
+- `src/screens/vault-screen.tsx`: Air-gapped TOTP authenticator screen with circular countdown visualizers, tap-to-copy codes, floating toast notifications, and manual entry modal.
 - `src/screens/account-detail-screen.tsx`: Authenticator detail screen with secret key inspection and token removal.
-- `src/screens/add-account-screen.tsx`: Manual Base32 token entry and simulated camera QR scanner.
+- `src/screens/add-account-screen.tsx`: Manual Base32 token entry with 1-tap clipboard paste and simulated camera QR scanner.
 - `src/screens/security-settings-screen.tsx`: Biometrics lock, inactivity timeout, clipboard sanitization, and encrypted backup export.
 - `src/screens/authenticator-navigator.tsx`: Screen coordinator managing clean transitions across vault screens.
 - `src/screens/verify-otp-screen.tsx`: Cyber Dark 2-Step Verification screen with auto-advancing digit inputs, paste support, timer countdown, and test bypass chips.
@@ -257,7 +290,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
 - `src/components/apps/`: Reusable applications directory UI components (`PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 
 
 

@@ -54,13 +54,25 @@ export default function MyAppsScreen() {
     accessRequests,
     pendingRequestsCount,
     refreshApps,
-    isLoading,
   } = useApps();
 
   const [refreshing, setRefreshing] = useState(false);
   const [syncingSso, setSyncingSso] = useState(false);
   const [showAddPersonalAppModal, setShowAddPersonalAppModal] = useState(false);
   const [showRequestAppModal, setShowRequestAppModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } catch {
+      // Non-blocking
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -145,12 +157,53 @@ export default function MyAppsScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea}>
+        {/* Pinned Authenticated User Session Status Bar */}
+        <View style={styles.sessionHeaderContainer}>
+          <View style={styles.userSessionBar}>
+            <View style={styles.userInfoWrap}>
+              <View style={styles.userAvatar}>
+                <Text style={styles.userAvatarText}>
+                  {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : '👤'}
+                </Text>
+              </View>
+              <View style={styles.userMetaWrap}>
+                <Text style={styles.userNameText} numberOfLines={1}>
+                  {currentUser?.name || currentUser?.email || 'Authenticated User'}
+                </Text>
+                <Text style={styles.userEmailText} numberOfLines={1}>
+                  {currentUser?.email || 'Zero-Trust Session Active'}
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.logoutBtn,
+                pressed && styles.logoutBtnPressed,
+                isLoggingOut && styles.logoutBtnDisabled,
+              ]}
+              onPress={handleLogout}
+              disabled={isLoggingOut}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Sign Out"
+            >
+              {isLoggingOut ? (
+                <ActivityIndicator size="small" color="#f87171" />
+              ) : (
+                <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
-              refreshing={refreshing || isLoading}
+              refreshing={refreshing}
               onRefresh={onRefresh}
               tintColor={CyberColors.cyan}
               colors={[CyberColors.cyan]}
@@ -159,36 +212,6 @@ export default function MyAppsScreen() {
         >
           {/* Top Brand & Workspace Mode Bar */}
           <View style={styles.topHeader}>
-            {/* Authenticated User Session Status Bar */}
-            <View style={styles.userSessionBar}>
-              <View style={styles.userInfoWrap}>
-                <View style={styles.userAvatar}>
-                  <Text style={styles.userAvatarText}>
-                    {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : '👤'}
-                  </Text>
-                </View>
-                <View style={styles.userMetaWrap}>
-                  <Text style={styles.userNameText} numberOfLines={1}>
-                    {currentUser?.name || currentUser?.email}
-                  </Text>
-                  <Text style={styles.userEmailText} numberOfLines={1}>
-                    {currentUser?.email}
-                  </Text>
-                </View>
-              </View>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.logoutBtn,
-                  pressed && styles.logoutBtnPressed,
-                ]}
-                onPress={() => logout()}
-                accessibilityRole="button"
-                accessibilityLabel="Sign Out"
-              >
-                <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
-              </Pressable>
-            </View>
 
             <View style={styles.brandRow}>
               <View style={styles.brandBadge}>
@@ -430,6 +453,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.5,
   },
+  sessionHeaderContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 6,
+    backgroundColor: CyberColors.background,
+    zIndex: 10,
+  },
   userSessionBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -440,7 +470,6 @@ const styles = StyleSheet.create({
     borderRadius: CyberRadius.md,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    marginBottom: 14,
   },
   userInfoWrap: {
     flexDirection: 'row',
@@ -478,15 +507,22 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   logoutBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: CyberRadius.sm,
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderColor: 'rgba(239, 68, 68, 0.35)',
     borderWidth: 1,
+    minHeight: 32,
+    minWidth: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoutBtnPressed: {
     backgroundColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  logoutBtnDisabled: {
+    opacity: 0.6,
   },
   logoutBtnText: {
     color: '#f87171',

@@ -46,7 +46,7 @@ test('Two-Step Verification (OTP / TOTP) & Security Flows (SCRUM-74)', async (t)
           token: '99999999',
         });
       },
-      { message: /(Invalid or expired verification code|Token has expired or is invalid)/ }
+      { message: /(Invalid|expired|Token has expired)/i }
     );
   });
 

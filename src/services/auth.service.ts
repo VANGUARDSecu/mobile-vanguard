@@ -409,16 +409,33 @@ export class AuthService {
   }
 
   /**
-   * Clears the user session
+   * Clears the user session locally and notifies Vanguard backend
    */
   static async logout(): Promise<void> {
+    try {
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      await fetch(`${baseUrl}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      }).catch(() => {});
+      clearTimeout(timeoutId);
+    } catch {
+      // Backend unavailable or offline; non-blocking
+    }
+
     try {
       await AsyncStorage.multiRemove([
         AUTH_STORAGE_KEYS.CURRENT_USER,
         AUTH_STORAGE_KEYS.ACCESS_TOKEN,
       ]);
     } catch {
-      // Non-blocking
+      // Non-blocking fallback
     }
   }
 }

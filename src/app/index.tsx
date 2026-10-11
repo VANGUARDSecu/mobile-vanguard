@@ -8,12 +8,15 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 
+import { useAuth } from '@/context/auth-context';
 import { useApps } from '@/context/apps-context';
+import LoginScreen from './login';
 import {
   CategoryFilterBar,
   AppCard,
@@ -25,6 +28,7 @@ import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { SaaSApp, UserConnectedApp, PersonalAppInput } from '@/models/apps.models';
 
 export default function ApplicationsScreen() {
+  const { currentUser, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const {
     isPersonalWorkspace,
     setIsPersonalWorkspace,
@@ -45,6 +49,19 @@ export default function ApplicationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [syncingSso, setSyncingSso] = useState(false);
   const [showAddPersonalAppModal, setShowAddPersonalAppModal] = useState(false);
+
+  if (authLoading) {
+    return (
+      <View style={[styles.screen, styles.loadingScreen]}>
+        <ActivityIndicator size="large" color={CyberColors.cyan} />
+        <Text style={styles.loadingText}>INITIALIZING VANGUARD SESSION...</Text>
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -153,6 +170,37 @@ export default function ApplicationsScreen() {
         >
           {/* Top Brand & Workspace Mode Bar */}
           <View style={styles.topHeader}>
+            {/* Authenticated User Session Status Bar */}
+            <View style={styles.userSessionBar}>
+              <View style={styles.userInfoWrap}>
+                <View style={styles.userAvatar}>
+                  <Text style={styles.userAvatarText}>
+                    {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : '👤'}
+                  </Text>
+                </View>
+                <View style={styles.userMetaWrap}>
+                  <Text style={styles.userNameText} numberOfLines={1}>
+                    {currentUser?.name || currentUser?.email}
+                  </Text>
+                  <Text style={styles.userEmailText} numberOfLines={1}>
+                    {currentUser?.email}
+                  </Text>
+                </View>
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.logoutBtn,
+                  pressed && styles.logoutBtnPressed,
+                ]}
+                onPress={() => logout()}
+                accessibilityRole="button"
+                accessibilityLabel="Sign Out"
+              >
+                <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
+              </Pressable>
+            </View>
+
             <View style={styles.brandRow}>
               <View style={styles.brandBadge}>
                 <Text style={styles.brandShield}>🛡️</Text>
@@ -365,5 +413,79 @@ const styles = StyleSheet.create({
   },
   appsList: {
     marginTop: 4,
+  },
+  loadingScreen: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    color: CyberColors.cyan,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  userSessionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 14,
+  },
+  userInfoWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+    gap: 10,
+  },
+  userAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderColor: CyberColors.cyan,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userAvatarText: {
+    color: CyberColors.cyan,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  userMetaWrap: {
+    flex: 1,
+  },
+  userNameText: {
+    color: CyberColors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  userEmailText: {
+    color: CyberColors.textMuted,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  logoutBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: CyberRadius.sm,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderWidth: 1,
+  },
+  logoutBtnPressed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  logoutBtnText: {
+    color: '#f87171',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
 });

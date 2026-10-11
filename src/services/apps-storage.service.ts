@@ -82,8 +82,23 @@ export const DEFAULT_ENTERPRISE_APPS: SaaSApp[] = [
 
 export const DEFAULT_CONNECTED_APPS: UserConnectedApp[] = [
   {
-    id: 'conn-dummy-web',
+    id: 'conn-dummy-web-ellen',
     clientId: 'vanguard-dummy-portal',
+    clientName: 'Acme Dummy Web',
+    userEmail: 'ellen.ripley@weyland.corp',
+    protocol: 'OIDC 1.0 PKCE',
+    scopes: ['openid', 'profile', 'email', 'roles', 'offline_access'],
+    redirectUri: 'http://localhost:4201/auth/callback',
+    originUrl: 'http://localhost:4201',
+    status: 'Connected',
+    connectedAt: '2026-09-27T08:00:00.000Z',
+    lastActiveAt: 'Active Session • Just now',
+    icon: '🌐',
+    description: 'Acme Dummy Web portal integrated via Vanguard Single Sign-On and OpenID Connect 1.0 PKCE authentication.',
+  },
+  {
+    id: 'conn-dummy-web-user',
+    clientId: 'vanguard-dummy-portal-corp',
     clientName: 'Acme Dummy Web',
     userEmail: 'user@company.com',
     protocol: 'OIDC 1.0 PKCE',
@@ -400,14 +415,17 @@ export class AppsStorageService {
     justification: string;
     category?: AppItemCategory;
     icon?: string;
+    userName?: string;
+    userEmail?: string;
+    department?: string;
   }): Promise<AppAccessRequest> {
     const requests = await this.getAccessRequests();
     const newReq: AppAccessRequest = {
       id: 'req-' + Date.now(),
       userId: 'usr-current',
-      userName: 'John Roben Manayon',
-      userEmail: 'johnroben.manayon21@gmail.com',
-      department: 'Engineering',
+      userName: input.userName || 'John Roben Manayon',
+      userEmail: input.userEmail || 'user@company.com',
+      department: input.department || 'Engineering',
       role: 'Full Stack Engineer',
       appName: input.appName.trim(),
       protocol: 'SAML 2.0',

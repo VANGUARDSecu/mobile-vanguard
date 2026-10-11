@@ -1,0 +1,490 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  StyleSheet,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+
+import { useAuth } from '@/context/auth-context';
+import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+
+export default function LoginScreen() {
+  const { login, loginWithSSO, isLoading } = useAuth();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSignIn = async () => {
+    if (!email.trim()) {
+      setErrorMessage('Please enter your email address.');
+      return;
+    }
+    if (!password.trim()) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      await login({ email: email.trim(), password: password.trim() });
+      router.replace('/');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed. Please try again.';
+      setErrorMessage(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSsoSignIn = async (targetEmail?: string) => {
+    setSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      await loginWithSSO(targetEmail || email.trim() || undefined);
+      router.replace('/');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'SSO federation failed.';
+      setErrorMessage(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const selectDemoAccount = (demoEmail: string) => {
+    setEmail(demoEmail);
+    setPassword('Password123!');
+    setErrorMessage(null);
+  };
+
+  return (
+    <View style={styles.screen}>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardAvoid}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Brand Header */}
+            <View style={styles.brandContainer}>
+              <View style={styles.shieldBadge}>
+                <Text style={styles.shieldIcon}>🛡️</Text>
+              </View>
+              <Text style={styles.brandTitle}>VANGUARD</Text>
+              <Text style={styles.brandSubtitle}>SECURITY IDENTITY</Text>
+              <Text style={styles.heroText}>
+                Zero-Trust Mobile Access & Single Sign-On Portal
+              </Text>
+            </View>
+
+            {/* Login Card */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Sign In to Your Account</Text>
+              <Text style={styles.cardSubtitle}>
+                Access your zero-trust SaaS apps and active SSO integrations
+              </Text>
+
+              {/* Error Alert */}
+              {errorMessage ? (
+                <View style={styles.errorBanner}>
+                  <Text style={styles.errorText}>⚠️ {errorMessage}</Text>
+                </View>
+              ) : null}
+
+              {/* Email Input */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Email Address</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
+                  placeholder="name@company.com"
+                  placeholderTextColor={CyberColors.textMuted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Password Input */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Master Password</Text>
+                <View style={styles.passwordWrap}>
+                  <TextInput
+                    style={[styles.input, styles.passwordInput]}
+                    value={password}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    placeholder="Enter password"
+                    placeholderTextColor={CyberColors.textMuted}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                  />
+                  <Pressable
+                    style={styles.eyeBtn}
+                    onPress={() => setShowPassword(!showPassword)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <Text style={styles.eyeIcon}>{showPassword ? '👁️' : '🔒'}</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Sign In Button */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.signInBtn,
+                  pressed && styles.signInBtnPressed,
+                  (submitting || isLoading) && styles.signInBtnDisabled,
+                ]}
+                onPress={handleSignIn}
+                disabled={submitting || isLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Sign In"
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color={CyberColors.textDark} />
+                ) : (
+                  <Text style={styles.signInBtnText}>Sign In</Text>
+                )}
+              </Pressable>
+
+              {/* Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR FEDERATE VIA SSO</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Single Sign-On Button */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.ssoBtn,
+                  pressed && styles.ssoBtnPressed,
+                  submitting && styles.ssoBtnDisabled,
+                ]}
+                onPress={() => handleSsoSignIn()}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Sign In with Vanguard SSO"
+              >
+                <Text style={styles.ssoBtnIcon}>🌐</Text>
+                <Text style={styles.ssoBtnText}>Sign In with Vanguard SSO</Text>
+              </Pressable>
+
+              {/* Quick Demo Credentials */}
+              <View style={styles.demoSection}>
+                <Text style={styles.demoSectionLabel}>QUICK DEMO ACCOUNTS</Text>
+                <View style={styles.demoPillsWrap}>
+                  <Pressable
+                    style={styles.demoPill}
+                    onPress={() => selectDemoAccount('ellen.ripley@weyland.corp')}
+                  >
+                    <Text style={styles.demoPillText}>
+                      👩‍🚀 Ellen Ripley (Dummy Web SSO)
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.demoPill}
+                    onPress={() => selectDemoAccount('user@company.com')}
+                  >
+                    <Text style={styles.demoPillText}>
+                      👨‍💻 John Manayon (Engineering)
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.demoPill}
+                    onPress={() => selectDemoAccount('admin@vanguard.security')}
+                  >
+                    <Text style={styles.demoPillText}>
+                      🛡️ SecOps Administrator
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+
+            {/* Zero-Trust Security Footer */}
+            <View style={styles.footer}>
+              <Text style={styles.footerShield}>🔒</Text>
+              <Text style={styles.footerText}>
+                Protected by Vanguard Continuous Zero-Trust Verification
+              </Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: CyberColors.background,
+  },
+  safeArea: {
+    flex: 1,
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  shieldBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: CyberColors.cyan,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  shieldIcon: {
+    fontSize: 28,
+  },
+  brandTitle: {
+    color: CyberColors.cyan,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 3,
+  },
+  brandSubtitle: {
+    color: CyberColors.textSecondary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginTop: 2,
+  },
+  heroText: {
+    color: CyberColors.textSecondary,
+    fontSize: 12.5,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  card: {
+    width: '100%',
+    backgroundColor: '#0f172a',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.lg,
+    padding: 20,
+    shadowColor: CyberColors.cyan,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  cardTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: CyberColors.textPrimary,
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 12.5,
+    color: CyberColors.textSecondary,
+    lineHeight: 17,
+    marginBottom: 18,
+  },
+  errorBanner: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  errorText: {
+    color: '#fca5a5',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  fieldGroup: {
+    marginBottom: 14,
+  },
+  fieldLabel: {
+    color: CyberColors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    color: CyberColors.textPrimary,
+    fontSize: 14,
+  },
+  passwordWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingRight: 44,
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: 12,
+    padding: 4,
+  },
+  eyeIcon: {
+    fontSize: 16,
+  },
+  signInBtn: {
+    backgroundColor: CyberColors.cyan,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    shadowColor: CyberColors.cyan,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  signInBtnPressed: {
+    opacity: 0.85,
+  },
+  signInBtnDisabled: {
+    opacity: 0.6,
+  },
+  signInBtnText: {
+    color: CyberColors.textDark,
+    fontSize: 14.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+    gap: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  dividerText: {
+    color: CyberColors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  ssoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  ssoBtnPressed: {
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  ssoBtnDisabled: {
+    opacity: 0.6,
+  },
+  ssoBtnIcon: {
+    fontSize: 16,
+  },
+  ssoBtnText: {
+    color: '#a5b4fc',
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  demoSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  demoSectionLabel: {
+    color: CyberColors.textMuted,
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  demoPillsWrap: {
+    gap: 6,
+  },
+  demoPill: {
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: CyberRadius.sm,
+  },
+  demoPillText: {
+    color: CyberColors.textSecondary,
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 28,
+  },
+  footerShield: {
+    fontSize: 12,
+  },
+  footerText: {
+    color: CyberColors.textMuted,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+});

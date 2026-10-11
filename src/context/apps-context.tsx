@@ -17,6 +17,7 @@ import {
   AppItemCategory,
 } from '@/models/apps.models';
 import { AppsStorageService } from '@/services/apps-storage.service';
+import { AuthContext } from './auth-context';
 
 interface AppsContextType {
   isPersonalWorkspace: boolean;
@@ -50,6 +51,10 @@ interface AppsContextType {
 const AppsContext = createContext<AppsContextType | undefined>(undefined);
 
 export function AppsProvider({ children }: { children: ReactNode }) {
+  const authContext = useContext(AuthContext);
+  const currentUser = authContext?.currentUser ?? null;
+  const userEmail = currentUser?.email;
+
   const [isPersonalWorkspace, setIsPersonalWorkspaceState] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<AppCategory>('all');
   const [apps, setApps] = useState<SaaSApp[]>([]);
@@ -78,25 +83,27 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       setAccessRequests(requests);
       setVaultCredentials(vault);
 
-      // Attempt live SSO connected apps sync from backend in the background
-      AppsStorageService.syncConnectedAppsWithBackend().then((synced) => {
-        setConnectedApps(synced);
-      }).catch(() => {});
+      // Attempt live SSO connected apps sync from backend in the background for active user
+      AppsStorageService.syncConnectedAppsWithBackend(userEmail)
+        .then((synced) => {
+          setConnectedApps(synced);
+        })
+        .catch(() => {});
     } catch {
       // Ignored
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [userEmail]);
 
   const syncConnectedApps = useCallback(async () => {
     try {
-      const synced = await AppsStorageService.syncConnectedAppsWithBackend();
+      const synced = await AppsStorageService.syncConnectedAppsWithBackend(userEmail);
       setConnectedApps(synced);
     } catch {
       // Graceful fallback
     }
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -132,10 +139,20 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     return activeAppsList.filter((app) => app.category === selectedCategory);
   }, [activeAppsList, selectedCategory]);
 
-  // SCRUM-58: Strict deduplication of connected SSO client applications
+  // SCRUM-58 & SCRUM-72: Strict deduplication and user account filtering
   const activeConnectedApps = useMemo<UserConnectedApp[]>(() => {
-    return AppsStorageService.deduplicateConnectedApps(connectedApps);
-  }, [connectedApps]);
+    const deduped = AppsStorageService.deduplicateConnectedApps(connectedApps);
+    if (!userEmail) {
+      return deduped;
+    }
+    const cleanUserEmail = userEmail.toLowerCase().trim();
+    return deduped.filter(
+      (conn) =>
+        !conn.userEmail ||
+        conn.userEmail === 'all' ||
+        conn.userEmail.toLowerCase().trim() === cleanUserEmail
+    );
+  }, [connectedApps, userEmail]);
 
   // Access Requests Count
   const pendingRequestsCount = useMemo(() => {
@@ -193,11 +210,16 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       category?: AppItemCategory;
       icon?: string;
     }): Promise<AppAccessRequest> => {
-      const created = await AppsStorageService.submitAccessRequest(input);
+      const created = await AppsStorageService.submitAccessRequest({
+        ...input,
+        userName: currentUser?.name,
+        userEmail: currentUser?.email,
+        department: currentUser?.department,
+      });
       setAccessRequests((prev) => [created, ...prev]);
       return created;
     },
-    []
+    [currentUser]
   );
 
   // Disconnect Connected SSO Application

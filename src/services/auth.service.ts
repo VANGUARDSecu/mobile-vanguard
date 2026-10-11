@@ -175,7 +175,11 @@ export class AuthService {
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
-        if (err.name !== 'AbortError' && !err.message.includes('fetch') && !err.message.includes('Network')) {
+        if (
+          err.name !== 'AbortError' &&
+          !err.message.toLowerCase().includes('fetch') &&
+          !err.message.includes('Network')
+        ) {
           throw err;
         }
       }
@@ -201,7 +205,7 @@ export class AuthService {
       throw new Error(
         err instanceof Error && err.name === 'AbortError'
           ? 'Authentication server timed out. Please check your connection.'
-          : (err instanceof Error ? err.message : 'Unable to connect to authentication server.')
+          : 'Unable to connect to authentication server. Please ensure the backend is running at http://localhost:3000.'
       );
     }
 

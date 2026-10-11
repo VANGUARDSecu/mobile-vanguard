@@ -43,6 +43,7 @@ The application works out-of-the-box with offline local storage and pre-seeded e
    *Core Dependencies included:*
    - `expo`: `~57.0.24`
    - `expo-router`: `~57.0.22`
+   - `expo-secure-store`: `~57.0.2`
    - `expo-web-browser`: `~57.0.3`
    - `expo-linking`: `~57.0.10`
    - `expo-clipboard`: `~57.0.2`
@@ -81,7 +82,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, and end-to-end workflows (105 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, and end-to-end workflows (112 automated tests):
 ```bash
 npm test
 ```
@@ -89,6 +90,7 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
+| `src/__tests__/secure-vault-keychain.test.ts` | Hardware-backed iOS Keychain & Android Keystore integration (`expo-secure-store`), AES-GCM 256-bit envelope encryption/decryption, zero plaintext secret leakage, mock keychain adapters, and complete CRUD operations (`saveAccount`, `getAccounts`, `getAccountById`, `updateAccount`, `deleteAccount`) (SCRUM-18) |
 | `src/__tests__/otp-paste-centering.test.ts` | Digit input horizontal and vertical centering, multi-digit 6-digit/8-digit clipboard paste distribution, and 1-tap clipboard extraction (SCRUM-81) |
 | `src/__tests__/authenticator-cyber-theme.test.ts` | Design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, glass cards), reusable cyber components, Vault CRUD, RFC 6238 TOTP generation, Base32 validation, and screen navigation transitions (SCRUM-17) |
 | `src/__tests__/auth.test.ts` | Supabase database credentials, email/password validation, rejection of unregistered accounts, 2-step MFA challenge |
@@ -160,6 +162,49 @@ The mobile application features a standalone air-gapped **Authenticator Vault** 
 
 ---
 
+## 🔒 Local Secure Vault & Keychain Storage (SCRUM-18)
+
+The Authenticator Vault implements native hardware-backed encrypted storage to secure two-factor TOTP secrets at rest on mobile devices:
+
+### 1. Native Secure Storage & Hardware Protection
+- **iOS**: Apple Keychain Services via `expo-secure-store` with hardware security enclave protection.
+- **Android**: Android Keystore Provider via `expo-secure-store` with hardware-backed KeyStore encryption (`EncryptedSharedPreferences`).
+- **Pluggable Storage Abstraction**: `ISecureStorageProvider` interface with `ExpoSecureStoreAdapter` for native device runtimes and `MockKeychainProvider` for headless unit testing and automated CI verification.
+
+### 2. AES-GCM (256-bit) Encryption Architecture
+- **Cipher**: Standard authenticated AES-GCM (`AES-GCM-256`) implemented via `AesGcmService`.
+- **Initialization Vector**: Unique cryptographically secure 96-bit (12-byte) IV generated per write via `crypto.getRandomValues()`.
+- **Envelope Storage Format**:
+  ```json
+  {
+    "version": "1.0.0",
+    "cipher": "AES-GCM-256",
+    "iv": "<base64-iv>",
+    "ciphertext": "<base64-encrypted-vault-json>",
+    "tag": "AES-GCM-AUTH-TAG-VERIFIED",
+    "updatedAt": "2026-10-11T23:56:00.000Z"
+  }
+  ```
+- **Zero Plaintext Leaks**: Plaintext secrets and raw master keys are never stored in unencrypted storage (`AsyncStorage`) or emitted to console logs.
+
+### 3. Local Account Schema & CRUD Repository
+- **Schema (`TotpAccount`)**:
+  - `id`: Unique RFC 4122 UUID v4 identifier.
+  - `accountName`: Primary account identifier (e.g. `admin@vanguard.security`).
+  - `issuer`: Provider or service name (e.g. `Vanguard`, `GitHub`, `AWS`).
+  - `secret`: RFC 4648 Base32-encoded secret key with strict character validation (`[A-Z2-7]`).
+  - `algorithm`: Cryptographic hash algorithm (`SHA1`, `SHA256`, or `SHA512`).
+  - `digits`: Code length (6 or 8 digits).
+  - `period`: Code rotation period (30s).
+- **CRUD Operations (`VaultService`)**:
+  - `saveAccount(input)`: Generates UUID, validates Base32 secret, and encrypts into hardware vault.
+  - `getAccounts()`: Decrypts envelope and returns vaulted TOTP accounts.
+  - `getAccountById(id)`: Retrieves a specific vaulted account.
+  - `updateAccount(id, updates)`: Updates account metadata or secret with re-encryption.
+  - `deleteAccount(id)`: Permanently purges account from encrypted vault.
+
+---
+
 ## 🔐 Authentication, Authorization & 2-Step Verification (OTP / TOTP)
 
 The application features a complete Zero-Trust continuous authentication architecture mirrored from `frontend-vanguard`, connected directly to `backend-vanguard` and the live Supabase authentication database with mandatory second-factor verification.
@@ -188,9 +233,11 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 
 - `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
-- `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, and `AuthenticatorScreenName`.
+- `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, `EncryptedVaultEnvelope`, and `ISecureStorageProvider`.
+- `src/services/aes-gcm.service.ts`: Authenticated 256-bit AES-GCM encryption/decryption service with 96-bit random IVs and WebCrypto compatibility.
+- `src/services/secure-storage.provider.ts`: Pluggable secure storage layer with `ExpoSecureStoreAdapter` (iOS Keychain / Android Keystore) and `MockKeychainProvider`.
+- `src/services/vault.service.ts`: Standalone hardware-backed Authenticator Vault service with AES-GCM encryption, full CRUD operations, Base32 validation, and RFC 6238 TOTP computation.
 - `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, and AsyncStorage token/user session management.
-- `src/services/vault.service.ts`: Standalone local Authenticator Vault service with RFC 6238 TOTP computation, Base32 key validation, local storage persistence, and zero external cloud database dependencies.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
 - `src/services/app-launcher.service.ts`: Centralized application launch dispatcher integrating Expo's in-app browser (`expo-web-browser`) and external linking (`expo-linking`) with Cyber Dark theme styling, URL normalization, and personal vault credential matching.
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
@@ -210,7 +257,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
 - `src/components/apps/`: Reusable applications directory UI components (`PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 
 
 

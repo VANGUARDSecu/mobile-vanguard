@@ -8,12 +8,13 @@ export type AuthenticatorScreenName =
 
 export interface TotpAccount {
   id: string;
-  name: string;
-  issuer: string;
-  secret: string;
-  algorithm: TotpAlgorithm;
-  digits: number;
-  period: number;
+  accountName: string; // e.g. "user@company.com" (SCRUM-18)
+  name: string; // backwards compatibility alias for accountName
+  issuer: string; // e.g. "Vanguard Security", "GitHub", "AWS"
+  secret: string; // Base32 encoded HMAC secret key
+  algorithm: TotpAlgorithm; // SHA1 / SHA256 / SHA512
+  digits: number; // 6 or 8 digits
+  period: number; // 30 seconds default
   icon: string;
   backupCodes?: string[];
   createdAt: string;
@@ -29,7 +30,8 @@ export interface VaultSecuritySettings {
 }
 
 export interface AddTotpAccountInput {
-  name: string;
+  accountName?: string;
+  name?: string;
   issuer: string;
   secret: string;
   algorithm?: TotpAlgorithm;
@@ -38,3 +40,20 @@ export interface AddTotpAccountInput {
   icon?: string;
   backupCodes?: string[];
 }
+
+export interface ISecureStorageProvider {
+  getItemAsync(key: string): Promise<string | null>;
+  setItemAsync(key: string, value: string): Promise<void>;
+  deleteItemAsync(key: string): Promise<void>;
+  isAvailableAsync?(): Promise<boolean>;
+}
+
+export interface EncryptedVaultEnvelope {
+  version: string;
+  cipher: 'AES-GCM-256';
+  iv: string;
+  ciphertext: string;
+  tag: string;
+  updatedAt: string;
+}
+

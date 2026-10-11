@@ -123,8 +123,8 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
 | **John Manayon** | `user@company.com` | `Password123!` | User / Engineering | Standard corporate user profile |
 | **SecOps Admin** | `admin@vanguard.security` | `Password123!` | Admin / Security Operations | Privileged administrative credentials |
 
-- **1-Tap SSO Federation**: Tap **Sign In with Vanguard SSO** on the login screen for instant continuous authentication.
-- **Quick Demo Account Selector**: Tap any demo user chip on the login card to auto-fill credentials.
+- **Master Credential Authentication**: Enter email and master password to sign in directly into the Vanguard Security IdP.
+- **Quick Demo Account Selector**: Tap any demo user chip on the login card to auto-fill credentials for 1-tap testing.
 - **Live User Session Header**: Displays current account identity, role badge, and a **Sign Out ⎋** button in the top navigation bar.
 - **User-Scoped SSO Integrations**: Active SSO connected applications and OAuth authorizations are dynamically scoped and filtered to the logged-in user account.
 

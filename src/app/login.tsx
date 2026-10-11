@@ -17,7 +17,7 @@ import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 
 export default function LoginScreen() {
-  const { login, loginWithSSO, isLoading } = useAuth();
+  const { login, isLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,21 +43,6 @@ export default function LoginScreen() {
       router.replace('/');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed. Please try again.';
-      setErrorMessage(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleSsoSignIn = async (targetEmail?: string) => {
-    setSubmitting(true);
-    setErrorMessage(null);
-
-    try {
-      await loginWithSSO(targetEmail || email.trim() || undefined);
-      router.replace('/');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'SSO federation failed.';
       setErrorMessage(msg);
     } finally {
       setSubmitting(false);
@@ -169,29 +154,6 @@ export default function LoginScreen() {
                 ) : (
                   <Text style={styles.signInBtnText}>Sign In</Text>
                 )}
-              </Pressable>
-
-              {/* Divider */}
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>OR FEDERATE VIA SSO</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              {/* Single Sign-On Button */}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.ssoBtn,
-                  pressed && styles.ssoBtnPressed,
-                  submitting && styles.ssoBtnDisabled,
-                ]}
-                onPress={() => handleSsoSignIn()}
-                disabled={submitting}
-                accessibilityRole="button"
-                accessibilityLabel="Sign In with Vanguard SSO"
-              >
-                <Text style={styles.ssoBtnIcon}>🌐</Text>
-                <Text style={styles.ssoBtnText}>Sign In with Vanguard SSO</Text>
               </Pressable>
 
               {/* Quick Demo Credentials */}
@@ -400,48 +362,6 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '800',
     letterSpacing: 0.3,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 18,
-    gap: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(59, 130, 246, 0.25)',
-  },
-  dividerText: {
-    color: CyberColors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  ssoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
-    borderColor: 'rgba(99, 102, 241, 0.4)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  ssoBtnPressed: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-  },
-  ssoBtnDisabled: {
-    opacity: 0.6,
-  },
-  ssoBtnIcon: {
-    fontSize: 16,
-  },
-  ssoBtnText: {
-    color: '#a5b4fc',
-    fontSize: 13.5,
-    fontWeight: '700',
   },
   demoSection: {
     marginTop: 20,

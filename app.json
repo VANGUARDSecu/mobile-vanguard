@@ -33,7 +33,13 @@
           "imageWidth": 76
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Vanguard to use Face ID to authenticate and unlock your secure vault."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

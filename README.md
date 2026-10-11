@@ -43,6 +43,7 @@ The application works out-of-the-box with offline local storage and pre-seeded e
    *Core Dependencies included:*
    - `expo`: `~57.0.24`
    - `expo-router`: `~57.0.22`
+   - `expo-local-authentication`: `~57.0.2`
    - `expo-secure-store`: `~57.0.4`
    - `expo-web-browser`: `~57.0.3`
    - `expo-linking`: `~57.0.10`
@@ -84,7 +85,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, and end-to-end workflows (119 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication (Face ID / Fingerprint / Passcode fallback), AppState auto-locking, and end-to-end workflows (126 automated tests):
 ```bash
 npm test
 ```
@@ -92,6 +93,7 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
+| `src/__tests__/biometric-auth.test.ts` | Native biometric authentication (Face ID & Fingerprint) capability detection, biometric prompt challenge execution, device passcode fallback, launch requirement settings persistence, and AppState background/foreground vault auto-locking lifecycle simulation (SCRUM-20) |
 | `src/__tests__/offline-totp-generator.test.ts` | Offline RFC 6238 TOTP engine, standard test vector validation against Google Authenticator, circular countdown color shift warnings (Cyan/Amber/Red), Base32 decoding, clock drift tolerance (±1 window), and tap-to-copy code formatting (SCRUM-19) |
 | `src/__tests__/secure-vault-keychain.test.ts` | Hardware-backed iOS Keychain & Android Keystore integration (`expo-secure-store`), AES-GCM 256-bit envelope encryption/decryption, zero plaintext secret leakage, mock keychain adapters, and complete CRUD operations (`saveAccount`, `getAccounts`, `getAccountById`, `updateAccount`, `deleteAccount`) (SCRUM-18) |
 | `src/__tests__/otp-paste-centering.test.ts` | Digit input horizontal and vertical centering, multi-digit 6-digit/8-digit clipboard paste distribution, and 1-tap clipboard extraction (SCRUM-81) |
@@ -237,6 +239,31 @@ The Authenticator features an offline RFC 6238 Time-Based One-Time Password (TOT
 
 ---
 
+## 🛡️ Biometric Authentication & App Lock (SCRUM-20)
+
+The Authenticator Vault implements native biometric authentication and automatic screen obscuration to protect confidential TOTP accounts and encryption keys:
+
+### 1. Native Biometric Authentication & Hardware Enclave
+- **iOS**: Apple Face ID and Touch ID integrated via `expo-local-authentication`.
+- **Android**: Android `BiometricPrompt` supporting fingerprint sensors and facial recognition.
+- **Hardware Capability Detection**: Automatically probes hardware support (`hasHardwareAsync`), enrollment state (`isEnrolledAsync`), and sensor modalities (`supportedAuthenticationTypesAsync` mapping to `FACIAL_RECOGNITION`, `FINGERPRINT`, or `IRIS`).
+- **Pluggable Architecture**: `IBiometricAuthProvider` abstraction interface implemented by `ExpoBiometricAdapter` for live mobile devices and `MockBiometricProvider` for automated unit testing and headless CI pipelines.
+
+### 2. Device Passcode Fallback
+- When biometric sensors fail, are canceled, or are unavailable, the challenge gracefully presents the system passcode fallback prompt (`fallbackLabel: 'Enter Passcode'`).
+- Users can also tap **"Use Device Passcode"** on the Vault Lock Screen to trigger the system PIN/passcode prompt.
+
+### 3. App Lifecycle Auto-Lock & Screen Obscuration (`AppState`)
+- **Lifecycle Monitoring**: `AppState.addEventListener('change')` monitors app transitions across foreground and background states in `AuthenticatorNavigator`.
+- **Automatic Screen Obscuration**: When the app shifts to `background` or `inactive`, the vault immediately locks (`isLocked: true`) and obscures all sensitive TOTP tokens, account identifiers, and secret keys behind `VaultLockScreen`.
+- **Automatic Unlock Prompt**: When returning to `active` foreground, the app automatically triggers the native biometric challenge if biometrics are required.
+
+### 4. Security Settings Toggle & Sensor Badge
+- **Launch Policy Toggle**: Users can enable/disable "Require Biometrics on Launch" from the Security Settings screen (`SecuritySettingsScreen`), persisting the choice instantly via `BiometricAuthService.setBiometricsRequiredOnLaunch()`.
+- **Dynamic Sensor Badge**: Displays a cyber badge reflecting the device's actual hardware modality (`FACEID`, `FINGERPRINT`, or `BIOMETRICS`).
+
+---
+
 ## 🔐 Authentication, Authorization & 2-Step Verification (OTP / TOTP)
 
 The application features a complete Zero-Trust continuous authentication architecture mirrored from `frontend-vanguard`, connected directly to `backend-vanguard` and the live Supabase authentication database with mandatory second-factor verification.
@@ -269,6 +296,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/services/totp-engine.service.ts`: Standalone RFC 6238 TOTP calculation engine with Base32 decoding, countdown calculations, warning color shifts, and drift tolerance.
 - `src/services/aes-gcm.service.ts`: Authenticated 256-bit AES-GCM encryption/decryption service with 96-bit random IVs and WebCrypto compatibility.
 - `src/services/secure-storage.provider.ts`: Pluggable secure storage layer with `ExpoSecureStoreAdapter` (iOS Keychain / Android Keystore) and `MockKeychainProvider`.
+- `src/services/biometric-auth.service.ts`: Standalone biometric authentication provider with native hardware abstraction (`ExpoBiometricAdapter`), mock testing adapter (`MockBiometricProvider`), capability queries, and settings persistence.
 - `src/services/vault.service.ts`: Standalone hardware-backed Authenticator Vault service with AES-GCM encryption, full CRUD operations, Base32 validation, and RFC 6238 TOTP computation.
 - `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, and AsyncStorage token/user session management.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
@@ -276,12 +304,13 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
 - `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards, shadows, radius).
-- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`).
+- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`, `VaultLockScreen`).
+- `src/components/cyber/vault-lock-screen.tsx`: Full-screen cyber security shield obscuring vaulted credentials with biometric unlock trigger, device passcode fallback, and sensor status indicator.
 - `src/screens/vault-screen.tsx`: Air-gapped TOTP authenticator screen with circular countdown visualizers, tap-to-copy codes, floating toast notifications, and manual entry modal.
 - `src/screens/account-detail-screen.tsx`: Authenticator detail screen with secret key inspection and token removal.
 - `src/screens/add-account-screen.tsx`: Manual Base32 token entry with 1-tap clipboard paste and simulated camera QR scanner.
-- `src/screens/security-settings-screen.tsx`: Biometrics lock, inactivity timeout, clipboard sanitization, and encrypted backup export.
-- `src/screens/authenticator-navigator.tsx`: Screen coordinator managing clean transitions across vault screens.
+- `src/screens/security-settings-screen.tsx`: Biometrics lock toggle with dynamic hardware sensor badge, inactivity timeout, clipboard sanitization, and encrypted backup export.
+- `src/screens/authenticator-navigator.tsx`: Screen coordinator managing clean transitions across vault screens, `AppState` auto-lock lifecycle listeners, and biometric lock gating.
 - `src/screens/verify-otp-screen.tsx`: Cyber Dark 2-Step Verification screen with auto-advancing digit inputs, paste support, timer countdown, and test bypass chips.
 - `src/app/vault.tsx`: Route mounting `AuthenticatorNavigator`.
 - `src/app/verify-otp.tsx`: Route entry point mounting `VerifyOtpScreen`.
@@ -290,7 +319,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
 - `src/components/apps/`: Reusable applications directory UI components (`PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 
 
 

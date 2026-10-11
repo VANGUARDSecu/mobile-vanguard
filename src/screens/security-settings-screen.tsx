@@ -21,6 +21,7 @@ import {
 } from '@/components/cyber';
 import { VaultSecuritySettings } from '@/models/vault.models';
 import vaultService from '@/services/vault.service';
+import biometricService, { BiometricType } from '@/services/biometric-auth.service';
 
 export interface SecuritySettingsScreenProps {
   onClose: () => void;
@@ -40,6 +41,11 @@ export function SecuritySettingsScreen({
     exportEncryption: 'AES-256-GCM',
     zeroTrustAttestation: true,
   });
+  const [biometricInfo, setBiometricInfo] = useState<{
+    hasHardware: boolean;
+    isEnrolled: boolean;
+    biometricType: BiometricType;
+  }>({ hasHardware: true, isEnrolled: true, biometricType: 'FaceID' });
   const [copiedBackup, setCopiedBackup] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
 
@@ -49,11 +55,12 @@ export function SecuritySettingsScreen({
       setSettings(data);
     };
     fetchSettings();
+    biometricService.checkAvailability().then(setBiometricInfo);
   }, []);
 
   const handleToggleBiometrics = async (value: boolean) => {
-    const updated = await vaultService.updateSettings({ biometricsEnabled: value });
-    setSettings(updated);
+    const enabled = await biometricService.setBiometricsRequiredOnLaunch(value);
+    setSettings((prev) => ({ ...prev, biometricsEnabled: enabled }));
   };
 
   const handleSetAutoLock = async (seconds: number) => {
@@ -146,11 +153,19 @@ export function SecuritySettingsScreen({
 
           {/* Biometrics Protection */}
           <CyberCard variant="glass" style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>BIOMETRIC AUTHENTICATION</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>BIOMETRIC AUTHENTICATION</Text>
+              <Badge
+                label={biometricInfo.biometricType.toUpperCase()}
+                variant={biometricInfo.hasHardware ? 'green' : 'amber'}
+                size="sm"
+                testID="settings-biometric-badge"
+              />
+            </View>
             <View style={styles.settingRow}>
               <View style={styles.settingTextCol}>
                 <Text style={styles.settingLabel}>
-                  Require Face ID / Fingerprint
+                  Require {biometricInfo.biometricType === 'FaceID' ? 'Face ID' : biometricInfo.biometricType === 'Fingerprint' ? 'Fingerprint' : 'Biometrics'} on Launch
                 </Text>
                 <Text style={styles.settingDesc}>
                   Prompt for biometric authentication before unlocking secrets
@@ -355,12 +370,17 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   sectionTitle: {
     color: CyberColors.textMuted,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.8,
-    marginBottom: 8,
   },
   settingRow: {
     flexDirection: 'row',

@@ -5,3 +5,4 @@ export * from './status-indicator';
 export * from './modal-header';
 export * from './circular-countdown';
 export * from './manual-entry-modal';
+export * from './vault-lock-screen';

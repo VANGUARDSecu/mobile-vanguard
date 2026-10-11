@@ -56,12 +56,6 @@ export default function LoginScreen() {
     }
   };
 
-  const selectDemoAccount = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('Password123!');
-    setErrorMessage(null);
-  };
-
   if (mfaChallenge) {
     return (
       <VerifyOtpScreen
@@ -177,41 +171,6 @@ export default function LoginScreen() {
                 )}
               </Pressable>
 
-              {/* Quick Demo Credentials */}
-              <View style={styles.demoSection}>
-                <Text style={styles.demoSectionLabel}>QUICK DEMO ACCOUNTS</Text>
-                <Text style={styles.demoSectionHint}>
-                  Mock domain codes route to dev email or use bypass code 12345678
-                </Text>
-                <View style={styles.demoPillsWrap}>
-                  <Pressable
-                    style={styles.demoPill}
-                    onPress={() => selectDemoAccount('ellen.ripley@weyland.corp')}
-                  >
-                    <Text style={styles.demoPillText}>
-                      👩‍🚀 Ellen Ripley (Dummy Web SSO)
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.demoPill}
-                    onPress={() => selectDemoAccount('user@company.com')}
-                  >
-                    <Text style={styles.demoPillText}>
-                      👨‍💻 John Manayon (Engineering)
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.demoPill}
-                    onPress={() => selectDemoAccount('admin@vanguard.security')}
-                  >
-                    <Text style={styles.demoPillText}>
-                      🛡️ SecOps Administrator
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
             </View>
 
             {/* Zero-Trust Security Footer */}
@@ -389,43 +348,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  demoSection: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(59, 130, 246, 0.2)',
-  },
-  demoSectionLabel: {
-    color: CyberColors.textMuted,
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  demoSectionHint: {
-    color: CyberColors.textMuted,
-    fontSize: 10,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  demoPillsWrap: {
-    gap: 6,
-  },
-  demoPill: {
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    borderColor: 'rgba(59, 130, 246, 0.25)',
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: CyberRadius.sm,
-    cursor: 'pointer' as any,
-  },
-  demoPillText: {
-    color: CyberColors.textSecondary,
-    fontSize: 11.5,
-    fontWeight: '600',
-  },
+
   footer: {
     flexDirection: 'row',
     alignItems: 'center',

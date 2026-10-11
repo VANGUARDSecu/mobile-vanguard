@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -148,16 +147,6 @@ export default function VerifyOtpScreen({
     }
   };
 
-  const fillQuickTestCode = (code: string) => {
-    const chars = code.split('');
-    const newDigits = new Array(codeLength).fill('');
-    for (let i = 0; i < chars.length && i < codeLength; i++) {
-      newDigits[i] = chars[i];
-    }
-    setDigits(newDigits);
-    setErrorMessage(null);
-  };
-
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea}>
@@ -195,17 +184,7 @@ export default function VerifyOtpScreen({
                 {method !== 'totp' && <Text style={styles.highlightEmail}>{email}</Text>}
               </Text>
 
-              {/* Simulated Enterprise Account Notice */}
-              {(email.includes('vanguard.security') ||
-                email.includes('weyland.corp') ||
-                email.includes('company.com')) && (
-                <View style={styles.demoNoticeBanner}>
-                  <Text style={styles.demoNoticeTitle}>ℹ️ Simulated Enterprise Identity</Text>
-                  <Text style={styles.demoNoticeText}>
-                    Mock domains do not have public MX servers. In live SMTP mode, your verification code is delivered to your developer Gmail inbox. You can also tap below to auto-fill the instant dev bypass code!
-                  </Text>
-                </View>
-              )}
+
 
               {/* Status & Error Alerts */}
               {errorMessage ? (
@@ -311,30 +290,7 @@ export default function VerifyOtpScreen({
                 </View>
               )}
 
-              {/* Dev Test Quick Fill Helper */}
-              <View style={styles.testCodesWrap}>
-                <Text style={styles.testCodeLabel}>DEVELOPER BYPASS SHORTCUTS:</Text>
-                <View style={styles.testPillsRow}>
-                  <TouchableOpacity
-                    style={styles.testPill}
-                    onPress={() => fillQuickTestCode('12345678')}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel="Auto-Fill 12345678"
-                  >
-                    <Text style={styles.testPillText}>⚡ Auto-Fill 12345678</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.testPill}
-                    onPress={() => fillQuickTestCode('123456')}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel="Auto-Fill 123456"
-                  >
-                    <Text style={styles.testPillText}>⚡ Auto-Fill 123456</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+
 
               {/* Back to Sign In Link */}
               <Pressable
@@ -464,25 +420,7 @@ const styles = StyleSheet.create({
     color: CyberColors.cyan,
     fontWeight: '700',
   },
-  demoNoticeBanner: {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderColor: 'rgba(59, 130, 246, 0.35)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.sm,
-    padding: 10,
-    marginBottom: 14,
-  },
-  demoNoticeTitle: {
-    color: CyberColors.cyan,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 3,
-  },
-  demoNoticeText: {
-    color: CyberColors.textSecondary,
-    fontSize: 11,
-    lineHeight: 15,
-  },
+
   errorBanner: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderColor: CyberColors.red,
@@ -601,38 +539,7 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '600',
   },
-  testCodesWrap: {
-    marginTop: 18,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(59, 130, 246, 0.2)',
-    alignItems: 'center',
-  },
-  testCodeLabel: {
-    color: CyberColors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  testPillsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  testPill: {
-    backgroundColor: 'rgba(30, 41, 59, 0.7)',
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: CyberRadius.sm,
-    cursor: 'pointer' as any,
-  },
-  testPillText: {
-    color: CyberColors.cyan,
-    fontSize: 11,
-    fontWeight: '600',
-  },
+
   backBtn: {
     marginTop: 16,
     alignItems: 'center',

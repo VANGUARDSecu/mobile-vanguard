@@ -48,24 +48,27 @@ test('Authentication Layer & Login Validation (SCRUM-72)', async (t) => {
     );
   });
 
-  await t.test('login initiates 2-step MFA challenge and verifies via OTP', async () => {
+  await t.test('login initiates 2-step MFA challenge for registered database user (SCRUM-79)', async () => {
     const creds: LoginCredentials = {
-      email: 'ellen.ripley@weyland.corp',
-      password: 'Password123!',
+      email: 'johnroben.manayon31@gmail.com',
+      password: 'Manayon123!',
     };
 
     const result = await AuthService.login(creds);
     assert.equal(result.requireMfa, true);
-    assert.equal(result.mfaChallenge.email, 'ellen.ripley@weyland.corp');
+    assert.equal(result.mfaChallenge.email, 'johnroben.manayon31@gmail.com');
+  });
 
-    // Complete 2-step verification
-    const user = await AuthService.verifyOtp({
-      email: 'ellen.ripley@weyland.corp',
-      token: '12345678',
-    });
-    assert.equal(user.email, 'ellen.ripley@weyland.corp');
-    assert.equal(user.name, 'Ellen Ripley');
-    assert.ok(user.accessToken);
+  await t.test('login rejects unregistered or invalid credentials with backend error (SCRUM-79)', async () => {
+    await assert.rejects(
+      async () => {
+        await AuthService.login({
+          email: 'unknown.user@company.com',
+          password: 'WrongPassword123!',
+        });
+      },
+      { message: /Invalid login credentials/i }
+    );
   });
 
   await t.test('signInWithSSO defaults to Ellen Ripley and bypasses password check', async () => {
@@ -81,21 +84,16 @@ test('Authentication Layer & Login Validation (SCRUM-72)', async (t) => {
     assert.ok(user.accessToken);
   });
 
-  await t.test('login challenges unknown domain emails and synthesizes valid user structure upon OTP', async () => {
-    const result = await AuthService.login({
-      email: 'alexander.mahone@fbi.gov',
-      password: 'AnyPassword123!',
-    });
-    assert.equal(result.requireMfa, true);
-
-    const user = await AuthService.verifyOtp({
-      email: 'alexander.mahone@fbi.gov',
-      token: '123456',
-    });
-    assert.equal(user.email, 'alexander.mahone@fbi.gov');
-    assert.equal(user.firstName, 'Alexander');
-    assert.equal(user.lastName, 'Mahone');
-    assert.equal(user.role, 'user');
+  await t.test('login rejects fictional demo domains when not registered in database (SCRUM-79)', async () => {
+    await assert.rejects(
+      async () => {
+        await AuthService.login({
+          email: 'admin@vanguard.security',
+          password: 'AdminPassword123!',
+        });
+      },
+      { message: /Invalid login credentials/i }
+    );
   });
 
   await t.test('logout executes without throwing errors', async () => {

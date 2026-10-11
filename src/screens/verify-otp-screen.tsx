@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   Pressable,
+  TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -194,6 +195,18 @@ export default function VerifyOtpScreen({
                 {method !== 'totp' && <Text style={styles.highlightEmail}>{email}</Text>}
               </Text>
 
+              {/* Simulated Enterprise Account Notice */}
+              {(email.includes('vanguard.security') ||
+                email.includes('weyland.corp') ||
+                email.includes('company.com')) && (
+                <View style={styles.demoNoticeBanner}>
+                  <Text style={styles.demoNoticeTitle}>ℹ️ Simulated Enterprise Identity</Text>
+                  <Text style={styles.demoNoticeText}>
+                    Mock domains do not have public MX servers. In live SMTP mode, your verification code is delivered to your developer Gmail inbox. You can also tap below to auto-fill the instant dev bypass code!
+                  </Text>
+                </View>
+              )}
+
               {/* Status & Error Alerts */}
               {errorMessage ? (
                 <View style={styles.errorBanner}>
@@ -300,20 +313,26 @@ export default function VerifyOtpScreen({
 
               {/* Dev Test Quick Fill Helper */}
               <View style={styles.testCodesWrap}>
-                <Text style={styles.testCodeLabel}>DEV BYPASS CODES:</Text>
+                <Text style={styles.testCodeLabel}>DEVELOPER BYPASS SHORTCUTS:</Text>
                 <View style={styles.testPillsRow}>
-                  <Pressable
+                  <TouchableOpacity
                     style={styles.testPill}
                     onPress={() => fillQuickTestCode('12345678')}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Auto-Fill 12345678"
                   >
-                    <Text style={styles.testPillText}>Auto-Fill 12345678</Text>
-                  </Pressable>
-                  <Pressable
+                    <Text style={styles.testPillText}>⚡ Auto-Fill 12345678</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     style={styles.testPill}
                     onPress={() => fillQuickTestCode('123456')}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Auto-Fill 123456"
                   >
-                    <Text style={styles.testPillText}>Auto-Fill 123456</Text>
-                  </Pressable>
+                    <Text style={styles.testPillText}>⚡ Auto-Fill 123456</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -444,6 +463,25 @@ const styles = StyleSheet.create({
   highlightEmail: {
     color: CyberColors.cyan,
     fontWeight: '700',
+  },
+  demoNoticeBanner: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.sm,
+    padding: 10,
+    marginBottom: 14,
+  },
+  demoNoticeTitle: {
+    color: CyberColors.cyan,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  demoNoticeText: {
+    color: CyberColors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
   },
   errorBanner: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
@@ -588,6 +626,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: CyberRadius.sm,
+    cursor: 'pointer' as any,
   },
   testPillText: {
     color: CyberColors.cyan,

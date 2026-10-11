@@ -81,7 +81,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (91 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (95 automated tests):
 ```bash
 npm test
 ```
@@ -90,7 +90,7 @@ npm test
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
 | `src/__tests__/auth.test.ts` | Demo account credentials, email/password validation, 2-step MFA initiation, session persistence, logout |
-| `src/__tests__/otp-auth.test.ts` | Email OTP verification (8-digit/6-digit), Authenticator TOTP validation, resend cooldown timer, dev test bypass codes (`123456`/`12345678`) |
+| `src/__tests__/otp-auth.test.ts` | Email OTP verification (8-digit/6-digit), Authenticator TOTP validation, resend cooldown timer, dev test bypass codes (`123456`/`12345678`), mock enterprise domain routing (SCRUM-78) |
 | `src/__tests__/logout-auth.test.ts` | Sign out button touch handling, session clearance, backend `/auth/logout` dispatching, duplicate invocation guards, and unauthenticated root layout gating |
 | `src/__tests__/auth-responsiveness.test.ts` | Root layout `isInitializing` isolation preserving MFA submission state, sign out tactile feedback, and splash overlay non-blocking hit testing |
 | `src/__tests__/app-navigation.test.ts` | Anchored bottom tab bar layout (`bottom: 0`), pointer pass-through, non-obstructed session header, and Expo Starter banner removal |
@@ -129,10 +129,11 @@ The application features a complete Zero-Trust continuous authentication archite
 | `/auth/resend-otp` | `POST` | `{ email, type: 'email' }` | Dispatches fresh verification code with a 45-second cooldown throttle |
 | `/auth/logout` | `POST` | `{}` | Revokes active server session and invalidates session token |
 
-### Developer & Offline Testing Bypass Codes
+### Developer & Offline Testing Bypass Codes & Mock Domain Routing
 For local development, automated testing, or offline Expo Go preview:
-- **Email OTP Bypass**: Enter `123456` or `12345678` into the verification digit boxes.
-- **Auto-Fill Buttons**: Tap the quick-fill buttons on the verification card for 1-tap testing.
+- **Mock Domain Email Routing (SCRUM-78)**: Mock enterprise domains (`@vanguard.security`, `@weyland.corp`, `@company.com`, `@example.com`) have no public MX records. When running with live Gmail SMTP enabled on the backend, verification codes for these domains are routed directly to the developer's email inbox (`SMTP_USER`) with subject `[Dev OTP for <email>]` so they never bounce.
+- **Email OTP Bypass Codes**: Enter `123456` or `12345678` into the verification digit boxes for instant bypass without needing an active inbox.
+- **1-Tap Auto-Fill Shortcuts**: Tap the `⚡ Auto-Fill 12345678` or `⚡ Auto-Fill 123456` buttons directly on the verification card for instantaneous code entry.
 
 ### Pre-Configured Demo Accounts
 | Account | Email | Password | Role / Department | Notes |

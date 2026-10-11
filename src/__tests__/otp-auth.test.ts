@@ -104,4 +104,48 @@ test('Two-Step Verification (OTP / TOTP) & Security Flows (SCRUM-74)', async (t)
     assert.ok(res.message.length > 0);
     assert.equal(res.cooldown, 45);
   });
+
+  await t.test('demo domain (admin@vanguard.security) triggers MFA challenge (SCRUM-78)', async () => {
+    const res = await AuthService.login({
+      email: 'admin@vanguard.security',
+      password: 'AdminPassword123!',
+    });
+
+    assert.equal(res.requireMfa, true);
+    assert.equal(res.mfaChallenge.email, 'admin@vanguard.security');
+  });
+
+  await t.test('demo enterprise domains verify instantly using 12345678 dev bypass code (SCRUM-78)', async () => {
+    const user = await AuthService.verifyOtp({
+      email: 'admin@vanguard.security',
+      token: '12345678',
+      type: 'email',
+    });
+
+    assert.equal(user.email, 'admin@vanguard.security');
+    assert.equal(user.role, 'admin');
+    assert.ok(user.accessToken);
+  });
+
+  await t.test('mock domain ellen.ripley@weyland.corp verifies instantly with 123456 (SCRUM-78)', async () => {
+    const user = await AuthService.verifyOtp({
+      email: 'ellen.ripley@weyland.corp',
+      token: '123456',
+      type: 'email',
+    });
+
+    assert.equal(user.email, 'ellen.ripley@weyland.corp');
+    assert.ok(user.accessToken);
+  });
+
+  await t.test('resendOtp succeeds for mock enterprise domain (SCRUM-78)', async () => {
+    const res = await AuthService.resendOtp({
+      email: 'admin@vanguard.security',
+      type: 'email',
+    });
+
+    assert.equal(res.success, true);
+    assert.ok(res.message.length > 0);
+  });
 });
+

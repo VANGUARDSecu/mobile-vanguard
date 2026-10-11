@@ -180,6 +180,9 @@ export default function LoginScreen() {
               {/* Quick Demo Credentials */}
               <View style={styles.demoSection}>
                 <Text style={styles.demoSectionLabel}>QUICK DEMO ACCOUNTS</Text>
+                <Text style={styles.demoSectionHint}>
+                  Mock domain codes route to dev email or use bypass code 12345678
+                </Text>
                 <View style={styles.demoPillsWrap}>
                   <Pressable
                     style={styles.demoPill}
@@ -397,8 +400,14 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '700',
     letterSpacing: 0.8,
-    marginBottom: 8,
+    marginBottom: 4,
     textAlign: 'center',
+  },
+  demoSectionHint: {
+    color: CyberColors.textMuted,
+    fontSize: 10,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   demoPillsWrap: {
     gap: 6,

@@ -126,7 +126,9 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, SSO, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
 - `src/app/login.tsx`: Cyber Dark login screen with email/password validation, show/hide password toggle, Vanguard SSO button, and quick demo account selector.
-- `src/app/index.tsx`: Main application launchpad with authentication guard, active user status bar, workspace switcher, and connected apps section.
+- `src/app/index.tsx`: Clean route mounting `MyAppsScreen` as the primary launchpad entry point.
+- `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
+- `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar using Cyber Dark background and cyan accent glows, mapping the default route to the Vanguard Applications portal.
 - `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards).
 - `src/components/apps/`: Reusable applications directory UI components:
   - `PulseDot`: Animated pulsing green status LED indicator.
@@ -139,4 +141,5 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
   - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
   - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
   - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
-- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`).
+

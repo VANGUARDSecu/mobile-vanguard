@@ -1,56 +1,94 @@
-# Welcome to your Expo app 👋
+# Vanguard Mobile (`mobile-vanguard`)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, delivering Zero-Trust Identity, SSO Application Launchpad, and Authenticator Vault capabilities for iOS, Android, and Web.
 
-## Get started
+---
 
-1. Install dependencies
+## 🛠️ Prerequisites & Requirements
 
+- **Node.js**: `v20.x` or `v22.x`+ (LTS recommended, tested on `v24.19.x`)
+- **Package Manager**: `npm` (v10+)
+- **Expo CLI**: bundled via `npx expo`
+- **Mobile Platforms**:
+  - iOS Simulator (macOS + Xcode) or Physical Device via Expo Go
+  - Android Emulator (Android Studio SDK) or Physical Device via Expo Go
+  - Web Browser (Chrome, Firefox, Safari, Edge)
+
+---
+
+## 📦 Installation & Setup
+
+1. **Clone & Navigate**:
+   ```bash
+   cd mobile-vanguard
+   ```
+
+2. **Install Dependencies**:
    ```bash
    npm install
    ```
 
-2. Start the app
+   *Core Dependencies included:*
+   - `expo`: `~57.0.24`
+   - `expo-router`: `~57.0.22`
+   - `expo-web-browser`: `~57.0.3`
+   - `expo-linking`: `~57.0.10`
+   - `@react-native-async-storage/async-storage`: `2.2.0`
+   - `react-native`: `0.86.3`
+   - `react`: `19.2.3`
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## 🚀 Running the Application
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
+### Development Server & Bundler
+Start the Metro bundler:
 ```bash
-npm run reset-project
+npm start
+# or
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Platform-Specific Launch Targets
+- **Web Preview**:
+  ```bash
+  npm run web
+  ```
+- **Android Emulator / Device**:
+  ```bash
+  npm run android
+  ```
+- **iOS Simulator**:
+  ```bash
+  npm run ios
+  ```
 
-### Other setup steps
+---
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## 🧪 Testing & Code Quality
 
-## Learn more
+### Automated Unit Test Suite
+Run the test suite verifying data models, deduplication logic, and storage services:
+```bash
+npm test
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+### Static Analysis & Type Checking
+- Run ESLint:
+  ```bash
+  npm run lint
+  ```
+- Run TypeScript Type Check:
+  ```bash
+  npx tsc --noEmit
+  ```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 🏛️ Architecture & Modules
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
+- `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data and deduplication safeguards.
+- `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, and request queueing.
+- `src/components/`: Reusable cyber-themed UI components and navigation bars.
+- `src/__tests__/`: Automated unit and integration test specifications.

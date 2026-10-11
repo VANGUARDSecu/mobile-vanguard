@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
+import type {
   SaaSApp,
   UserConnectedApp,
   AppAccessRequest,
   PersonalVaultItem,
   PersonalAppInput,
   AppItemCategory,
-} from '@/models/apps.models';
+} from '../models/apps.models.ts';
 
 const STORAGE_KEYS = {
   PERSONAL_APPS: '@vanguard_personal_apps',
@@ -87,14 +87,14 @@ export const DEFAULT_CONNECTED_APPS: UserConnectedApp[] = [
     clientName: 'Acme Dummy Web',
     userEmail: 'user@company.com',
     protocol: 'OIDC 1.0 PKCE',
-    scopes: ['openid', 'profile', 'email'],
-    redirectUri: 'http://localhost:4201/callback',
+    scopes: ['openid', 'profile', 'email', 'roles', 'offline_access'],
+    redirectUri: 'http://localhost:4201/auth/callback',
     originUrl: 'http://localhost:4201',
     status: 'Connected',
     connectedAt: '2026-09-27T08:00:00.000Z',
-    lastActiveAt: 'Just now',
+    lastActiveAt: 'Active Session • Just now',
     icon: '🌐',
-    description: 'Acme external demo portal authorized for single sign-on federation',
+    description: 'Acme Dummy Web portal integrated via Vanguard Single Sign-On and OpenID Connect 1.0 PKCE authentication.',
   },
 ];
 
@@ -271,11 +271,41 @@ export class AppsStorageService {
   /**
    * Active SSO Connected Apps (SCRUM-57 & SCRUM-58)
    */
+  static deduplicateConnectedApps(apps: UserConnectedApp[]): UserConnectedApp[] {
+    const dedupMap = new Map<string, UserConnectedApp>();
+    for (const app of apps) {
+      if (app.status === 'Disconnected') continue;
+      const key = (app.originUrl || app.clientName || app.clientId)
+        .toLowerCase()
+        .trim()
+        .replace(/\/$/, '');
+      if (!dedupMap.has(key)) {
+        dedupMap.set(key, app);
+      } else {
+        const existing = dedupMap.get(key)!;
+        if (existing.status !== 'Connected' && app.status === 'Connected') {
+          dedupMap.set(key, app);
+        } else if (app.lastActiveAt && (!existing.lastActiveAt || app.lastActiveAt > existing.lastActiveAt)) {
+          dedupMap.set(key, { ...existing, ...app });
+        }
+      }
+    }
+    return Array.from(dedupMap.values());
+  }
+
+  static getBackendApiUrl(): string {
+    if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
+      return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
+    }
+    return 'http://localhost:3000';
+  }
+
   static async getConnectedApps(): Promise<UserConnectedApp[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.CONNECTED_APPS);
       if (data) {
-        return JSON.parse(data);
+        const parsed: UserConnectedApp[] = JSON.parse(data);
+        return this.deduplicateConnectedApps(parsed);
       }
       await AsyncStorage.setItem(STORAGE_KEYS.CONNECTED_APPS, JSON.stringify(DEFAULT_CONNECTED_APPS));
       return DEFAULT_CONNECTED_APPS;
@@ -284,10 +314,69 @@ export class AppsStorageService {
     }
   }
 
-  static async disconnectConnectedApp(clientId: string): Promise<void> {
+  static async saveConnectedApps(apps: UserConnectedApp[]): Promise<void> {
+    try {
+      const deduped = this.deduplicateConnectedApps(apps);
+      await AsyncStorage.setItem(STORAGE_KEYS.CONNECTED_APPS, JSON.stringify(deduped));
+    } catch {
+      // Ignored
+    }
+  }
+
+  static async syncConnectedAppsWithBackend(email?: string): Promise<UserConnectedApp[]> {
+    const currentLocal = await this.getConnectedApps();
+    try {
+      const baseUrl = this.getBackendApiUrl();
+      const url = email
+        ? `${baseUrl}/oauth/connected-apps?email=${encodeURIComponent(email)}`
+        : `${baseUrl}/oauth/connected-apps`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const body = await response.json();
+        if (body?.success && Array.isArray(body.connectedApps) && body.connectedApps.length > 0) {
+          const merged = this.deduplicateConnectedApps([...body.connectedApps, ...currentLocal]);
+          await this.saveConnectedApps(merged);
+          return merged;
+        }
+      }
+    } catch {
+      // Gracefully fall back to local storage if backend is unreachable or offline
+    }
+    return currentLocal;
+  }
+
+  static async disconnectConnectedApp(clientId: string, email?: string): Promise<void> {
     const apps = await this.getConnectedApps();
-    const updated = apps.filter((a) => a.clientId !== clientId);
-    await AsyncStorage.setItem(STORAGE_KEYS.CONNECTED_APPS, JSON.stringify(updated));
+    const target = apps.find((a) => a.clientId === clientId);
+    const targetOrigin = target ? (target.originUrl || '').toLowerCase().trim().replace(/\/$/, '') : '';
+
+    const updated = apps.filter((a) => {
+      const origin = (a.originUrl || '').toLowerCase().trim().replace(/\/$/, '');
+      return a.clientId !== clientId && (!targetOrigin || origin !== targetOrigin);
+    });
+
+    await this.saveConnectedApps(updated);
+
+    // Asynchronously notify backend revocation if online
+    try {
+      const baseUrl = this.getBackendApiUrl();
+      const url = email
+        ? `${baseUrl}/oauth/connected-apps/${encodeURIComponent(clientId)}?email=${encodeURIComponent(email)}`
+        : `${baseUrl}/oauth/connected-apps/${encodeURIComponent(clientId)}`;
+      fetch(url, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // Non-blocking
+    }
   }
 
   /**

@@ -16,9 +16,21 @@ Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, 
 
 ---
 
+## ⚙️ Environment Configuration
+
+The application works out-of-the-box with offline local storage and pre-seeded enterprise/connected SSO applications. To connect to a live Vanguard backend server (for live SSO session synchronization and OAuth connected app inspection):
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `EXPO_PUBLIC_API_URL` | Vanguard Identity Provider backend URL | `http://localhost:3000` |
+
+*Note for physical devices or Android emulators: Set `EXPO_PUBLIC_API_URL=http://<YOUR_LAN_IP>:3000` (or `http://10.0.2.2:3000` on Android emulator).*
+
+---
+
 ## 📦 Installation & Setup
 
-1. **Clone & Navigate**:
+1. **Navigate to Repository**:
    ```bash
    cd mobile-vanguard
    ```
@@ -33,6 +45,7 @@ Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, 
    - `expo-router`: `~57.0.22`
    - `expo-web-browser`: `~57.0.3`
    - `expo-linking`: `~57.0.10`
+   - `expo-clipboard`: `~57.0.2`
    - `@react-native-async-storage/async-storage`: `2.2.0`
    - `react-native`: `0.86.3`
    - `react`: `19.2.3`
@@ -68,7 +81,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Unit Test Suite
-Run the test suite verifying data models, deduplication logic, and storage services:
+Run the test suite verifying data models, connected SSO apps, deduplication logic, and storage services:
 ```bash
 npm test
 ```
@@ -88,11 +101,14 @@ npm test
 ## 🏛️ Architecture & Modules
 
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
-- `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data and deduplication safeguards.
-- `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, and request queueing.
+- `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
+- `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing.
 - `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards).
 - `src/components/apps/`: Reusable applications directory UI components:
+  - `PulseDot`: Animated pulsing green status LED indicator.
+  - `ConnectedAppCard`: Active SSO integration card displaying live connection pill, protocol tag, client ID with copy action, redirect URI, authorized scopes chips, last active timestamp, and launch/disconnect actions.
+  - `ConnectedAppsSection`: Header banner with pulsing active count badge (`X Active Connection(s)`), live sync button, and responsive connected client card list.
   - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
   - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
   - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
-- `src/__tests__/`: Automated unit and integration test specifications.
+- `src/__tests__/`: Automated unit and integration test specifications (`apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`).

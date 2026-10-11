@@ -42,6 +42,7 @@ interface AppsContextType {
     icon?: string;
   }) => Promise<AppAccessRequest>;
   disconnectConnectedApp: (clientId: string) => Promise<void>;
+  syncConnectedApps: () => Promise<void>;
   isLoading: boolean;
   refreshApps: () => Promise<void>;
 }
@@ -76,10 +77,24 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       setConnectedApps(cApps);
       setAccessRequests(requests);
       setVaultCredentials(vault);
+
+      // Attempt live SSO connected apps sync from backend in the background
+      AppsStorageService.syncConnectedAppsWithBackend().then((synced) => {
+        setConnectedApps(synced);
+      }).catch(() => {});
     } catch {
       // Ignored
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  const syncConnectedApps = useCallback(async () => {
+    try {
+      const synced = await AppsStorageService.syncConnectedAppsWithBackend();
+      setConnectedApps(synced);
+    } catch {
+      // Graceful fallback
     }
   }, []);
 
@@ -119,18 +134,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   // SCRUM-58: Strict deduplication of connected SSO client applications
   const activeConnectedApps = useMemo<UserConnectedApp[]>(() => {
-    const seen = new Set<string>();
-    const deduped: UserConnectedApp[] = [];
-
-    for (const conn of connectedApps) {
-      if (conn.status === 'Disconnected') continue;
-      const key = (conn.originUrl || conn.clientId).toLowerCase().trim();
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduped.push(conn);
-      }
-    }
-    return deduped;
+    return AppsStorageService.deduplicateConnectedApps(connectedApps);
   }, [connectedApps]);
 
   // Access Requests Count
@@ -222,6 +226,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       deletePersonalApp,
       submitAppRequest,
       disconnectConnectedApp,
+      syncConnectedApps,
       isLoading,
       refreshApps: loadData,
     }),
@@ -243,6 +248,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       deletePersonalApp,
       submitAppRequest,
       disconnectConnectedApp,
+      syncConnectedApps,
       isLoading,
       loadData,
     ]

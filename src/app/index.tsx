@@ -7,15 +7,21 @@ import {
   Pressable,
   StyleSheet,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 
 import { useApps } from '@/context/apps-context';
-import { CategoryFilterBar, AppCard, EmptyAppsState } from '@/components/apps';
+import {
+  CategoryFilterBar,
+  AppCard,
+  EmptyAppsState,
+  ConnectedAppsSection,
+} from '@/components/apps';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
-import { SaaSApp } from '@/models/apps.models';
+import { SaaSApp, UserConnectedApp } from '@/models/apps.models';
 
 export default function ApplicationsScreen() {
   const {
@@ -25,13 +31,17 @@ export default function ApplicationsScreen() {
     setSelectedCategory,
     activeAppsList,
     filteredApps,
+    activeConnectedApps,
     findCredentialsForDomain,
     deletePersonalApp,
+    disconnectConnectedApp,
+    syncConnectedApps,
     refreshApps,
     isLoading,
   } = useApps();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [syncingSso, setSyncingSso] = useState(false);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -55,6 +65,57 @@ export default function ApplicationsScreen() {
         Alert.alert('Error', `Could not open ${app.launchUrl}`);
       });
     }
+  };
+
+  const handleLaunchConnectedApp = async (app: UserConnectedApp) => {
+    if (!app.originUrl) {
+      Alert.alert('Unable to Launch', 'No target origin URL configured for this connected client.');
+      return;
+    }
+
+    try {
+      await WebBrowser.openBrowserAsync(app.originUrl, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+        toolbarColor: CyberColors.background,
+      });
+    } catch {
+      Linking.openURL(app.originUrl).catch(() => {
+        Alert.alert('Error', `Could not open ${app.originUrl}`);
+      });
+    }
+  };
+
+  const handleDisconnectConnectedApp = (clientId: string, clientName: string) => {
+    const confirmationMessage = `This will revoke active Single Sign-On session access and OAuth authorization for ${clientName} (${clientId}).`;
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm) {
+      const confirmed = window.confirm(`Disconnect ${clientName}?\n\n${confirmationMessage}`);
+      if (confirmed) {
+        disconnectConnectedApp(clientId);
+      }
+      return;
+    }
+
+    Alert.alert(
+      `Disconnect ${clientName}?`,
+      confirmationMessage,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            await disconnectConnectedApp(clientId);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSyncSso = async () => {
+    setSyncingSso(true);
+    await syncConnectedApps();
+    setSyncingSso(false);
   };
 
   const handleActionPress = () => {
@@ -140,6 +201,15 @@ export default function ApplicationsScreen() {
               </Text>
             </Pressable>
           </View>
+
+          {/* Active SSO Integrations & Connected Applications (SCRUM-64) */}
+          <ConnectedAppsSection
+            connectedApps={activeConnectedApps}
+            onLaunch={handleLaunchConnectedApp}
+            onDisconnect={handleDisconnectConnectedApp}
+            onSync={handleSyncSso}
+            isSyncing={syncingSso}
+          />
 
           {/* Category Filter Bar */}
           <CategoryFilterBar

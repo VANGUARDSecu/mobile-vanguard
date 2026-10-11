@@ -81,7 +81,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (91 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, and end-to-end workflows (99 automated tests):
 ```bash
 npm test
 ```
@@ -89,6 +89,7 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
+| `src/__tests__/authenticator-cyber-theme.test.ts` | Design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, glass cards), reusable cyber components, Vault CRUD, RFC 6238 TOTP generation, Base32 validation, and screen navigation transitions (SCRUM-17) |
 | `src/__tests__/auth.test.ts` | Supabase database credentials, email/password validation, rejection of unregistered accounts, 2-step MFA challenge |
 | `src/__tests__/otp-auth.test.ts` | Email OTP verification, Authenticator TOTP validation, resend cooldown timer, rejection of invalid/bypass codes (SCRUM-79) |
 | `src/__tests__/logout-auth.test.ts` | Sign out button touch handling, session clearance, backend `/auth/logout` dispatching, duplicate invocation guards, and unauthenticated root layout gating |
@@ -113,6 +114,48 @@ npm test
   ```bash
   npx tsc --noEmit
   ```
+
+---
+
+## 🛡️ Authenticator Vault & Dark Cyber Theme System (SCRUM-17)
+
+The mobile application features a standalone air-gapped **Authenticator Vault** implementing zero-trust local hardware attestation, continuous TOTP code rotation, and a comprehensive cyber dark design system mirroring Vanguard's web identity portal.
+
+### 🎨 Cyber Dark Design Tokens (`src/constants/cyber-theme.ts`)
+- **Base Background**: `#0a0e17`
+- **Surface Cards**: `#0f172a`, secondary `#131d31`, hover `#1e293b`
+- **Cyber Accents**: `#00e5ff` (Cyan), `#10b981` (Emerald), `#6366f1` (Indigo), `#f59e0b` (Amber), `#ef4444` (Red)
+- **Glassmorphism**: Translucent card backgrounds (`rgba(15, 23, 42, 0.75)`), subtle borders (`rgba(30, 41, 59, 0.8)`), cyan glows, and layered modals.
+
+### 🧩 Reusable Cyber UI Components (`src/components/cyber/`)
+1. **`CyberButton`**: Multi-variant interactive buttons (`primary`, `secondary`, `success`, `danger`, `ghost`, `outline`) with glowing shadows, accessible touch feedback, size presets (`sm`, `md`, `lg`), and loading indicators.
+2. **`CyberCard`**: Translucent glassmorphic card containers (`glass`, `default`, `glow`, `accent`, `danger`) with optional header/footer slots and clickability.
+3. **`Badge`**: Status and tag badges (`cyan`, `green`, `indigo`, `amber`, `red`, `muted`) with glowing borders and rounded pill geometry.
+4. **`StatusIndicator`**: Real-time status LED indicators with pulsating animation loops (`active`, `synced`, `pending`, `offline`, `error`, `warning`).
+5. **`ModalHeader`**: Standardized cyber modal and screen header with icon, title, subtitle, status badge, and touchable close trigger.
+
+### 🔑 Authenticator Vault Screens & Navigation
+1. **Vault Screen (`src/screens/vault-screen.tsx`)**:
+   - Live 6-digit TOTP codes with 30-second rotation countdown bar.
+   - One-tap clipboard copy with tactile feedback (`COPIED! ✓`).
+   - Real-time search filter by account identifier or service issuer.
+   - Quick navigation triggers to Add Account and Security Settings.
+2. **Account Detail Screen (`src/screens/account-detail-screen.tsx`)**:
+   - Comprehensive token specifications (Algorithm, Digits, Period, Storage).
+   - Base32 secret key inspection with toggleable mask (`•••• ••••`) and copy action.
+   - Emergency recovery codes preview.
+   - Token deletion workflow with confirmation guard.
+3. **Add Account Screen (`src/screens/add-account-screen.tsx`)**:
+   - **Manual Entry**: Account identifier, issuer, Base32 key validation (RFC 4648), icon selector, and algorithm options (`SHA1`, `SHA256`).
+   - **QR Scanner View**: Cyber camera viewfinder simulation with simulated QR barcode decode capability.
+4. **Security Settings Screen (`src/screens/security-settings-screen.tsx`)**:
+   - Hardware enclave zero-trust attestation diagnostics.
+   - Biometrics toggle (Face ID / Touch ID / Fingerprint lock).
+   - Inactivity auto-lock selectors (`Instant`, `1 min`, `5 min`, `15 min`).
+   - Clipboard auto-clear timeout (`15s`, `30s`, `60s`).
+   - Encrypted JSON vault export & emergency factory wipe.
+5. **Screen Transitions (`src/screens/authenticator-navigator.tsx`)**:
+   - Smooth animated transitions across `VaultScreen` ⇄ `AccountDetailScreen` ⇄ `AddAccountScreen` ⇄ `SecuritySettingsScreen`.
 
 ---
 
@@ -144,29 +187,29 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 
 - `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
+- `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, and `AuthenticatorScreenName`.
 - `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, and AsyncStorage token/user session management.
+- `src/services/vault.service.ts`: Standalone local Authenticator Vault service with RFC 6238 TOTP computation, Base32 key validation, local storage persistence, and zero external cloud database dependencies.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
 - `src/services/app-launcher.service.ts`: Centralized application launch dispatcher integrating Expo's in-app browser (`expo-web-browser`) and external linking (`expo-linking`) with Cyber Dark theme styling, URL normalization, and personal vault credential matching.
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
+- `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards, shadows, radius).
+- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`).
+- `src/screens/vault-screen.tsx`: Air-gapped TOTP authenticator screen with live codes, countdown timer, and search filter.
+- `src/screens/account-detail-screen.tsx`: Authenticator detail screen with secret key inspection and token removal.
+- `src/screens/add-account-screen.tsx`: Manual Base32 token entry and simulated camera QR scanner.
+- `src/screens/security-settings-screen.tsx`: Biometrics lock, inactivity timeout, clipboard sanitization, and encrypted backup export.
+- `src/screens/authenticator-navigator.tsx`: Screen coordinator managing clean transitions across vault screens.
 - `src/screens/verify-otp-screen.tsx`: Cyber Dark 2-Step Verification screen with auto-advancing digit inputs, paste support, timer countdown, and test bypass chips.
+- `src/app/vault.tsx`: Route mounting `AuthenticatorNavigator`.
 - `src/app/verify-otp.tsx`: Route entry point mounting `VerifyOtpScreen`.
 - `src/app/login.tsx`: Cyber Dark login screen with email/password validation, show/hide password toggle, and seamless 2-step verification transition.
 - `src/app/index.tsx`: Clean route mounting `MyAppsScreen` as the primary launchpad entry point.
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
-- `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar using Cyber Dark background and cyan accent glows, mapping the default route to the Vanguard Applications portal.
-- `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards).
-- `src/components/apps/`: Reusable applications directory UI components:
-  - `PulseDot`: Animated pulsing green status LED indicator.
-  - `ConnectedAppCard`: Active SSO integration card displaying live connection pill, protocol tag, client ID with copy action, redirect URI, authorized scopes chips, last active timestamp, and launch/disconnect actions.
-  - `ConnectedAppsSection`: Header banner with pulsing active count badge (`X Active Connection(s)`), live sync button, and responsive connected client card list.
-  - `AddPersonalAppModal`: Slide-up cyber bottom sheet modal for personal application creation with quick presets (Figma, Facebook, GitHub, Notion, Google, Custom), URL format normalization, category selector, and error alerts.
-  - `RequestAppModal`: Modal bottom sheet for enterprise organization mode allowing users to request access to corporate SaaS tools (Figma Enterprise, Salesforce CRM, Snowflake, Datadog, Splunk) with business justification and live governance queueing.
-  - `RequestCard`: Governance queue card rendering status-based visual themes (`Pending Approval`, `Approved`, `Rejected`), protocol tags, audit dates, disabled launch guards, zero-trust assertion blocked badges, and admin rejection notes.
-  - `RequestedAppsSection`: Organization queue section with counter badge (`X Pending Review`) and reactive list of submitted access requests.
-  - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
-  - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
-  - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
-- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
+- `src/components/apps/`: Reusable applications directory UI components (`PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
+- `src/__tests__/`: Automated unit and integration test specifications (`authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+
 
 

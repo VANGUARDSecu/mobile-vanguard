@@ -9,3 +9,10 @@ export {
   AddPersonalAppModalProps,
   PersonalAppPreset,
 } from './add-personal-app-modal';
+export {
+  RequestAppModal,
+  RequestAppModalProps,
+  RequestAppInput,
+  ENTERPRISE_APP_SUGGESTIONS,
+} from './request-app-modal';
+

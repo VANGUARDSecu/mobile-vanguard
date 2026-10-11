@@ -23,6 +23,8 @@ import {
   EmptyAppsState,
   ConnectedAppsSection,
   AddPersonalAppModal,
+  RequestAppModal,
+  RequestAppInput,
 } from '@/components/apps';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { SaaSApp, UserConnectedApp, PersonalAppInput } from '@/models/apps.models';
@@ -42,6 +44,7 @@ export default function ApplicationsScreen() {
     deletePersonalApp,
     disconnectConnectedApp,
     syncConnectedApps,
+    submitAppRequest,
     refreshApps,
     isLoading,
   } = useApps();
@@ -49,6 +52,7 @@ export default function ApplicationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [syncingSso, setSyncingSso] = useState(false);
   const [showAddPersonalAppModal, setShowAddPersonalAppModal] = useState(false);
+  const [showRequestAppModal, setShowRequestAppModal] = useState(false);
 
   if (authLoading) {
     return (
@@ -142,15 +146,16 @@ export default function ApplicationsScreen() {
     if (isPersonalWorkspace) {
       setShowAddPersonalAppModal(true);
     } else {
-      Alert.alert(
-        'Request Application Access',
-        'Enterprise access request modal will open (Ticket SCRUM-66).'
-      );
+      setShowRequestAppModal(true);
     }
   };
 
   const handleAddPersonalApp = async (input: PersonalAppInput) => {
     await addPersonalApp(input);
+  };
+
+  const handleRequestApp = async (input: RequestAppInput) => {
+    await submitAppRequest(input);
   };
 
   return (
@@ -298,6 +303,13 @@ export default function ApplicationsScreen() {
         visible={showAddPersonalAppModal}
         onClose={() => setShowAddPersonalAppModal(false)}
         onAdd={handleAddPersonalApp}
+      />
+
+      {/* Request Enterprise Application Modal (SCRUM-66) */}
+      <RequestAppModal
+        visible={showRequestAppModal}
+        onClose={() => setShowRequestAppModal(false)}
+        onSubmit={handleRequestApp}
       />
     </View>
   );

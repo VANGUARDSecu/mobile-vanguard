@@ -410,6 +410,14 @@ export class AppsStorageService {
     }
   }
 
+  static async saveAccessRequests(requests: AppAccessRequest[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(requests));
+    } catch {
+      // Ignored
+    }
+  }
+
   static async submitAccessRequest(input: {
     appName: string;
     justification: string;
@@ -437,7 +445,7 @@ export class AppsStorageService {
     };
 
     const updated = [newReq, ...requests];
-    await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(updated));
+    await this.saveAccessRequests(updated);
     return newReq;
   }
 

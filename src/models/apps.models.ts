@@ -78,3 +78,11 @@ export interface PersonalAppInput {
   description?: string;
   icon?: string;
 }
+
+export const ENTERPRISE_APP_SUGGESTIONS = [
+  { name: 'Figma Enterprise', category: 'collaboration' as const, icon: '🎨' },
+  { name: 'Salesforce CRM', category: 'collaboration' as const, icon: '💼' },
+  { name: 'Snowflake Data Cloud', category: 'cloud' as const, icon: '❄️' },
+  { name: 'Datadog APM', category: 'developer' as const, icon: '🐶' },
+  { name: 'Splunk Enterprise', category: 'cloud' as const, icon: '🔍' },
+];

@@ -26,12 +26,14 @@ import biometricService, { BiometricType } from '@/services/biometric-auth.servi
 export interface SecuritySettingsScreenProps {
   onClose: () => void;
   onResetVault?: () => void;
+  onOpenPushHarness?: () => void;
   testID?: string;
 }
 
 export function SecuritySettingsScreen({
   onClose,
   onResetVault,
+  onOpenPushHarness,
   testID = 'security-settings-screen',
 }: SecuritySettingsScreenProps) {
   const [settings, setSettings] = useState<VaultSecuritySettings>({
@@ -257,6 +259,25 @@ export function SecuritySettingsScreen({
                 </TouchableOpacity>
               ))}
             </View>
+          </CyberCard>
+
+          {/* Push MFA Sandbox (SCRUM-21) */}
+          <CyberCard variant="glass" style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>PUSH MFA VERIFICATION SANDBOX</Text>
+              <Badge label="LOCAL HARNESS" variant="cyan" size="sm" />
+            </View>
+            <Text style={styles.settingDesc}>
+              Test out-of-band push authorization prompts, contextual metadata cards, number matching, and biometric approvals offline.
+            </Text>
+            <CyberButton
+              title="Open Push Sandbox 🚀"
+              variant="outline"
+              size="md"
+              onPress={onOpenPushHarness}
+              style={styles.exportBtn}
+              testID="open-push-sandbox-btn"
+            />
           </CyberCard>
 
           {/* Vault Backup Export */}

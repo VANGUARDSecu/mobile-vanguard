@@ -6,3 +6,4 @@ export * from './modal-header';
 export * from './circular-countdown';
 export * from './manual-entry-modal';
 export * from './vault-lock-screen';
+export * from './push-approval-modal';

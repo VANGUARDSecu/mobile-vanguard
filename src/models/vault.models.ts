@@ -4,7 +4,8 @@ export type AuthenticatorScreenName =
   | 'vault'
   | 'account-detail'
   | 'add-account'
-  | 'security-settings';
+  | 'security-settings'
+  | 'push-harness';
 
 export interface TotpAccount {
   id: string;

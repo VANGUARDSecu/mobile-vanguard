@@ -85,7 +85,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication (Face ID / Fingerprint / Passcode fallback), AppState auto-locking, and end-to-end workflows (126 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, and end-to-end workflows (136 automated tests):
 ```bash
 npm test
 ```
@@ -93,6 +93,7 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
+| `src/__tests__/push-mfa.test.ts` | Out-of-band push verification modal, rich contextual login metadata (app, IP, location, device, 60s countdown), biometric prompt approval, 2-digit number matching challenge (MFA fatigue protection), deny & fraud reporting, request expiration, and offline test harness presets (SCRUM-21) |
 | `src/__tests__/biometric-auth.test.ts` | Native biometric authentication (Face ID & Fingerprint) capability detection, biometric prompt challenge execution, device passcode fallback, launch requirement settings persistence, and AppState background/foreground vault auto-locking lifecycle simulation (SCRUM-20) |
 | `src/__tests__/offline-totp-generator.test.ts` | Offline RFC 6238 TOTP engine, standard test vector validation against Google Authenticator, circular countdown color shift warnings (Cyan/Amber/Red), Base32 decoding, clock drift tolerance (±1 window), and tap-to-copy code formatting (SCRUM-19) |
 | `src/__tests__/secure-vault-keychain.test.ts` | Hardware-backed iOS Keychain & Android Keystore integration (`expo-secure-store`), AES-GCM 256-bit envelope encryption/decryption, zero plaintext secret leakage, mock keychain adapters, and complete CRUD operations (`saveAccount`, `getAccounts`, `getAccountById`, `updateAccount`, `deleteAccount`) (SCRUM-18) |
@@ -264,6 +265,49 @@ The Authenticator Vault implements native biometric authentication and automatic
 
 ---
 
+## 📲 Out-of-Band Push Notification MFA Approval UI (SCRUM-21)
+
+The application features an out-of-band push authentication verification system providing real-time login authorization with contextual threat intelligence and MFA fatigue protection:
+
+### 1. High-Priority Push Verification Modal (`PushApprovalModal`)
+- **Urgent Cyber Styling**: High-priority modal sheet overlay displaying urgent security headers and live pulsing status indicators.
+- **Rich Contextual Metadata**:
+  - **Target Application**: Icon, application name, category (`Cloud Infrastructure`, `Network Security`, etc.), and zero-trust policy badge.
+  - **Approximate Geolocation**: National flag emoji, city, region, and country name.
+  - **Originating IP Address**: Formatted monospace IP address.
+  - **Client Device & Environment**: Operating system, browser, and client software info (e.g. `Chrome 128 on macOS Sequoia`).
+  - **Timestamp**: Exact dispatch time.
+  - **Validity Window & Countdown**: 60-second animated validity window with dynamic warning color shift (`>30s` Cyan, `≤30s` Amber, `≤15s` Red) and automatic timeout transition to `EXPIRED`.
+
+### 2. Number Matching Challenge (MFA Fatigue & Push-Bombing Prevention)
+- When enabled by corporate access policy, the prompt requires the user to select the authentic 2-digit number (e.g. `74`, `42`) displayed on their browser sign-in screen.
+- Presents 3 candidate number options to prevent accidental or blinded approvals.
+- Blocks approval with immediate inline error alerting if the user attempts to approve without selecting or with a mismatched code.
+
+### 3. Interactive Actions & Biometric Authorization
+- **Approve Login ✓ (Green Button)**:
+  - Triggers native biometric authentication challenge (`FaceID`, `Fingerprint`, or device passcode fallback) before authorization.
+  - Validates number matching (if required) and records zero-trust verification.
+- **Deny & Report Fraud 🚨 (Red Button)**:
+  - Immediately refuses access, flags the request as a fraudulent compromise attempt, logs incident data to the security audit trail, and dismisses the prompt.
+- **Deny without Reporting**:
+  - Allows standard refusal when the request was simply canceled or not needed.
+
+### 4. Air-Gapped Developer Test Harness & Sandbox (`PushTestHarnessScreen`)
+- Accessible from `SecuritySettingsScreen` via **"Open Push Sandbox 🚀"**.
+- **Pre-Configured One-Tap Scenarios**:
+  - `AWS Management Console`: Standard biometric authorization from San Francisco, CA.
+  - `Corporate Zero-Trust Gateway`: Mandatory 2-digit number verification (`Code: 74`) from London, UK.
+  - `Vanguard Identity Admin Portal`: High-privilege admin console challenge (`Code: 42`) from Frankfurt, Germany.
+  - `Suspicious Foreign Login Attempt`: Anomalous connection from TOR exit node to test fraud reporting and threat logging.
+  - `Quick Expiration Simulation (10s)`: Short timeout testing validity window expiration.
+- **Custom Push Challenge Builder**:
+  - Customizable application name, location, originating IP address, number matching toggle, and target 2-digit code.
+- **Simulation Audit Trail**:
+  - Real-time logging of past challenge resolutions (`APPROVED ✓`, `FRAUD REPORTED 🚨`, `DENIED`, `EXPIRED`), timestamps, and one-tap log purge.
+
+---
+
 ## 🔐 Authentication, Authorization & 2-Step Verification (OTP / TOTP)
 
 The application features a complete Zero-Trust continuous authentication architecture mirrored from `frontend-vanguard`, connected directly to `backend-vanguard` and the live Supabase authentication database with mandatory second-factor verification.
@@ -293,10 +337,12 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
 - `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, `EncryptedVaultEnvelope`, and `ISecureStorageProvider`.
+- `src/models/push-mfa.models.ts`: TypeScript definitions for `PushApprovalRequest`, `PushApprovalResult`, `PushGeoLocation`, `NumberMatchingChallenge`, and `PushHarnessPreset`.
 - `src/services/totp-engine.service.ts`: Standalone RFC 6238 TOTP calculation engine with Base32 decoding, countdown calculations, warning color shifts, and drift tolerance.
 - `src/services/aes-gcm.service.ts`: Authenticated 256-bit AES-GCM encryption/decryption service with 96-bit random IVs and WebCrypto compatibility.
 - `src/services/secure-storage.provider.ts`: Pluggable secure storage layer with `ExpoSecureStoreAdapter` (iOS Keychain / Android Keystore) and `MockKeychainProvider`.
 - `src/services/biometric-auth.service.ts`: Standalone biometric authentication provider with native hardware abstraction (`ExpoBiometricAdapter`), mock testing adapter (`MockBiometricProvider`), capability queries, and settings persistence.
+- `src/services/push-mfa.service.ts`: Reactive out-of-band push verification service with request dispatching, number matching challenge validation, audit history, and offline presets.
 - `src/services/vault.service.ts`: Standalone hardware-backed Authenticator Vault service with AES-GCM encryption, full CRUD operations, Base32 validation, and RFC 6238 TOTP computation.
 - `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, and AsyncStorage token/user session management.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
@@ -304,13 +350,15 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
 - `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards, shadows, radius).
-- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`, `VaultLockScreen`).
+- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`, `VaultLockScreen`, `PushApprovalModal`).
 - `src/components/cyber/vault-lock-screen.tsx`: Full-screen cyber security shield obscuring vaulted credentials with biometric unlock trigger, device passcode fallback, and sensor status indicator.
+- `src/components/cyber/push-approval-modal.tsx`: High-priority out-of-band push verification modal with rich contextual metadata, number matching picker, expiration countdown, biometric approval trigger, and fraud denial actions.
 - `src/screens/vault-screen.tsx`: Air-gapped TOTP authenticator screen with circular countdown visualizers, tap-to-copy codes, floating toast notifications, and manual entry modal.
 - `src/screens/account-detail-screen.tsx`: Authenticator detail screen with secret key inspection and token removal.
 - `src/screens/add-account-screen.tsx`: Manual Base32 token entry with 1-tap clipboard paste and simulated camera QR scanner.
-- `src/screens/security-settings-screen.tsx`: Biometrics lock toggle with dynamic hardware sensor badge, inactivity timeout, clipboard sanitization, and encrypted backup export.
-- `src/screens/authenticator-navigator.tsx`: Screen coordinator managing clean transitions across vault screens, `AppState` auto-lock lifecycle listeners, and biometric lock gating.
+- `src/screens/security-settings-screen.tsx`: Biometrics lock toggle with dynamic hardware sensor badge, inactivity timeout, clipboard sanitization, encrypted backup export, and link to Push MFA Sandbox.
+- `src/screens/push-test-harness-screen.tsx`: Air-gapped developer test harness screen for offline push MFA presets, custom challenge builder, and real-time audit history log.
+- `src/screens/authenticator-navigator.tsx`: Screen coordinator managing clean transitions across vault screens, `AppState` auto-lock lifecycle listeners, biometric lock gating, and global `PushApprovalModal` mounting.
 - `src/screens/verify-otp-screen.tsx`: Cyber Dark 2-Step Verification screen with auto-advancing digit inputs, paste support, timer countdown, and test bypass chips.
 - `src/app/vault.tsx`: Route mounting `AuthenticatorNavigator`.
 - `src/app/verify-otp.tsx`: Route entry point mounting `VerifyOtpScreen`.
@@ -319,7 +367,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
 - `src/components/apps/`: Reusable applications directory UI components (`PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 
 
 

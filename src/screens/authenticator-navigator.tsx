@@ -7,6 +7,10 @@ import { AccountDetailScreen } from './account-detail-screen';
 import { AddAccountScreen } from './add-account-screen';
 import { SecuritySettingsScreen } from './security-settings-screen';
 import { VaultLockScreen } from '@/components/cyber/vault-lock-screen';
+import { PushApprovalModal } from '@/components/cyber/push-approval-modal';
+import { PushTestHarnessScreen } from './push-test-harness-screen';
+import pushMfaService from '@/services/push-mfa.service';
+import { PushApprovalRequest } from '@/models/push-mfa.models';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
 import { CyberColors } from '@/constants/cyber-theme';
 
@@ -36,6 +40,16 @@ export function AuthenticatorNavigator({
   const [biometricType, setBiometricType] = useState<BiometricType>('FaceID');
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [activePushRequest, setActivePushRequest] =
+    useState<PushApprovalRequest | null>(null);
+
+  // Subscribe to Out-of-Band Push MFA requests (SCRUM-21)
+  useEffect(() => {
+    const unsubscribe = pushMfaService.subscribe((req) => {
+      setActivePushRequest(req);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
@@ -159,6 +173,10 @@ export function AuthenticatorNavigator({
     setCurrentScreen('security-settings');
   };
 
+  const navigateToPushHarness = () => {
+    setCurrentScreen('push-harness');
+  };
+
   return (
     <View style={styles.container} testID={testID}>
       {/* Obscuring Lock Overlay whenever Vault is locked (SCRUM-20) */}
@@ -200,10 +218,37 @@ export function AuthenticatorNavigator({
             <SecuritySettingsScreen
               onClose={navigateToVault}
               onResetVault={navigateToVault}
+              onOpenPushHarness={navigateToPushHarness}
             />
+          )}
+
+          {currentScreen === 'push-harness' && (
+            <PushTestHarnessScreen onClose={navigateToSettings} />
           )}
         </>
       )}
+
+      {/* High-Priority Out-of-Band Push Notification MFA Approval Modal (SCRUM-21) */}
+      <PushApprovalModal
+        visible={Boolean(activePushRequest)}
+        request={activePushRequest}
+        onApprove={async (opts) => {
+          if (activePushRequest) {
+            pushMfaService.approveRequest(activePushRequest.id, opts);
+          }
+        }}
+        onDeny={(isFraud) => {
+          if (activePushRequest) {
+            pushMfaService.denyRequest(activePushRequest.id, isFraud);
+          }
+        }}
+        onClose={() => {
+          if (activePushRequest) {
+            pushMfaService.dismissRequest(activePushRequest.id);
+          }
+        }}
+        testID="global-push-approval-modal"
+      />
     </View>
   );
 }

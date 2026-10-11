@@ -15,6 +15,8 @@ import { router } from 'expo-router';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import type { MfaChallengeResponse } from '@/models/auth.models';
+import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 export default function LoginScreen() {
   const { login, isLoading } = useAuth();
@@ -24,6 +26,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [mfaChallenge, setMfaChallenge] = useState<MfaChallengeResponse | null>(null);
 
   const handleSignIn = async () => {
     if (!email.trim()) {
@@ -39,8 +42,12 @@ export default function LoginScreen() {
     setErrorMessage(null);
 
     try {
-      await login({ email: email.trim(), password: password.trim() });
-      router.replace('/');
+      const result = await login({ email: email.trim(), password: password.trim() });
+      if (result.requireMfa) {
+        setMfaChallenge(result.mfaChallenge);
+      } else {
+        router.replace('/');
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed. Please try again.';
       setErrorMessage(msg);
@@ -54,6 +61,20 @@ export default function LoginScreen() {
     setPassword('Password123!');
     setErrorMessage(null);
   };
+
+  if (mfaChallenge) {
+    return (
+      <VerifyOtpScreen
+        email={mfaChallenge.email}
+        hasTotp={mfaChallenge.hasTotp}
+        onSuccess={() => {
+          setMfaChallenge(null);
+          router.replace('/');
+        }}
+        onBack={() => setMfaChallenge(null)}
+      />
+    );
+  }
 
   return (
     <View style={styles.screen}>

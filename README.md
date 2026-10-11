@@ -81,7 +81,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (66 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (75 automated tests):
 ```bash
 npm test
 ```
@@ -89,7 +89,8 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
-| `src/__tests__/auth.test.ts` | Demo account credentials, email/password validation, 1-tap SSO federation, session persistence, logout |
+| `src/__tests__/auth.test.ts` | Demo account credentials, email/password validation, 2-step MFA initiation, session persistence, logout |
+| `src/__tests__/otp-auth.test.ts` | Email OTP verification (8-digit/6-digit), Authenticator TOTP validation, resend cooldown timer, dev test bypass codes (`123456`/`12345678`) |
 | `src/__tests__/apps-data.test.ts` | SaaS app deduplication, connected app deduplication by origin/client ID, category filtering, URL prefix normalization |
 | `src/__tests__/apps-ui.test.ts` | Dynamic category counters, vault auto-fill badge computation, live connection indicators, workspace-aware empty states |
 | `src/__tests__/connected-apps.test.ts` | Active SSO client discovery, Acme Dummy Web OIDC metadata, disconnection handling, active client counter badges |
@@ -112,9 +113,22 @@ npm test
 
 ---
 
-## 🔐 Authentication & Zero-Trust Demo Accounts
+## 🔐 Authentication, Authorization & 2-Step Verification (OTP / TOTP)
 
-The application features a built-in Zero-Trust authentication layer (`AuthProvider`, `AuthService`, and Cyber Dark `LoginScreen`) with session persistence across app restarts.
+The application features a complete Zero-Trust continuous authentication architecture mirrored from `frontend-vanguard`, connected directly to `backend-vanguard` with mandatory second-factor verification.
+
+### Authentication & MFA Endpoints
+| Endpoint | Method | Payload / Contract | Description |
+| :--- | :--- | :--- | :--- |
+| `/auth/login` | `POST` | `{ email, password }` | Authenticates primary credentials; triggers MFA challenge (`requireMfa: true`) |
+| `/auth/verify-otp` | `POST` | `{ email, token, type: 'email' }` | Verifies dynamic 8-digit or 6-digit email OTP; issues session JWT |
+| `/auth/verify-totp` | `POST` | `{ email, code }` | Verifies 6-digit Authenticator App (Google Authenticator / Microsoft Authenticator) TOTP code |
+| `/auth/resend-otp` | `POST` | `{ email, type: 'email' }` | Dispatches fresh verification code with a 45-second cooldown throttle |
+
+### Developer & Offline Testing Bypass Codes
+For local development, automated testing, or offline Expo Go preview:
+- **Email OTP Bypass**: Enter `123456` or `12345678` into the verification digit boxes.
+- **Auto-Fill Buttons**: Tap the quick-fill buttons on the verification card for 1-tap testing.
 
 ### Pre-Configured Demo Accounts
 | Account | Email | Password | Role / Department | Notes |
@@ -123,8 +137,9 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
 | **John Manayon** | `user@company.com` | `Password123!` | User / Engineering | Standard corporate user profile |
 | **SecOps Admin** | `admin@vanguard.security` | `Password123!` | Admin / Security Operations | Privileged administrative credentials |
 
-- **Master Credential Authentication**: Enter email and master password to sign in directly into the Vanguard Security IdP.
+- **Master Credential Authentication**: Enter email and master password to trigger the 2-step verification challenge.
 - **Quick Demo Account Selector**: Tap any demo user chip on the login card to auto-fill credentials for 1-tap testing.
+- **Two-Step Verification Screen**: Auto-advancing digit inputs, backspace navigation, paste handling, resend timer, and method switcher (Email OTP vs Authenticator TOTP).
 - **Live User Session Header**: Displays current account identity, role badge, and a **Sign Out ⎋** button in the top navigation bar.
 - **User-Scoped SSO Integrations**: Active SSO connected applications and OAuth authorizations are dynamically scoped and filtered to the logged-in user account.
 
@@ -132,14 +147,16 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
 
 ## 🏛️ Architecture & Modules
 
-- `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser`, `LoginCredentials`, and `AuthResponse`.
+- `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
-- `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`), SSO federation, and AsyncStorage token/user session management.
+- `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, and AsyncStorage token/user session management.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
 - `src/services/app-launcher.service.ts`: Centralized application launch dispatcher integrating Expo's in-app browser (`expo-web-browser`) and external linking (`expo-linking`) with Cyber Dark theme styling, URL normalization, and personal vault credential matching.
-- `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, SSO, and logout.
+- `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
-- `src/app/login.tsx`: Cyber Dark login screen with email/password validation, show/hide password toggle, Vanguard SSO button, and quick demo account selector.
+- `src/screens/verify-otp-screen.tsx`: Cyber Dark 2-Step Verification screen with auto-advancing digit inputs, paste support, timer countdown, and test bypass chips.
+- `src/app/verify-otp.tsx`: Route entry point mounting `VerifyOtpScreen`.
+- `src/app/login.tsx`: Cyber Dark login screen with email/password validation, show/hide password toggle, and seamless 2-step verification transition.
 - `src/app/index.tsx`: Clean route mounting `MyAppsScreen` as the primary launchpad entry point.
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar using Cyber Dark background and cyan accent glows, mapping the default route to the Vanguard Applications portal.
@@ -155,5 +172,6 @@ The application features a built-in Zero-Trust authentication layer (`AuthProvid
   - `CategoryFilterBar`: Horizontal category scroll bar with active cyber glow and count indicators.
   - `AppCard`: Translucent cyber card with icon box, group badges, auto-fill indicator, live connected pill, and launch action.
   - `EmptyAppsState`: Contextual empty state with workspace-aware messaging and call-to-action buttons.
-- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+
 

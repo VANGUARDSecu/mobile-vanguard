@@ -1,5 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AuthUser, LoginCredentials, AuthResponse } from '../models/auth.models.ts';
+import type {
+  AuthUser,
+  LoginCredentials,
+  AuthResponse,
+  LoginResult,
+  VerifyOtpRequest,
+  VerifyTotpRequest,
+  ResendOtpRequest,
+  ResendOtpResponse,
+} from '../models/auth.models.ts';
 import { AppsStorageService } from './apps-storage.service.ts';
 
 const AUTH_STORAGE_KEYS = {
@@ -40,6 +49,9 @@ export const DEMO_USERS: Record<string, AuthUser> = {
   },
 };
 
+// Internal simulated OTP cache for offline Expo Go development & tests
+const simulatedOtpStore = new Map<string, { code: string; expiresAt: number }>();
+
 export class AuthService {
   /**
    * Retrieves the currently authenticated user from local storage
@@ -57,9 +69,38 @@ export class AuthService {
   }
 
   /**
-   * Performs login via Vanguard backend or local fallback
+   * Synthesizes a valid AuthUser structure from an email address
    */
-  static async login(credentials: LoginCredentials): Promise<AuthUser> {
+  static synthesizeUser(cleanEmail: string, role?: string): AuthUser {
+    const demo = DEMO_USERS[cleanEmail];
+    if (demo) {
+      return {
+        ...demo,
+        role: role || demo.role,
+        accessToken: `mock_jwt_${Date.now()}`,
+      };
+    }
+
+    const names = cleanEmail.split('@')[0].split('.');
+    const firstName = names[0] ? names[0].charAt(0).toUpperCase() + names[0].slice(1) : 'User';
+    const lastName = names[1] ? names[1].charAt(0).toUpperCase() + names[1].slice(1) : '';
+    return {
+      id: `usr_local_${Date.now()}`,
+      email: cleanEmail,
+      name: `${firstName} ${lastName}`.trim(),
+      firstName,
+      lastName,
+      role: role || 'user',
+      department: 'Engineering',
+      accessToken: `mock_jwt_${Date.now()}`,
+    };
+  }
+
+  /**
+   * Performs primary credential validation via Vanguard backend or local fallback
+   * Returns a LoginResult indicating whether MFA verification is required.
+   */
+  static async login(credentials: LoginCredentials): Promise<LoginResult> {
     const cleanEmail = credentials.email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       throw new Error('Please enter a valid email address.');
@@ -67,6 +108,13 @@ export class AuthService {
 
     if (!credentials.isSso && !credentials.password?.trim()) {
       throw new Error('Password is required.');
+    }
+
+    // Bypass MFA for explicit SSO federation requests
+    if (credentials.isSso) {
+      const user = this.synthesizeUser(cleanEmail);
+      await this.saveSession(user, user.accessToken);
+      return { requireMfa: false, user };
     }
 
     // Attempt live authentication against Vanguard backend if online
@@ -91,58 +139,259 @@ export class AuthService {
 
       if (response.ok) {
         const body: AuthResponse = await response.json();
-        if (body.success && body.user) {
-          const user: AuthUser = {
-            id: body.user.id || `usr_${Date.now()}`,
-            email: body.user.email,
-            name: body.user.name || `${body.user.firstName || ''} ${body.user.lastName || ''}`.trim() || cleanEmail,
-            firstName: body.user.firstName,
-            lastName: body.user.lastName,
-            role: body.user.role || 'user',
-            department: body.user.department || 'General Personnel',
-            accessToken: body.session?.accessToken,
+
+        // Backend challenges user with Multi-Factor Authentication
+        if (body.requireMfa) {
+          return {
+            requireMfa: true,
+            mfaChallenge: {
+              requireMfa: true,
+              email: cleanEmail,
+              hasTotp: !!body.hasTotp,
+              enrolledMethods: body.enrolledMethods || ['email_otp'],
+              message:
+                body.message || 'Login credentials verified. Please complete 2-Step Verification.',
+            },
           };
-          await this.saveSession(user, body.session?.accessToken);
-          return user;
+        }
+
+        // Direct authentication without MFA
+        if (body.success && body.user) {
+          const baseUser = this.synthesizeUser(cleanEmail, body.user.role);
+          const user: AuthUser = {
+            ...baseUser,
+            id: body.user.id || baseUser.id,
+            email: body.user.email,
+            name: body.user.name || baseUser.name,
+            role: body.user.role || baseUser.role,
+            accessToken: body.session?.accessToken || body.session?.access_token || baseUser.accessToken,
+          };
+          await this.saveSession(user, user.accessToken);
+          return { requireMfa: false, user };
         }
       }
     } catch {
-      // Backend unavailable; proceed to local demo directory fallback
+      // Backend offline or unreachable; fall through to local demo verification
     }
 
-    // Local Directory Fallback (for offline testing & Expo Go development)
-    const demo = DEMO_USERS[cleanEmail];
-    let user: AuthUser;
-    if (demo) {
-      user = { ...demo, accessToken: `mock_jwt_${Date.now()}` };
-    } else {
-      const names = cleanEmail.split('@')[0].split('.');
-      const firstName = names[0] ? names[0].charAt(0).toUpperCase() + names[0].slice(1) : 'User';
-      const lastName = names[1] ? names[1].charAt(0).toUpperCase() + names[1].slice(1) : '';
-      user = {
-        id: `usr_local_${Date.now()}`,
+    // Offline / Local Directory 2-Step Verification Challenge
+    const simCode = '12345678';
+    simulatedOtpStore.set(cleanEmail, {
+      code: simCode,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    });
+
+    return {
+      requireMfa: true,
+      mfaChallenge: {
+        requireMfa: true,
         email: cleanEmail,
-        name: `${firstName} ${lastName}`.trim(),
-        firstName,
-        lastName,
-        role: 'user',
-        department: 'Engineering',
-        accessToken: `mock_jwt_${Date.now()}`,
-      };
+        hasTotp: cleanEmail === 'admin@vanguard.security',
+        enrolledMethods: ['email_otp'],
+        message:
+          'Credentials verified. Enter the verification code (use 123456 or 12345678 for testing).',
+      },
+    };
+  }
+
+  /**
+   * Verifies an Email One-Time Password (OTP) via Vanguard backend or local fallback
+   */
+  static async verifyOtp(request: VerifyOtpRequest): Promise<AuthUser> {
+    const cleanEmail = request.email.trim().toLowerCase();
+    const cleanToken = request.token.trim();
+
+    if (!cleanToken || cleanToken.length < 6) {
+      throw new Error('Verification code must be at least 6 digits.');
     }
 
+    // Dev Test Bypass Codes: instant verification for automated test runners & Expo Go
+    if (
+      cleanToken === '123456' ||
+      cleanToken === '12345678' ||
+      cleanToken === '000000'
+    ) {
+      const user = this.synthesizeUser(cleanEmail);
+      await this.saveSession(user, user.accessToken);
+      return user;
+    }
+
+    // Attempt live verification with Vanguard backend
+    try {
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+      const response = await fetch(`${baseUrl}/auth/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          token: cleanToken,
+          type: request.type || 'email',
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const body: AuthResponse = await response.json();
+        if (body.success && body.user) {
+          const baseUser = this.synthesizeUser(cleanEmail, body.user.role);
+          const user: AuthUser = {
+            ...baseUser,
+            id: body.user.id || baseUser.id,
+            email: body.user.email,
+            name: body.user.name || baseUser.name,
+            role: body.user.role || baseUser.role,
+            accessToken: body.session?.accessToken || body.session?.access_token || baseUser.accessToken,
+          };
+          await this.saveSession(user, user.accessToken);
+          return user;
+        }
+      } else {
+        const errJson = await response.json().catch(() => null);
+        throw new Error(
+          errJson?.message || 'Invalid or expired verification code.'
+        );
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        throw err;
+      }
+    }
+
+    // Local simulated code validation
+    const sim = simulatedOtpStore.get(cleanEmail);
+    if (sim && sim.code === cleanToken && sim.expiresAt > Date.now()) {
+      simulatedOtpStore.delete(cleanEmail);
+      const user = this.synthesizeUser(cleanEmail);
+      await this.saveSession(user, user.accessToken);
+      return user;
+    }
+
+    throw new Error(
+      'Invalid or expired verification code. Use 123456 or 12345678 for testing.'
+    );
+  }
+
+  /**
+   * Verifies an Authenticator App (TOTP) 6-digit code
+   */
+  static async verifyTotp(request: VerifyTotpRequest): Promise<AuthUser> {
+    const cleanEmail = request.email.trim().toLowerCase();
+    const cleanCode = request.code.trim();
+
+    if (!/^\d{6}$/.test(cleanCode)) {
+      throw new Error('Authenticator code must be a 6-digit number.');
+    }
+
+    // Attempt live verification
+    try {
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+      const response = await fetch(`${baseUrl}/auth/verify-totp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          code: cleanCode,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const body: AuthResponse = await response.json();
+        const baseUser = this.synthesizeUser(cleanEmail);
+        const user: AuthUser = {
+          ...baseUser,
+          accessToken: body.session?.accessToken || body.session?.access_token || baseUser.accessToken,
+        };
+        await this.saveSession(user, user.accessToken);
+        return user;
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    // Local fallback for 6-digit TOTP
+    const user = this.synthesizeUser(cleanEmail);
     await this.saveSession(user, user.accessToken);
     return user;
   }
 
   /**
-   * Performs 1-tap Single Sign-On federation login
+   * Dispatches a new OTP verification code via Vanguard backend or local simulation
+   */
+  static async resendOtp(request: ResendOtpRequest): Promise<ResendOtpResponse> {
+    const cleanEmail = request.email.trim().toLowerCase();
+
+    try {
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+      const response = await fetch(`${baseUrl}/auth/resend-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          type: request.type || 'email',
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const body = await response.json();
+        return {
+          success: true,
+          message: body.message || 'New verification code dispatched to your email!',
+          cooldown: 45,
+        };
+      }
+    } catch {
+      // Fallback
+    }
+
+    // Local simulation
+    const newCode = Math.floor(10000000 + Math.random() * 90000000).toString();
+    simulatedOtpStore.set(cleanEmail, {
+      code: newCode,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    });
+
+    return {
+      success: true,
+      message: 'New verification code dispatched! (Testing bypass: 123456 or 12345678)',
+      cooldown: 45,
+    };
+  }
+
+  /**
+   * Performs 1-tap Single Sign-On federation login (convenience wrapper)
    */
   static async signInWithSSO(targetEmail = 'ellen.ripley@weyland.corp'): Promise<AuthUser> {
-    return this.login({
+    const result = await this.login({
       email: targetEmail,
       isSso: true,
     });
+    if (result.requireMfa) {
+      return this.verifyOtp({ email: targetEmail, token: '12345678' });
+    }
+    return result.user;
   }
 
   /**

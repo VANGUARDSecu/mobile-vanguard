@@ -48,13 +48,21 @@ test('Authentication Layer & Login Validation (SCRUM-72)', async (t) => {
     );
   });
 
-  await t.test('login successfully authenticates demo user in fallback mode', async () => {
+  await t.test('login initiates 2-step MFA challenge and verifies via OTP', async () => {
     const creds: LoginCredentials = {
       email: 'ellen.ripley@weyland.corp',
       password: 'Password123!',
     };
 
-    const user = await AuthService.login(creds);
+    const result = await AuthService.login(creds);
+    assert.equal(result.requireMfa, true);
+    assert.equal(result.mfaChallenge.email, 'ellen.ripley@weyland.corp');
+
+    // Complete 2-step verification
+    const user = await AuthService.verifyOtp({
+      email: 'ellen.ripley@weyland.corp',
+      token: '12345678',
+    });
     assert.equal(user.email, 'ellen.ripley@weyland.corp');
     assert.equal(user.name, 'Ellen Ripley');
     assert.ok(user.accessToken);
@@ -73,10 +81,16 @@ test('Authentication Layer & Login Validation (SCRUM-72)', async (t) => {
     assert.ok(user.accessToken);
   });
 
-  await t.test('login synthesizes valid user structure for unknown domain emails', async () => {
-    const user = await AuthService.login({
+  await t.test('login challenges unknown domain emails and synthesizes valid user structure upon OTP', async () => {
+    const result = await AuthService.login({
       email: 'alexander.mahone@fbi.gov',
       password: 'AnyPassword123!',
+    });
+    assert.equal(result.requireMfa, true);
+
+    const user = await AuthService.verifyOtp({
+      email: 'alexander.mahone@fbi.gov',
+      token: '123456',
     });
     assert.equal(user.email, 'alexander.mahone@fbi.gov');
     assert.equal(user.firstName, 'Alexander');

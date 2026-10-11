@@ -7,14 +7,25 @@ import React, {
   useMemo,
   ReactNode,
 } from 'react';
-import type { AuthUser, LoginCredentials } from '../models/auth.models.ts';
+import type {
+  AuthUser,
+  LoginCredentials,
+  LoginResult,
+  VerifyOtpRequest,
+  VerifyTotpRequest,
+  ResendOtpRequest,
+  ResendOtpResponse,
+} from '../models/auth.models.ts';
 import { AuthService } from '../services/auth.service.ts';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (credentials: LoginCredentials) => Promise<AuthUser>;
+  login: (credentials: LoginCredentials) => Promise<LoginResult>;
+  verifyOtp: (request: VerifyOtpRequest) => Promise<AuthUser>;
+  verifyTotp: (request: VerifyTotpRequest) => Promise<AuthUser>;
+  resendOtp: (request: ResendOtpRequest) => Promise<ResendOtpResponse>;
   loginWithSSO: (email?: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
 }
@@ -46,15 +57,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (credentials: LoginCredentials): Promise<AuthUser> => {
+  const login = useCallback(async (credentials: LoginCredentials): Promise<LoginResult> => {
     setIsLoading(true);
     try {
-      const user = await AuthService.login(credentials);
+      const result = await AuthService.login(credentials);
+      if (!result.requireMfa) {
+        setCurrentUser(result.user);
+      }
+      return result;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const verifyOtp = useCallback(async (request: VerifyOtpRequest): Promise<AuthUser> => {
+    setIsLoading(true);
+    try {
+      const user = await AuthService.verifyOtp(request);
       setCurrentUser(user);
       return user;
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  const verifyTotp = useCallback(async (request: VerifyTotpRequest): Promise<AuthUser> => {
+    setIsLoading(true);
+    try {
+      const user = await AuthService.verifyTotp(request);
+      setCurrentUser(user);
+      return user;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const resendOtp = useCallback(async (request: ResendOtpRequest): Promise<ResendOtpResponse> => {
+    return AuthService.resendOtp(request);
   }, []);
 
   const loginWithSSO = useCallback(async (email?: string): Promise<AuthUser> => {
@@ -84,10 +123,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!currentUser,
       isLoading,
       login,
+      verifyOtp,
+      verifyTotp,
+      resendOtp,
       loginWithSSO,
       logout,
     }),
-    [currentUser, isLoading, login, loginWithSSO, logout]
+    [currentUser, isLoading, login, verifyOtp, verifyTotp, resendOtp, loginWithSSO, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

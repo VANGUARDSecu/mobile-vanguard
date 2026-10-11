@@ -81,7 +81,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (86 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, and end-to-end workflows (91 automated tests):
 ```bash
 npm test
 ```
@@ -93,6 +93,7 @@ npm test
 | `src/__tests__/otp-auth.test.ts` | Email OTP verification (8-digit/6-digit), Authenticator TOTP validation, resend cooldown timer, dev test bypass codes (`123456`/`12345678`) |
 | `src/__tests__/logout-auth.test.ts` | Sign out button touch handling, session clearance, backend `/auth/logout` dispatching, duplicate invocation guards, and unauthenticated root layout gating |
 | `src/__tests__/auth-responsiveness.test.ts` | Root layout `isInitializing` isolation preserving MFA submission state, sign out tactile feedback, and splash overlay non-blocking hit testing |
+| `src/__tests__/app-navigation.test.ts` | Anchored bottom tab bar layout (`bottom: 0`), pointer pass-through, non-obstructed session header, and Expo Starter banner removal |
 | `src/__tests__/apps-data.test.ts` | SaaS app deduplication, connected app deduplication by origin/client ID, category filtering, URL prefix normalization |
 | `src/__tests__/apps-ui.test.ts` | Dynamic category counters, vault auto-fill badge computation, live connection indicators, workspace-aware empty states |
 | `src/__tests__/connected-apps.test.ts` | Active SSO client discovery, Acme Dummy Web OIDC metadata, disconnection handling, active client counter badges |

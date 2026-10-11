@@ -1,180 +1,329 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ExternalLink } from '@/components/external-link';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useAuth } from '@/context/auth-context';
+import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
+export default function SecurityScreen() {
+  const { currentUser, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [refreshedTime, setRefreshedTime] = useState<string>('Just now');
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+    } catch {
+      // Non-blocking
+    } finally {
+      setLoggingOut(false);
+    }
   };
-  const theme = useTheme();
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+  const handleRefreshTokens = () => {
+    setRefreshedTime(new Date().toLocaleTimeString());
+  };
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
+    <View style={styles.screen}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.brandBadge}>
+              <Text style={styles.brandShield}>🛡️</Text>
+              <Text style={styles.brandTitle}>VANGUARD SECURITY</Text>
+            </View>
+            <Text style={styles.pageTitle}>Zero-Trust Identity Posture</Text>
+            <Text style={styles.pageSubtitle}>
+              Continuous verification, session tokens, and identity authorization status
+            </Text>
+          </View>
 
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
+          {/* User Session Card */}
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>ACTIVE CORPORATE IDENTITY</Text>
+            <View style={styles.userRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : '👤'}
+                </Text>
+              </View>
+              <View style={styles.userInfo}>
+                <Text style={styles.userName}>{currentUser?.name || 'Authenticated User'}</Text>
+                <Text style={styles.userEmail}>{currentUser?.email || 'N/A'}</Text>
+              </View>
+              <View style={styles.activeBadge}>
+                <View style={styles.greenDot} />
+                <Text style={styles.activeBadgeText}>ACTIVE</Text>
+              </View>
+            </View>
+          </View>
 
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+          {/* Zero-Trust Pillars */}
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>ZERO-TRUST VERIFICATION METRICS</Text>
+            <View style={styles.metricsList}>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricIcon}>🟢</Text>
+                <View style={styles.metricDetails}>
+                  <Text style={styles.metricTitle}>Device Health & Integrity</Text>
+                  <Text style={styles.metricDesc}>
+                    Platform {Platform.OS.toUpperCase()} • Zero-Trust Policy Verified
+                  </Text>
+                </View>
+              </View>
 
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricIcon}>🛡️</Text>
+                <View style={styles.metricDetails}>
+                  <Text style={styles.metricTitle}>Multi-Factor Authentication (MFA)</Text>
+                  <Text style={styles.metricDesc}>
+                    Email OTP & Authenticator TOTP Guard Enforced
+                  </Text>
+                </View>
+              </View>
 
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricIcon}>🔒</Text>
+                <View style={styles.metricDetails}>
+                  <Text style={styles.metricTitle}>Continuous Token Attestation</Text>
+                  <Text style={styles.metricDesc}>
+                    RFC 8414 Session Tokens • Last evaluated: {refreshedTime}
+                  </Text>
+                </View>
+              </View>
 
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricIcon}>🌐</Text>
+                <View style={styles.metricDetails}>
+                  <Text style={styles.metricTitle}>SSO Integrations Active</Text>
+                  <Text style={styles.metricDesc}>
+                    Weyland-Yutani Corp / Acme Corp OIDC Connected
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
 
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+          {/* Security Actions */}
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>SESSION GOVERNANCE</Text>
+            <View style={styles.actionButtonsWrap}>
+              <TouchableOpacity
+                style={styles.refreshBtn}
+                onPress={handleRefreshTokens}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.refreshBtnText}>🔄 Refresh Session Attestation</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.signOutBtn, loggingOut && styles.signOutBtnDisabled]}
+                onPress={handleLogout}
+                disabled={loggingOut}
+                activeOpacity={0.7}
+              >
+                {loggingOut ? (
+                  <ActivityIndicator size="small" color="#f87171" />
+                ) : (
+                  <Text style={styles.signOutBtnText}>Sign Out & Terminate Session ⎋</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
+  screen: {
+    flex: 1,
+    backgroundColor: CyberColors.background,
+  },
+  safeArea: {
     flex: 1,
   },
-  contentContainer: {
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 90,
+  },
+  header: {
+    marginBottom: 20,
+  },
+  brandBadge: {
     flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
-  },
-  titleContainer: {
-    gap: Spacing.three,
     alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
+    gap: 6,
+    marginBottom: 8,
   },
-  centerText: {
-    textAlign: 'center',
+  brandShield: {
+    fontSize: 18,
   },
-  pressed: {
-    opacity: 0.7,
+  brandTitle: {
+    color: CyberColors.cyan,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
-  linkButton: {
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: CyberColors.textPrimary,
+    marginBottom: 6,
+  },
+  pageSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: CyberColors.textSecondary,
+  },
+  card: {
+    backgroundColor: CyberColors.cardBg,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    padding: 16,
+    marginBottom: 16,
+  },
+  cardLabel: {
+    color: CyberColors.textMuted,
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 12,
+  },
+  userRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: CyberColors.cyanGlow,
+    borderColor: CyberColors.cyan,
+    borderWidth: 1.5,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.one,
+    marginRight: 12,
+  },
+  avatarText: {
+    color: CyberColors.cyan,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    color: CyberColors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  userEmail: {
+    color: CyberColors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  activeBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: CyberColors.greenGlow,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: CyberRadius.full,
+    gap: 5,
   },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
+  greenDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: CyberColors.green,
   },
-  collapsibleContent: {
+  activeBadgeText: {
+    color: CyberColors.green,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  metricsList: {
+    gap: 12,
+  },
+  metricItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    borderColor: 'rgba(30, 41, 59, 0.8)',
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: CyberRadius.sm,
+    gap: 12,
   },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
+  metricIcon: {
+    fontSize: 18,
   },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
+  metricDetails: {
+    flex: 1,
+  },
+  metricTitle: {
+    color: CyberColors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  metricDesc: {
+    color: CyberColors.textMuted,
+    fontSize: 11,
+  },
+  actionButtonsWrap: {
+    gap: 10,
+  },
+  refreshBtn: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer' as any,
+  },
+  refreshBtnText: {
+    color: CyberColors.cyan,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  signOutBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer' as any,
+  },
+  signOutBtnDisabled: {
+    opacity: 0.6,
+  },
+  signOutBtnText: {
+    color: '#f87171',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

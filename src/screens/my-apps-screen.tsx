@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 40,
+    paddingBottom: 85,
   },
   topHeader: {
     marginBottom: 20,
@@ -459,7 +459,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 6,
     backgroundColor: CyberColors.background,
-    zIndex: 10,
+    zIndex: 100,
   },
   userSessionBar: {
     flexDirection: 'row',

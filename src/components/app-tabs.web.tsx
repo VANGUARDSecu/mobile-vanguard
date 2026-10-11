@@ -6,14 +6,10 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { SymbolView } from 'expo-symbols';
-import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
+import { Pressable, View, Text, StyleSheet } from 'react-native';
 
-import { ExternalLink } from './external-link';
-import { ThemedText } from './themed-text';
-import { ThemedView } from './themed-view';
-
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import { MaxContentWidth } from '@/constants/theme';
 
 export default function AppTabs() {
   return (
@@ -22,10 +18,10 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
+            <TabButton icon="📱">Apps</TabButton>
           </TabTrigger>
           <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Explore</TabButton>
+            <TabButton icon="🛡️">Security</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>
@@ -33,83 +29,163 @@ export default function AppTabs() {
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+export function TabButton({
+  children,
+  isFocused,
+  icon,
+  ...props
+}: TabTriggerSlotProps & { icon?: string }) {
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+      <View
+        style={[
+          styles.tabButtonView,
+          isFocused ? styles.tabButtonViewActive : styles.tabButtonViewInactive,
+        ]}>
+        {icon ? <Text style={styles.tabIcon}>{icon}</Text> : null}
+        <Text
+          style={[
+            styles.tabButtonText,
+            isFocused ? styles.tabButtonTextActive : styles.tabButtonTextInactive,
+          ]}>
           {children}
-        </ThemedText>
-      </ThemedView>
+        </Text>
+      </View>
     </Pressable>
   );
 }
 
 export function CustomTabList(props: TabListProps) {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
   return (
     <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Expo Starter
-        </ThemedText>
+      <View style={styles.innerContainer}>
+        <View style={styles.brandWrap}>
+          <Text style={styles.brandShield}>🛡️</Text>
+          <Text style={styles.brandText}>VANGUARD</Text>
+          <View style={styles.statusBadge}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>ZERO-TRUST</Text>
+          </View>
+        </View>
 
-        {props.children}
-
-        <ExternalLink href="https://docs.expo.dev" asChild>
-          <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
-            <SymbolView
-              tintColor={colors.text}
-              name={{ ios: 'arrow.up.right.square', web: 'link' }}
-              size={12}
-            />
-          </Pressable>
-        </ExternalLink>
-      </ThemedView>
+        <View style={styles.tabsWrap}>{props.children}</View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   tabListContainer: {
-    position: 'absolute',
+    position: 'fixed' as any,
+    bottom: 0,
+    left: 0,
+    right: 0,
     width: '100%',
-    padding: Spacing.three,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
+    zIndex: 90,
+    backgroundColor: 'rgba(10, 14, 23, 0.94)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(30, 41, 59, 0.8)',
+    pointerEvents: 'box-none' as any,
   },
   innerContainer: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Spacing.five,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: CyberRadius.full,
+    backgroundColor: CyberColors.cardBg,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    flexGrow: 1,
-    gap: Spacing.two,
+    justifyContent: 'space-between',
+    width: '100%',
     maxWidth: MaxContentWidth,
+    shadowColor: CyberColors.cyan,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  brandWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  brandShield: {
+    fontSize: 14,
   },
   brandText: {
-    marginRight: 'auto',
+    color: CyberColors.cyan,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
-  pressed: {
-    opacity: 0.7,
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 4,
+    marginLeft: 4,
+  },
+  statusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: CyberColors.green,
+  },
+  statusText: {
+    color: CyberColors.green,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  tabsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   tabButtonView: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  externalPressable: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.one,
-    marginLeft: Spacing.three,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: CyberRadius.full,
+    cursor: 'pointer' as any,
+  },
+  tabButtonViewActive: {
+    backgroundColor: CyberColors.cyanGlow,
+    borderColor: CyberColors.cyan,
+    borderWidth: 1,
+  },
+  tabButtonViewInactive: {
+    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+    borderColor: 'transparent',
+    borderWidth: 1,
+  },
+  tabIcon: {
+    fontSize: 12,
+  },
+  tabButtonText: {
+    fontSize: 12,
+  },
+  tabButtonTextActive: {
+    color: CyberColors.cyan,
+    fontWeight: '800',
+  },
+  tabButtonTextInactive: {
+    color: CyberColors.textSecondary,
+    fontWeight: '600',
+  },
+  pressed: {
+    opacity: 0.75,
   },
 });

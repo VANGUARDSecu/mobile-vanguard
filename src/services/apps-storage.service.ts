@@ -363,6 +363,24 @@ export class AppsStorageService {
     if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
       return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
     }
+    try {
+      // Dynamic resolution for physical mobile devices running in Expo Go:
+      // Extracts the Metro bundler's host machine IP so mobile connects to dev backend on LAN
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const Constants = require('expo-constants');
+      const hostUri =
+        Constants?.default?.expoConfig?.hostUri ||
+        Constants?.expoConfig?.hostUri ||
+        Constants?.default?.manifest2?.extra?.expoClient?.hostUri;
+      if (hostUri && typeof hostUri === 'string') {
+        const host = hostUri.split(':')[0];
+        if (host && host !== 'localhost' && host !== '127.0.0.1') {
+          return `http://${host}:3000`;
+        }
+      }
+    } catch {
+      // Non-native / headless fallback
+    }
     return 'http://localhost:3000';
   }
 

@@ -3,6 +3,7 @@ import type {
   PushApprovalResult,
   PushHarnessPreset,
 } from '../models/push-mfa.models.ts';
+import { AppsStorageService } from './apps-storage.service.ts';
 
 export const PUSH_HARNESS_PRESETS: PushHarnessPreset[] = [
   {
@@ -133,7 +134,7 @@ export const PUSH_HARNESS_PRESETS: PushHarnessPreset[] = [
 ];
 
 const getApiBaseUrl = (): string => {
-  return process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+  return AppsStorageService.getBackendApiUrl();
 };
 
 export class PushMfaService {

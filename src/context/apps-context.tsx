@@ -60,7 +60,6 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   const currentUser = authContext?.currentUser ?? null;
   const userEmail = currentUser?.email;
 
-  const [isPersonalWorkspace, setIsPersonalWorkspaceState] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<AppCategory>('all');
   const [apps, setApps] = useState<SaaSApp[]>([]);
   const [personalApps, setPersonalApps] = useState<SaaSApp[]>([]);
@@ -72,8 +71,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [workspaceMode, entApps, pApps, cApps, requests, vault] = await Promise.all([
-        AppsStorageService.getWorkspaceMode(),
+      const [entApps, pApps, cApps, requests, vault] = await Promise.all([
         AppsStorageService.getEnterpriseApps(),
         AppsStorageService.getPersonalApps(),
         AppsStorageService.getConnectedApps(),
@@ -81,7 +79,6 @@ export function AppsProvider({ children }: { children: ReactNode }) {
         AppsStorageService.getVaultItems(),
       ]);
 
-      setIsPersonalWorkspaceState(workspaceMode);
       setApps(entApps);
       setPersonalApps(pApps);
       setConnectedApps(cApps);
@@ -115,10 +112,23 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     loadData();
   }, [loadData]);
 
-  const setIsPersonalWorkspace = useCallback((isPersonal: boolean) => {
-    setIsPersonalWorkspaceState(isPersonal);
-    AppsStorageService.setWorkspaceMode(isPersonal);
+  // SCRUM-84: Mode is strictly immutable and derived from account type.
+  const setIsPersonalWorkspace = useCallback((_isPersonal: boolean) => {
+    // Non-switchable per SCRUM-84 account architecture policy
   }, []);
+
+  // SCRUM-84: isPersonalWorkspace is strictly derived from accountType (no arbitrary mode toggling)
+  const isPersonalWorkspace = useMemo(() => {
+    if (!currentUser) return false;
+    return currentUser.accountType === 'individual';
+  }, [currentUser]);
+
+  const isCompanyAdmin = useMemo(() => {
+    return (
+      currentUser?.accountType === 'company' &&
+      (currentUser?.role === 'admin' || currentUser?.role === 'security_officer')
+    );
+  }, [currentUser]);
 
   // SCRUM-58: Strict deduplication ensuring no application ever appears twice
   const activeAppsList = useMemo<SaaSApp[]>(() => {
@@ -158,16 +168,6 @@ export function AppsProvider({ children }: { children: ReactNode }) {
         conn.userEmail.toLowerCase().trim() === cleanUserEmail
     );
   }, [connectedApps, userEmail]);
-
-  const isCompanyAdmin =
-    currentUser?.accountType === 'company' &&
-    (currentUser?.role === 'admin' || currentUser?.role === 'security_officer');
-
-  // SCRUM-84: isPersonalWorkspace is strictly derived from accountType (no arbitrary mode toggling)
-  const isPersonalWorkspace = useMemo(() => {
-    if (!currentUser) return false;
-    return currentUser.accountType === 'individual';
-  }, [currentUser]);
 
   // For Admin: all requests in organization; for Employee: only their own requests
   const visibleAccessRequests = useMemo(() => {

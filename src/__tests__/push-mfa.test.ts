@@ -230,4 +230,198 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
     service.clearHistory();
     assert.equal(service.getHistory().length, 0);
   });
+
+  await t.test(
+    '10. fetchPendingPush retrieves active backend challenge and notifies subscribers (SCRUM-85)',
+    async () => {
+      initService();
+      const originalFetch = globalThis.fetch;
+      const mockRequest: PushApprovalRequest = {
+        id: 'push_mfa_test_backend_101',
+        appName: 'Dummy Mobile App',
+        appIcon: '📱',
+        category: 'Mobile Client',
+        ipAddress: '192.168.1.50',
+        location: { city: 'Singapore', country: 'Singapore', flagEmoji: '🇸🇬' },
+        device: 'iPhone 15 Pro on iOS 18',
+        timestamp: new Date().toISOString(),
+        validitySeconds: 60,
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+        numberMatchingChallenge: {
+          enabled: true,
+          correctCode: 42,
+          options: [18, 42, 73],
+        },
+        status: 'pending',
+      };
+
+      let receivedUrl = '';
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        receivedUrl = url.toString();
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            challenges: [mockRequest],
+            activeRequest: mockRequest,
+          }),
+        } as any;
+      }) as any;
+
+      try {
+        let notifiedReq: PushApprovalRequest | null = null;
+        service.subscribe((req) => {
+          notifiedReq = req;
+        });
+
+        const res = await service.fetchPendingPush('ellen.ripley@weyland.corp');
+        assert.equal(res?.id, 'push_mfa_test_backend_101');
+        assert.equal(res?.appName, 'Dummy Mobile App');
+        assert.equal(res?.numberMatchingChallenge?.correctCode, 42);
+        assert.equal(notifiedReq?.id, 'push_mfa_test_backend_101');
+        assert.equal(
+          receivedUrl.includes('email=ellen.ripley%40weyland.corp'),
+          true
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+
+  await t.test(
+    '11. syncPreference transmits user opt-in status to backend (SCRUM-85)',
+    async () => {
+      initService();
+      const originalFetch = globalThis.fetch;
+      let postedBody: any = null;
+
+      globalThis.fetch = (async (
+        url: string | URL | Request,
+        init?: RequestInit
+      ) => {
+        if (init?.body) {
+          postedBody = JSON.parse(init.body as string);
+        }
+        return { ok: true } as any;
+      }) as any;
+
+      try {
+        const ok = await service.syncPreference('user@example.com', true);
+        assert.equal(ok, true);
+        assert.equal(postedBody?.email, 'user@example.com');
+        assert.equal(postedBody?.enabled, true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+
+  await t.test(
+    '12. approveRequest and denyRequest dispatch live responses to backend (SCRUM-85)',
+    async () => {
+      initService();
+      const originalFetch = globalThis.fetch;
+      const dispatchedCalls: any[] = [];
+
+      globalThis.fetch = (async (
+        url: string | URL | Request,
+        init?: RequestInit
+      ) => {
+        if (init?.body) {
+          dispatchedCalls.push(JSON.parse(init.body as string));
+        }
+        return { ok: true } as any;
+      }) as any;
+
+      try {
+        // Simulate active live challenge
+        const mockChallenge: PushApprovalRequest = {
+          id: 'push_mfa_live_challenge_999',
+          appName: 'Acme Dummy Web',
+          appIcon: '🌐',
+          category: 'Enterprise Web Application',
+          ipAddress: '127.0.0.1',
+          location: { city: 'Local', country: 'Dev', flagEmoji: '🛡️' },
+          device: 'Chrome on macOS',
+          timestamp: new Date().toISOString(),
+          validitySeconds: 60,
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+          numberMatchingChallenge: {
+            enabled: true,
+            correctCode: 88,
+            options: [31, 88, 92],
+          },
+          status: 'pending',
+        };
+
+        (service as any).activeRequest = mockChallenge;
+
+        // 1. Approve
+        const approveRes = service.approveRequest(
+          'push_mfa_live_challenge_999',
+          {
+            selectedCode: 88,
+            biometricVerified: true,
+          }
+        );
+        assert.equal(approveRes.success, true);
+        assert.equal(dispatchedCalls.length, 1);
+        assert.equal(
+          dispatchedCalls[0].challengeId,
+          'push_mfa_live_challenge_999'
+        );
+        assert.equal(dispatchedCalls[0].action, 'approved');
+        assert.equal(dispatchedCalls[0].selectedCode, 88);
+
+        // 2. Deny with fraud
+        const mockFraudChallenge: PushApprovalRequest = {
+          ...mockChallenge,
+          id: 'push_mfa_fraud_challenge_123',
+        };
+        (service as any).activeRequest = mockFraudChallenge;
+
+        const denyRes = service.denyRequest(
+          'push_mfa_fraud_challenge_123',
+          true
+        );
+        assert.equal(denyRes.success, true);
+        assert.equal(dispatchedCalls.length, 2);
+        assert.equal(
+          dispatchedCalls[1].challengeId,
+          'push_mfa_fraud_challenge_123'
+        );
+        assert.equal(dispatchedCalls[1].action, 'fraud_reported');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+
+  await t.test(
+    '13. startPolling and stopPolling manage lifecycle without leaks (SCRUM-85)',
+    () => {
+      initService();
+      let pollCount = 0;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => {
+        pollCount++;
+        return {
+          ok: true,
+          json: async () => ({ activeRequest: null }),
+        } as any;
+      }) as any;
+
+      try {
+        service.startPolling('test@vanguard.security', 5000);
+        assert.equal(Boolean((service as any).pollInterval), true);
+        assert.equal(pollCount, 1); // Immediate fetch
+
+        service.stopPolling();
+        assert.equal((service as any).pollInterval, null);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
 });

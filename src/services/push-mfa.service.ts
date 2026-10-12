@@ -132,10 +132,16 @@ export const PUSH_HARNESS_PRESETS: PushHarnessPreset[] = [
   },
 ];
 
+const getApiBaseUrl = (): string => {
+  return process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+};
+
 export class PushMfaService {
   private activeRequest: PushApprovalRequest | null = null;
   private history: PushApprovalRequest[] = [];
   private listeners: Set<(req: PushApprovalRequest | null) => void> = new Set();
+  private pollInterval: any = null;
+  private currentUserEmail: string | null = null;
 
   constructor() {
     this.history = [];
@@ -160,6 +166,76 @@ export class PushMfaService {
   private notify(): void {
     for (const listener of this.listeners) {
       listener(this.activeRequest);
+    }
+  }
+
+  /**
+   * Fetches active pending push challenges from backend-vanguard (SCRUM-85)
+   */
+  public async fetchPendingPush(email?: string): Promise<PushApprovalRequest | null> {
+    const targetEmail = email || this.currentUserEmail;
+    try {
+      const url = `${getApiBaseUrl()}/oauth/mfa/push/pending${targetEmail ? '?email=' + encodeURIComponent(targetEmail) : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (data && data.activeRequest) {
+        const req = data.activeRequest as PushApprovalRequest;
+        // Only update and notify if new or different
+        if (!this.activeRequest || this.activeRequest.id !== req.id) {
+          this.activeRequest = req;
+          this.notify();
+        }
+        return req;
+      } else if (this.activeRequest && this.activeRequest.id.startsWith('push_mfa_')) {
+        // If previous active backend request is no longer pending (e.g. expired or approved)
+        this.activeRequest = null;
+        this.notify();
+      }
+    } catch {
+      // Ignore network errors during polling
+    }
+    return null;
+  }
+
+  /**
+   * Starts background polling for live push challenges (SCRUM-85)
+   */
+  public startPolling(email?: string, intervalMs = 2000): void {
+    if (email) {
+      this.currentUserEmail = email;
+    }
+    this.stopPolling();
+    this.fetchPendingPush(email);
+    this.pollInterval = setInterval(() => {
+      this.fetchPendingPush(this.currentUserEmail || undefined);
+    }, intervalMs);
+  }
+
+  /**
+   * Stops background polling
+   */
+  public stopPolling(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+  }
+
+  /**
+   * Updates user enrollment preference on backend-vanguard (SCRUM-85)
+   */
+  public async syncPreference(email: string, enabled: boolean): Promise<boolean> {
+    try {
+      const url = `${getApiBaseUrl()}/oauth/mfa/push/preference`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, enabled }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -257,6 +333,20 @@ export class PushMfaService {
     this.activeRequest = null;
     this.notify();
 
+    // Dispatch approval to backend-vanguard if live challenge
+    if (id.startsWith('push_mfa_')) {
+      fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeId: id,
+          action: 'approved',
+          selectedCode: options?.selectedCode,
+          biometricVerified: options?.biometricVerified ?? true,
+        }),
+      }).catch(() => {});
+    }
+
     return {
       success: true,
       action: 'approved',
@@ -289,6 +379,18 @@ export class PushMfaService {
     this.history.unshift(resolved);
     this.activeRequest = null;
     this.notify();
+
+    // Dispatch rejection to backend-vanguard if live challenge
+    if (id.startsWith('push_mfa_')) {
+      fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeId: id,
+          action: isFraud ? 'fraud_reported' : 'denied',
+        }),
+      }).catch(() => {});
+    }
 
     return {
       success: true,

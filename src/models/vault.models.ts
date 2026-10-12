@@ -28,6 +28,7 @@ export interface VaultSecuritySettings {
   clearClipboardSeconds: number; // 15, 30, 60
   exportEncryption: 'AES-256-GCM' | 'NONE';
   zeroTrustAttestation: boolean;
+  pushMfaEnabled?: boolean;
 }
 
 export interface AddTotpAccountInput {

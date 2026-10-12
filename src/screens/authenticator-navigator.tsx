@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, StyleSheet, AppState, AppStateStatus } from 'react-native';
+import { View, StyleSheet, AppState, AppStateStatus, Linking } from 'react-native';
 
 import { TotpAccount, AuthenticatorScreenName } from '@/models/vault.models';
 import { VaultScreen } from './vault-screen';
@@ -12,6 +12,7 @@ import { PushTestHarnessScreen } from './push-test-harness-screen';
 import pushMfaService from '@/services/push-mfa.service';
 import { PushApprovalRequest } from '@/models/push-mfa.models';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
+import { AuthService } from '@/services/auth.service';
 import { CyberColors } from '@/constants/cyber-theme';
 
 export type { AuthenticatorScreenName };
@@ -43,12 +44,46 @@ export function AuthenticatorNavigator({
   const [activePushRequest, setActivePushRequest] =
     useState<PushApprovalRequest | null>(null);
 
-  // Subscribe to Out-of-Band Push MFA requests (SCRUM-21)
+  // Subscribe to Out-of-Band Push MFA requests and background polling (SCRUM-21 & SCRUM-85)
   useEffect(() => {
+    let isMounted = true;
+
     const unsubscribe = pushMfaService.subscribe((req) => {
       setActivePushRequest(req);
     });
-    return () => unsubscribe();
+
+    // Auto-discover user session and start polling backend for pending SSO pushes (SCRUM-85)
+    AuthService.getCurrentUser().then((user) => {
+      if (isMounted && user?.email) {
+        pushMfaService.startPolling(user.email);
+      }
+    }).catch(() => {});
+
+    // Deep link listener for vanguard-auth://mfa/challenge?id=... (SCRUM-85)
+    const handleUrl = (url: string | null) => {
+      if (!url) return;
+      if (url.includes('mfa/challenge') || url.includes('challenge')) {
+        AuthService.getCurrentUser().then((user) => {
+          pushMfaService.fetchPendingPush(user?.email);
+        }).catch(() => {});
+      }
+    };
+
+    if (Linking && Linking.getInitialURL) {
+      Linking.getInitialURL().then(handleUrl).catch(() => {});
+    }
+
+    let urlSub: { remove?: () => void } | undefined;
+    if (Linking && Linking.addEventListener) {
+      urlSub = Linking.addEventListener('url', (e: { url: string }) => handleUrl(e.url));
+    }
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+      urlSub?.remove?.();
+      pushMfaService.stopPolling();
+    };
   }, []);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);

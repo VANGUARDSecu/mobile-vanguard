@@ -95,6 +95,7 @@ export const DEFAULT_SETTINGS: VaultSecuritySettings = {
   clearClipboardSeconds: 30,
   exportEncryption: 'AES-256-GCM',
   zeroTrustAttestation: true,
+  pushMfaEnabled: true,
 };
 
 function generateUuid(): string {

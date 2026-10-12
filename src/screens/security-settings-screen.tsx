@@ -22,6 +22,8 @@ import {
 import { VaultSecuritySettings } from '@/models/vault.models';
 import vaultService from '@/services/vault.service';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
+import { AuthService } from '@/services/auth.service';
+import pushMfaService from '@/services/push-mfa.service';
 
 export interface SecuritySettingsScreenProps {
   onClose: () => void;
@@ -42,6 +44,7 @@ export function SecuritySettingsScreen({
     clearClipboardSeconds: 30,
     exportEncryption: 'AES-256-GCM',
     zeroTrustAttestation: true,
+    pushMfaEnabled: true,
   });
   const [biometricInfo, setBiometricInfo] = useState<{
     hasHardware: boolean;
@@ -75,6 +78,19 @@ export function SecuritySettingsScreen({
       clearClipboardSeconds: seconds,
     });
     setSettings(updated);
+  };
+
+  const handleTogglePushMfa = async (value: boolean) => {
+    const updated = await vaultService.updateSettings({ pushMfaEnabled: value });
+    setSettings(updated);
+    try {
+      const user = await AuthService.getCurrentUser();
+      if (user?.email) {
+        await pushMfaService.syncPreference(user.email, value);
+      }
+    } catch {
+      // Ignore background sync errors
+    }
   };
 
   const handleExportBackup = async () => {
@@ -258,6 +274,41 @@ export function SecuritySettingsScreen({
                   </Text>
                 </TouchableOpacity>
               ))}
+            </View>
+          </CyberCard>
+
+          {/* SSO Push Verification Approvals (SCRUM-85) */}
+          <CyberCard variant="glass" style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>SSO PUSH VERIFICATION APPROVALS</Text>
+              <Badge
+                label={settings.pushMfaEnabled !== false ? 'ACTIVE' : 'DISABLED'}
+                variant={settings.pushMfaEnabled !== false ? 'green' : 'amber'}
+                size="sm"
+                testID="settings-push-mfa-badge"
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingTextCol}>
+                <Text style={styles.settingLabel}>
+                  Real-Time Push Approvals
+                </Text>
+                <Text style={styles.settingDesc}>
+                  Receive real-time push prompts with biometrics and number matching when logging in to corporate applications.
+                </Text>
+              </View>
+              <Switch
+                value={settings.pushMfaEnabled !== false}
+                onValueChange={handleTogglePushMfa}
+                trackColor={{
+                  false: '#1e293b',
+                  true: 'rgba(0, 229, 255, 0.4)',
+                }}
+                thumbColor={
+                  settings.pushMfaEnabled !== false ? CyberColors.cyan : '#64748b'
+                }
+                testID="switch-push-mfa"
+              />
             </View>
           </CyberCard>
 

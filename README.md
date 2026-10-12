@@ -67,9 +67,10 @@ npx expo start
 ```
 
 ### Platform-Specific Launch Targets
-- **Web Preview**:
+- **Web Preview (Port 8082)**:
   ```bash
   npm run web
+  # Launches on http://localhost:8082 to avoid conflicting with dummy-mobile (:8081)
   ```
 - **Android Emulator / Device**:
   ```bash
@@ -85,7 +86,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, registration architecture, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (158 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, registration architecture, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (162 automated tests):
 ```bash
 npm test
 ```
@@ -96,7 +97,7 @@ npm test
 | `src/__tests__/account-registration-architecture.test.ts` | Personal vs. Company registration enforcement, immutable workspace mode derivation, Company Admin role scoping, employee access request submission with complete dossier metadata, and 1-tap Approve/Reject review workflow (SCRUM-84) |
 | `src/__tests__/zero-hardcoded-dashboard.test.ts` | Zero hardcoded dashboard verification, dynamic access request generation without mock identity fallbacks, legacy seed cache auto-purging, and storage integrity (SCRUM-83) |
 | `src/__tests__/metadata-name-resolution.test.ts` | Full name derivation from user metadata (`first_name`, `last_name`, `name`, `full_name`, `given_name`, `display_name`) with space-separated title-casing fallback (SCRUM-82) |
-| `src/__tests__/push-mfa.test.ts` | Out-of-band push verification modal, rich contextual login metadata (app, IP, location, device, 60s countdown), biometric prompt challenge execution, 2-digit number matching challenge (MFA fatigue protection), deny & fraud reporting, request expiration, and offline test harness presets (SCRUM-21) |
+| `src/__tests__/push-mfa.test.ts` | Out-of-band push verification modal, rich contextual login metadata (app, IP, location, device, 60s countdown), biometric prompt challenge execution, 2-digit number matching challenge (MFA fatigue protection), deny & fraud reporting, request expiration, live backend polling (`/oauth/mfa/push/pending`), preference sync (`/oauth/mfa/push/preference`), response dispatch (`/oauth/mfa/push/respond`), and offline test harness presets (SCRUM-21 & SCRUM-85) |
 | `src/__tests__/biometric-auth.test.ts` | Native biometric authentication (Face ID & Fingerprint) capability detection, biometric prompt challenge execution, device passcode fallback, launch requirement settings persistence, and AppState background/foreground vault auto-locking lifecycle simulation (SCRUM-20) |
 | `src/__tests__/offline-totp-generator.test.ts` | Offline RFC 6238 TOTP engine, standard test vector validation against Google Authenticator, circular countdown color shift warnings (Cyan/Amber/Red), Base32 decoding, clock drift tolerance (±1 window), and tap-to-copy code formatting (SCRUM-19) |
 | `src/__tests__/secure-vault-keychain.test.ts` | Hardware-backed iOS Keychain & Android Keystore integration (`expo-secure-store`), AES-GCM 256-bit envelope encryption/decryption, zero plaintext secret leakage, mock keychain adapters, and complete CRUD operations (`saveAccount`, `getAccounts`, `getAccountById`, `updateAccount`, `deleteAccount`) (SCRUM-18) |

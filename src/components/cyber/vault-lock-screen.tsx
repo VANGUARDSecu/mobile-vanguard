@@ -2,7 +2,9 @@ import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
-import { CyberButton, CyberCard, Badge } from '@/components/cyber';
+import { CyberButton } from './cyber-button';
+import { CyberCard } from './cyber-card';
+import { Badge } from './badge';
 import type { BiometricType } from '@/services/biometric-auth.service';
 
 export interface VaultLockScreenProps {

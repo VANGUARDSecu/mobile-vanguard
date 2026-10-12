@@ -37,7 +37,6 @@ export function AnimatedSplashOverlay() {
 
   return animate ? (
     <Animated.View
-      pointerEvents="none"
       entering={splashKeyframe.duration(DURATION).withCallback((finished) => {
         'worklet';
         if (finished) {
@@ -49,7 +48,6 @@ export function AnimatedSplashOverlay() {
     </Animated.View>
   ) : (
     <View
-      pointerEvents="none"
       onLayout={() => {
         SplashScreen.hideAsync().finally(() => {
           setAnimate(true);

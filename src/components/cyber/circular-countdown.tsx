@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Circle, G } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { CyberColors } from '@/constants/cyber-theme';
 import { TotpEngine } from '@/services/totp-engine.service';
 
@@ -36,34 +36,36 @@ export function CircularCountdown({
       accessibilityRole="progressbar"
       accessibilityValue={{ min: 0, max: period, now: remainingSeconds }}
     >
-      <Svg width={size} height={size} style={styles.svg}>
-        <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
-          {/* Background Track Ring */}
-          <Circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="rgba(255, 255, 255, 0.12)"
-            strokeWidth={strokeWidth}
-            fill="transparent"
-          />
-          {/* Animated Countdown Ring */}
-          <Circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            fill="transparent"
-          />
-        </G>
+      <Svg
+        width={size}
+        height={size}
+        style={[styles.svg, { transform: [{ rotate: '-90deg' }] }]}
+      >
+        {/* Background Track Ring */}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(255, 255, 255, 0.12)"
+          strokeWidth={strokeWidth}
+          fill="transparent"
+        />
+        {/* Animated Countdown Ring */}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          fill="transparent"
+        />
       </Svg>
 
       {showText && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
           <View style={styles.textWrap}>
             <Text
               style={[

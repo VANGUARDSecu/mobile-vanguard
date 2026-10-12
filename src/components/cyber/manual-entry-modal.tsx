@@ -11,7 +11,10 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
-import { CyberButton, CyberCard, Badge, ModalHeader } from '@/components/cyber';
+import { CyberButton } from './cyber-button';
+import { CyberCard } from './cyber-card';
+import { Badge } from './badge';
+import { ModalHeader } from './modal-header';
 import { TotpAccount, TotpAlgorithm } from '@/models/vault.models';
 import vaultService from '@/services/vault.service';
 import { TotpEngine } from '@/services/totp-engine.service';

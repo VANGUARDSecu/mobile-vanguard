@@ -1,18 +1,32 @@
+import React, { useEffect } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { AppsProvider } from '@/context/apps-context';
 import LoginScreen from './login';
 import { CyberColors } from '@/constants/cyber-theme';
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootNavigator() {
   const { isAuthenticated, isInitializing } = useAuth();
+
+  useEffect(() => {
+    // Ensure native splash screen hides once session initialization resolves,
+    // with a failsafe timeout to prevent permanent screen freezing in Expo Go.
+    const failsafe = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, 2500);
+
+    if (!isInitializing) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+
+    return () => clearTimeout(failsafe);
+  }, [isInitializing]);
 
   if (isInitializing) {
     return (
@@ -29,7 +43,6 @@ function RootNavigator() {
 
   return (
     <AppsProvider>
-      <AnimatedSplashOverlay />
       <AppTabs />
     </AppsProvider>
   );

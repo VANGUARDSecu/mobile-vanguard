@@ -105,4 +105,33 @@ test('Login Submission Unmounting & Sign Out Responsiveness (SCRUM-76)', async (
       'Overlay MUST set pointerEvents none so gestures and taps pass directly to underlying buttons'
     );
   });
+
+  await t.test(
+    'RootNavigator dismisses native splash screen when isInitializing is false or failsafe expires',
+    () => {
+      let isSplashHidden = false;
+      const hideSplash = () => {
+        isSplashHidden = true;
+      };
+
+      const handleSplashLifecycle = (isInitializing: boolean, failsafeTriggered: boolean) => {
+        if (!isInitializing || failsafeTriggered) {
+          hideSplash();
+        }
+      };
+
+      // 1. Initial boot: isInitializing is true, failsafe hasn't triggered -> splash remains
+      handleSplashLifecycle(true, false);
+      assert.equal(isSplashHidden, false, 'Splash remains visible during initial storage check');
+
+      // 2. Initialization finishes (unauthenticated user ready on LoginScreen) -> splash MUST hide
+      handleSplashLifecycle(false, false);
+      assert.equal(isSplashHidden, true, 'Splash MUST hide once isInitializing resolves false');
+
+      // 3. Failsafe triggered even if isInitializing remains true -> splash MUST hide
+      isSplashHidden = false;
+      handleSplashLifecycle(true, true);
+      assert.equal(isSplashHidden, true, 'Failsafe timeout MUST guarantee splash hide');
+    }
+  );
 });

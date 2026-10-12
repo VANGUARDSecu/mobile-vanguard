@@ -63,8 +63,28 @@ Start the Metro bundler:
 ```bash
 npm start
 # or
-npx expo start
+npx expo start --port 8082
 ```
+
+### Physical Mobile Device via Expo Go
+To test on a physical iOS or Android phone using **Expo Go**:
+1. **Install Expo Go** from Google Play Store or Apple App Store.
+2. **Connect to Same Network**: Ensure your mobile device is on the same local Wi-Fi network as your workstation (PC IP: `192.168.1.13`).
+3. **Launch Bundler**:
+   ```bash
+   npm start
+   ```
+4. **Scan QR Code**:
+   - **Android**: Scan the terminal QR code using the Expo Go app.
+   - **iOS**: Scan the terminal QR code using the default Camera app and tap the Expo Go prompt.
+
+#### 🔧 Troubleshooting Expo Go Connectivity
+- **Stuck on Splash Screen Fix**: The application incorporates a dedicated `SplashScreen.hideAsync()` lifecycle in `_layout.tsx` that dismisses the native splash screen immediately when session initialization completes (with a 2.5s failsafe timeout), ensuring the login interface renders on mobile devices.
+- **Port Conflict**: The bundler runs on port `8082` (`expo start --port 8082`) to avoid colliding with `dummy-mobile` (:8081).
+- **Wi-Fi Isolation / Dynamic IP Fallback (Tunnel Mode)**: If your local Wi-Fi router isolates clients or your PC's IP changed, launch Expo in Tunnel mode to bypass local network restrictions:
+  ```bash
+  npx expo start --tunnel --port 8082
+  ```
 
 ### Platform-Specific Launch Targets
 - **Web Preview (Port 8082)**:
@@ -86,7 +106,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, registration architecture, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (162 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, registration architecture, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (163 automated tests):
 ```bash
 npm test
 ```

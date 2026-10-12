@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { UserConnectedApp } from '../models/apps.models.ts';
-import { DEFAULT_CONNECTED_APPS, AppsStorageService } from '../services/apps-storage.service.ts';
+import { DEFAULT_CONNECTED_APPS, MOCK_CONNECTED_APPS_FIXTURES, AppsStorageService } from '../services/apps-storage.service.ts';
 
-test('Active SSO Integrations & Connected Applications (SCRUM-64)', async (t) => {
-  await t.test('default connected apps includes Acme Dummy Web with standard SSO metadata', () => {
-    assert.ok(DEFAULT_CONNECTED_APPS.length >= 1);
-    const dummyWeb = DEFAULT_CONNECTED_APPS.find((a) => a.clientId === 'vanguard-dummy-portal');
+test('Active SSO Integrations & Connected Applications (SCRUM-64, SCRUM-83)', async (t) => {
+  await t.test('default connected apps is empty by default (SCRUM-83) and fixture has Acme Dummy Web', () => {
+    assert.equal(DEFAULT_CONNECTED_APPS.length, 0);
+    const dummyWeb = MOCK_CONNECTED_APPS_FIXTURES.find((a) => a.clientId === 'vanguard-dummy-portal');
     assert.ok(dummyWeb);
     assert.equal(dummyWeb.clientName, 'Acme Dummy Web');
     assert.equal(dummyWeb.protocol, 'OIDC 1.0 PKCE');

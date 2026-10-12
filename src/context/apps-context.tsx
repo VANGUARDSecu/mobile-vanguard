@@ -155,10 +155,18 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     );
   }, [connectedApps, userEmail]);
 
-  // Access Requests Count
+  // Access Requests Count - user-scoped (SCRUM-83)
+  const myAccessRequests = useMemo(() => {
+    if (!userEmail) return accessRequests;
+    const clean = userEmail.toLowerCase().trim();
+    return accessRequests.filter(
+      (r) => !r.userEmail || r.userEmail.toLowerCase().trim() === clean
+    );
+  }, [accessRequests, userEmail]);
+
   const pendingRequestsCount = useMemo(() => {
-    return accessRequests.filter((r) => r.status === 'Pending Approval').length;
-  }, [accessRequests]);
+    return myAccessRequests.filter((r) => r.status === 'Pending Approval').length;
+  }, [myAccessRequests]);
 
   // Matching Vault Credential Detection (for Auto-Fill Ready badge)
   const findCredentialsForDomain = useCallback(
@@ -181,7 +189,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     setPersonalApps((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
-  // Submit Enterprise App Access Request
+  // Submit Enterprise App Access Request (dynamic active user info)
   const submitAppRequest = useCallback(
     async (input: {
       appName: string;
@@ -191,9 +199,15 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     }): Promise<AppAccessRequest> => {
       const created = await AppsStorageService.submitAccessRequest({
         ...input,
-        userName: currentUser?.name,
-        userEmail: currentUser?.email,
-        department: currentUser?.department,
+        userName:
+          currentUser?.name ||
+          (currentUser?.email ? currentUser.email.split('@')[0] : 'Authenticated User'),
+        userEmail: currentUser?.email || '',
+        department:
+          currentUser?.department ||
+          (currentUser?.user_metadata as any)?.['department'] ||
+          'Engineering',
+        role: currentUser?.role || 'user',
       });
       setAccessRequests((prev) => [created, ...prev]);
       return created;
@@ -219,7 +233,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       filteredApps,
       connectedApps,
       activeConnectedApps,
-      accessRequests,
+      accessRequests: myAccessRequests,
       pendingRequestsCount,
       vaultCredentials,
       findCredentialsForDomain,
@@ -241,7 +255,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       filteredApps,
       connectedApps,
       activeConnectedApps,
-      accessRequests,
+      myAccessRequests,
       pendingRequestsCount,
       vaultCredentials,
       findCredentialsForDomain,

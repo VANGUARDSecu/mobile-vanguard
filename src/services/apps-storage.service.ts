@@ -17,7 +17,53 @@ const STORAGE_KEYS = {
   WORKSPACE_MODE: '@vanguard_workspace_mode',
 };
 
-export const DEFAULT_ENTERPRISE_APPS: SaaSApp[] = [
+// In-memory fallback map for headless/test environments
+const memoryAppsStore = new Map<string, string>();
+
+async function getStoredItem(key: string): Promise<string | null> {
+  try {
+    if (AsyncStorage && typeof AsyncStorage.getItem === 'function') {
+      const val = await AsyncStorage.getItem(key);
+      if (val !== null && val !== undefined) return val;
+    }
+  } catch {
+    // In-memory fallback
+  }
+  return memoryAppsStore.get(key) ?? null;
+}
+
+async function setStoredItem(key: string, value: string): Promise<void> {
+  memoryAppsStore.set(key, value);
+  try {
+    if (AsyncStorage && typeof AsyncStorage.setItem === 'function') {
+      await AsyncStorage.setItem(key, value);
+    }
+  } catch {
+    // In-memory fallback
+  }
+}
+
+async function removeStoredItems(keys: string[]): Promise<void> {
+  for (const k of keys) {
+    memoryAppsStore.delete(k);
+  }
+  try {
+    if (AsyncStorage && typeof AsyncStorage.multiRemove === 'function') {
+      await AsyncStorage.multiRemove(keys);
+    }
+  } catch {
+    // In-memory fallback
+  }
+}
+
+// SCRUM-83: Dashboard collections initialize to zero hardcoded items by default
+export const DEFAULT_ENTERPRISE_APPS: SaaSApp[] = [];
+export const DEFAULT_CONNECTED_APPS: UserConnectedApp[] = [];
+export const DEFAULT_ACCESS_REQUESTS: AppAccessRequest[] = [];
+export const DEFAULT_VAULT_ITEMS: PersonalVaultItem[] = [];
+
+// Mock fixtures preserved for development simulators & test suites
+export const MOCK_ENTERPRISE_APPS_FIXTURES: SaaSApp[] = [
   {
     id: 'app-aws',
     name: 'AWS Management Console',
@@ -80,7 +126,7 @@ export const DEFAULT_ENTERPRISE_APPS: SaaSApp[] = [
   },
 ];
 
-export const DEFAULT_CONNECTED_APPS: UserConnectedApp[] = [
+export const MOCK_CONNECTED_APPS_FIXTURES: UserConnectedApp[] = [
   {
     id: 'conn-dummy-web-ellen',
     clientId: 'vanguard-dummy-portal',
@@ -113,7 +159,7 @@ export const DEFAULT_CONNECTED_APPS: UserConnectedApp[] = [
   },
 ];
 
-export const DEFAULT_ACCESS_REQUESTS: AppAccessRequest[] = [
+export const MOCK_GOVERNANCE_FIXTURES: AppAccessRequest[] = [
   {
     id: 'req-snowflake',
     userId: 'usr-current',
@@ -169,7 +215,7 @@ export const DEFAULT_ACCESS_REQUESTS: AppAccessRequest[] = [
   },
 ];
 
-export const DEFAULT_VAULT_ITEMS: PersonalVaultItem[] = [
+export const MOCK_VAULT_FIXTURES: PersonalVaultItem[] = [
   {
     id: 'vault-1',
     title: 'GitHub Personal Credentials',
@@ -194,7 +240,7 @@ export class AppsStorageService {
    */
   static async getWorkspaceMode(): Promise<boolean> {
     try {
-      const mode = await AsyncStorage.getItem(STORAGE_KEYS.WORKSPACE_MODE);
+      const mode = await getStoredItem(STORAGE_KEYS.WORKSPACE_MODE);
       return mode !== null ? JSON.parse(mode) : false;
     } catch {
       return false;
@@ -203,7 +249,7 @@ export class AppsStorageService {
 
   static async setWorkspaceMode(isPersonal: boolean): Promise<void> {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.WORKSPACE_MODE, JSON.stringify(isPersonal));
+      await setStoredItem(STORAGE_KEYS.WORKSPACE_MODE, JSON.stringify(isPersonal));
     } catch {
       // Ignored
     }
@@ -214,7 +260,7 @@ export class AppsStorageService {
    */
   static async getPersonalApps(): Promise<SaaSApp[]> {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.PERSONAL_APPS);
+      const data = await getStoredItem(STORAGE_KEYS.PERSONAL_APPS);
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
@@ -223,7 +269,7 @@ export class AppsStorageService {
 
   static async savePersonalApps(apps: SaaSApp[]): Promise<void> {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.PERSONAL_APPS, JSON.stringify(apps));
+      await setStoredItem(STORAGE_KEYS.PERSONAL_APPS, JSON.stringify(apps));
     } catch {
       // Ignored
     }
@@ -260,24 +306,29 @@ export class AppsStorageService {
   }
 
   /**
-   * Enterprise Applications
+   * Enterprise Applications (SCRUM-83: starts empty unless dynamically assigned)
    */
   static async getEnterpriseApps(): Promise<SaaSApp[]> {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.ENTERPRISE_APPS);
+      const data = await getStoredItem(STORAGE_KEYS.ENTERPRISE_APPS);
       if (data) {
-        return JSON.parse(data);
+        const parsed: SaaSApp[] = JSON.parse(data);
+        const legacyIds = new Set(['app-aws', 'app-slack', 'app-github', 'app-google', 'app-figma']);
+        const cleaned = parsed.filter((a) => !legacyIds.has(a.id));
+        if (cleaned.length !== parsed.length) {
+          await setStoredItem(STORAGE_KEYS.ENTERPRISE_APPS, JSON.stringify(cleaned));
+        }
+        return cleaned;
       }
-      await AsyncStorage.setItem(STORAGE_KEYS.ENTERPRISE_APPS, JSON.stringify(DEFAULT_ENTERPRISE_APPS));
-      return DEFAULT_ENTERPRISE_APPS;
+      return [];
     } catch {
-      return DEFAULT_ENTERPRISE_APPS;
+      return [];
     }
   }
 
   static async saveEnterpriseApps(apps: SaaSApp[]): Promise<void> {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.ENTERPRISE_APPS, JSON.stringify(apps));
+      await setStoredItem(STORAGE_KEYS.ENTERPRISE_APPS, JSON.stringify(apps));
     } catch {
       // Ignored
     }
@@ -317,22 +368,31 @@ export class AppsStorageService {
 
   static async getConnectedApps(): Promise<UserConnectedApp[]> {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.CONNECTED_APPS);
+      const data = await getStoredItem(STORAGE_KEYS.CONNECTED_APPS);
       if (data) {
         const parsed: UserConnectedApp[] = JSON.parse(data);
-        return this.deduplicateConnectedApps(parsed);
+        const cleaned = parsed.filter(
+          (a) =>
+            a.id !== 'conn-dummy-web-ellen' &&
+            a.id !== 'conn-dummy-web-user' &&
+            a.userEmail !== 'ellen.ripley@weyland.corp' &&
+            a.userEmail !== 'user@company.com'
+        );
+        if (cleaned.length !== parsed.length) {
+          await setStoredItem(STORAGE_KEYS.CONNECTED_APPS, JSON.stringify(cleaned));
+        }
+        return this.deduplicateConnectedApps(cleaned);
       }
-      await AsyncStorage.setItem(STORAGE_KEYS.CONNECTED_APPS, JSON.stringify(DEFAULT_CONNECTED_APPS));
-      return DEFAULT_CONNECTED_APPS;
+      return [];
     } catch {
-      return DEFAULT_CONNECTED_APPS;
+      return [];
     }
   }
 
   static async saveConnectedApps(apps: UserConnectedApp[]): Promise<void> {
     try {
       const deduped = this.deduplicateConnectedApps(apps);
-      await AsyncStorage.setItem(STORAGE_KEYS.CONNECTED_APPS, JSON.stringify(deduped));
+      await setStoredItem(STORAGE_KEYS.CONNECTED_APPS, JSON.stringify(deduped));
     } catch {
       // Ignored
     }
@@ -395,24 +455,35 @@ export class AppsStorageService {
   }
 
   /**
-   * Access Requests (SCRUM-42)
+   * Access Requests (SCRUM-42 & SCRUM-83: starts empty, dynamic user requests)
    */
   static async getAccessRequests(): Promise<AppAccessRequest[]> {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_REQUESTS);
+      const data = await getStoredItem(STORAGE_KEYS.ACCESS_REQUESTS);
       if (data) {
-        return JSON.parse(data);
+        const parsed: AppAccessRequest[] = JSON.parse(data);
+        const cleaned = parsed.filter(
+          (r) =>
+            r.userEmail !== 'johnroben.manayon21@gmail.com' &&
+            r.userName !== 'John Roben Manayon' &&
+            !r.id?.startsWith('req-snowflake') &&
+            !r.id?.startsWith('req-figma-approved') &&
+            !r.id?.startsWith('req-salesforce')
+        );
+        if (cleaned.length !== parsed.length) {
+          await setStoredItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(cleaned));
+        }
+        return cleaned;
       }
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(DEFAULT_ACCESS_REQUESTS));
-      return DEFAULT_ACCESS_REQUESTS;
+      return [];
     } catch {
-      return DEFAULT_ACCESS_REQUESTS;
+      return [];
     }
   }
 
   static async saveAccessRequests(requests: AppAccessRequest[]): Promise<void> {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(requests));
+      await setStoredItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(requests));
     } catch {
       // Ignored
     }
@@ -426,20 +497,21 @@ export class AppsStorageService {
     userName?: string;
     userEmail?: string;
     department?: string;
+    role?: string;
   }): Promise<AppAccessRequest> {
     const requests = await this.getAccessRequests();
     const newReq: AppAccessRequest = {
-      id: 'req-' + Date.now(),
-      userId: 'usr-current',
-      userName: input.userName || 'John Roben Manayon',
+      id: 'req-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      userId: 'usr-' + Date.now(),
+      userName: input.userName || 'Authenticated User',
       userEmail: input.userEmail || 'user@company.com',
       department: input.department || 'Engineering',
-      role: 'Full Stack Engineer',
-      appName: input.appName.trim(),
+      role: input.role || 'user',
+      appName: (input.appName || '').trim(),
       protocol: 'SAML 2.0',
       category: input.category || 'collaboration',
       icon: input.icon || '🚀',
-      justification: input.justification.trim(),
+      justification: (input.justification || '').trim(),
       status: 'Pending Approval',
       submittedAt: new Date().toISOString(),
     };
@@ -450,18 +522,28 @@ export class AppsStorageService {
   }
 
   /**
-   * Personal Vault Credentials (for autofill readiness detection)
+   * Personal Vault Credentials (SCRUM-83: starts empty, dynamic detection)
    */
   static async getVaultItems(): Promise<PersonalVaultItem[]> {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.VAULT_ITEMS);
+      const data = await getStoredItem(STORAGE_KEYS.VAULT_ITEMS);
       if (data) {
-        return JSON.parse(data);
+        const parsed: PersonalVaultItem[] = JSON.parse(data);
+        const legacyIds = new Set(['vault-1', 'vault-2']);
+        const cleaned = parsed.filter(
+          (v) =>
+            !legacyIds.has(v.id) &&
+            !v.username?.includes('john.dev') &&
+            !v.username?.includes('john.design')
+        );
+        if (cleaned.length !== parsed.length) {
+          await setStoredItem(STORAGE_KEYS.VAULT_ITEMS, JSON.stringify(cleaned));
+        }
+        return cleaned;
       }
-      await AsyncStorage.setItem(STORAGE_KEYS.VAULT_ITEMS, JSON.stringify(DEFAULT_VAULT_ITEMS));
-      return DEFAULT_VAULT_ITEMS;
+      return [];
     } catch {
-      return DEFAULT_VAULT_ITEMS;
+      return [];
     }
   }
 
@@ -470,7 +552,7 @@ export class AppsStorageService {
    */
   static async resetToDefaults(): Promise<void> {
     try {
-      await AsyncStorage.multiRemove([
+      await removeStoredItems([
         STORAGE_KEYS.PERSONAL_APPS,
         STORAGE_KEYS.ENTERPRISE_APPS,
         STORAGE_KEYS.CONNECTED_APPS,

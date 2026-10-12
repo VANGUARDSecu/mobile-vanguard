@@ -85,7 +85,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, and end-to-end workflows (136 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (150 automated tests):
 ```bash
 npm test
 ```
@@ -93,7 +93,9 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
-| `src/__tests__/push-mfa.test.ts` | Out-of-band push verification modal, rich contextual login metadata (app, IP, location, device, 60s countdown), biometric prompt approval, 2-digit number matching challenge (MFA fatigue protection), deny & fraud reporting, request expiration, and offline test harness presets (SCRUM-21) |
+| `src/__tests__/zero-hardcoded-dashboard.test.ts` | Zero hardcoded dashboard verification, dynamic access request generation without mock identity fallbacks, legacy seed cache auto-purging, and storage integrity (SCRUM-83) |
+| `src/__tests__/metadata-name-resolution.test.ts` | Full name derivation from user metadata (`first_name`, `last_name`, `name`, `full_name`, `given_name`, `display_name`) with space-separated title-casing fallback (SCRUM-82) |
+| `src/__tests__/push-mfa.test.ts` | Out-of-band push verification modal, rich contextual login metadata (app, IP, location, device, 60s countdown), biometric prompt challenge execution, 2-digit number matching challenge (MFA fatigue protection), deny & fraud reporting, request expiration, and offline test harness presets (SCRUM-21) |
 | `src/__tests__/biometric-auth.test.ts` | Native biometric authentication (Face ID & Fingerprint) capability detection, biometric prompt challenge execution, device passcode fallback, launch requirement settings persistence, and AppState background/foreground vault auto-locking lifecycle simulation (SCRUM-20) |
 | `src/__tests__/offline-totp-generator.test.ts` | Offline RFC 6238 TOTP engine, standard test vector validation against Google Authenticator, circular countdown color shift warnings (Cyan/Amber/Red), Base32 decoding, clock drift tolerance (±1 window), and tap-to-copy code formatting (SCRUM-19) |
 | `src/__tests__/secure-vault-keychain.test.ts` | Hardware-backed iOS Keychain & Android Keystore integration (`expo-secure-store`), AES-GCM 256-bit envelope encryption/decryption, zero plaintext secret leakage, mock keychain adapters, and complete CRUD operations (`saveAccount`, `getAccounts`, `getAccountById`, `updateAccount`, `deleteAccount`) (SCRUM-18) |
@@ -106,10 +108,10 @@ npm test
 | `src/__tests__/app-navigation.test.ts` | Anchored bottom tab bar layout (`bottom: 0`), pointer pass-through, non-obstructed session header, and Expo Starter banner removal |
 | `src/__tests__/apps-data.test.ts` | SaaS app deduplication, connected app deduplication by origin/client ID, category filtering, URL prefix normalization |
 | `src/__tests__/apps-ui.test.ts` | Dynamic category counters, vault auto-fill badge computation, live connection indicators, workspace-aware empty states |
-| `src/__tests__/connected-apps.test.ts` | Active SSO client discovery, Acme Dummy Web OIDC metadata, disconnection handling, active client counter badges |
+| `src/__tests__/connected-apps.test.ts` | Active SSO client discovery, Acme Dummy Web OIDC metadata fixtures, disconnection handling, active client counter badges (SCRUM-64, SCRUM-83) |
 | `src/__tests__/personal-app-modal.test.ts` | Quick app presets (Figma, GitHub, Notion, etc.), input validation, protocol formatting, auto-fill domain extraction |
 | `src/__tests__/request-app-modal.test.ts` | Enterprise app suggestions, business justification validation, user metadata association, pending request creation |
-| `src/__tests__/governance-queue.test.ts` | Access request states (`Pending`, `Approved`, `Rejected`), launch guard enforcement, zero-trust blocked banners |
+| `src/__tests__/governance-queue.test.ts` | Zero hardcoded default access requests, governance test fixtures, launch guard enforcement, zero-trust blocked banners (SCRUM-67, SCRUM-83) |
 | `src/__tests__/app-launcher.test.ts` | URL normalization, in-app browser dispatching, external linking fallback, personal vault domain matching |
 | `src/__tests__/my-apps-screen.test.ts` | Header titles, workspace switching, pull-to-refresh lifecycle, bottom tab navigation triggers |
 | `src/__tests__/e2e-workflow.test.ts` | Complete end-to-end user journey across authentication, app addition, enterprise request, SSO launch, and logout |
@@ -123,6 +125,26 @@ npm test
   ```bash
   npx tsc --noEmit
   ```
+
+---
+
+## 🔒 Zero Hardcoded Dashboard Data Architecture (SCRUM-83)
+
+To ensure strict zero-trust multi-tenant isolation across varying user accounts and prevent mock data contamination on the Mobile Launchpad:
+
+1. **Empty Initial Collections**:
+   - `DEFAULT_ENTERPRISE_APPS = []`
+   - `DEFAULT_CONNECTED_APPS = []`
+   - `DEFAULT_ACCESS_REQUESTS = []`
+   - `DEFAULT_VAULT_ITEMS = []`
+   - All collections on a fresh profile load completely clean without hardcoded pre-seeded items.
+2. **Dynamic Context-Driven Access Requests**:
+   - Access request submissions dynamically inject the authenticated user's profile metadata (`currentUser.name`, `currentUser.email`, `currentUser.department`, `currentUser.role`).
+   - The user governance queue displays only requests submitted by the logged-in user (`userEmail`).
+3. **Legacy Cache Auto-Purge**:
+   - `AppsStorageService` automatically filters out legacy demo seed records (such as hardcoded Acme Dummy Web instances, mock requests, or dummy personal vault entries) upon storage read, keeping production devices clean.
+4. **Resilient In-Memory Fallback Adapter**:
+   - Storage service incorporates an in-memory storage fallback layer, guaranteeing reliable CRUD operations during unit testing and headless execution environments where native storage adapters are unavailable.
 
 ---
 

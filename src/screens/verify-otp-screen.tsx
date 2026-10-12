@@ -32,7 +32,7 @@ export default function VerifyOtpScreen({
 }: VerifyOtpScreenProps) {
   const { verifyOtp, verifyTotp, resendOtp, isLoading } = useAuth();
 
-  const [email] = useState<string>(initialEmail || 'ellen.ripley@weyland.corp');
+  const [email] = useState<string>(initialEmail || '');
   const [method, setMethod] = useState<'email_otp' | 'totp'>(initialHasTotp ? 'totp' : 'email_otp');
   const [hasTotp] = useState<boolean>(initialHasTotp);
 

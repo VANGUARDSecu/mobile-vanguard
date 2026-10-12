@@ -1,23 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_ACCESS_REQUESTS } from '../services/apps-storage.service.ts';
+import {
+  DEFAULT_ACCESS_REQUESTS,
+  MOCK_GOVERNANCE_FIXTURES,
+  AppsStorageService,
+} from '../services/apps-storage.service.ts';
 import type { AppAccessRequest } from '../models/apps.models.ts';
 
-test('Requested Applications & Zero-Trust Governance Queue (SCRUM-67)', async (t) => {
-  await t.test('default access requests seed contains all three governance states', () => {
-    assert.ok(DEFAULT_ACCESS_REQUESTS.length >= 3);
+test('Requested Applications & Zero-Trust Governance Queue (SCRUM-67 & SCRUM-83)', async (t) => {
+  await t.test('dashboard access requests initialize with zero hardcoded entries (SCRUM-83)', async () => {
+    assert.equal(DEFAULT_ACCESS_REQUESTS.length, 0);
+    const requests = await AppsStorageService.getAccessRequests();
+    assert.equal(requests.length, 0);
+  });
 
-    const pending = DEFAULT_ACCESS_REQUESTS.find((r) => r.status === 'Pending Approval');
+  await t.test('governance requests fixture contains all three governance states', () => {
+    assert.ok(MOCK_GOVERNANCE_FIXTURES.length >= 3);
+
+    const pending = MOCK_GOVERNANCE_FIXTURES.find((r) => r.status === 'Pending Approval');
     assert.ok(pending);
     assert.equal(pending.appName, 'Snowflake Data Cloud');
     assert.equal(pending.protocol, 'SAML 2.0');
 
-    const approved = DEFAULT_ACCESS_REQUESTS.find((r) => r.status === 'Approved');
+    const approved = MOCK_GOVERNANCE_FIXTURES.find((r) => r.status === 'Approved');
     assert.ok(approved);
     assert.equal(approved.appName, 'Figma Enterprise');
     assert.equal(approved.reviewedBy, 'Security Operations Admin');
 
-    const rejected = DEFAULT_ACCESS_REQUESTS.find((r) => r.status === 'Rejected');
+    const rejected = MOCK_GOVERNANCE_FIXTURES.find((r) => r.status === 'Rejected');
     assert.ok(rejected);
     assert.equal(rejected.appName, 'Salesforce CRM');
     assert.ok(rejected.adminNotes?.includes('CRM write access'));

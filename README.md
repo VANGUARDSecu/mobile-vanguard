@@ -329,12 +329,13 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - **Two-Step Verification Screen**: Perfect horizontal & vertical digit centering across Web/Android/iOS (`textAlign: 'center'`, `textAlignVertical: 'center'`, reset padding), multi-character paste distribution across all boxes, dedicated 1-tap "📋 Paste from Clipboard" button, auto-advancing digit inputs, backspace navigation, resend timer, and method switcher (Email OTP vs Authenticator TOTP) (SCRUM-81).
 - **Pinned User Session Header & Sign Out ⎋**: Pinned outside the scrollable area with dedicated `hitSlop`, `cursor: 'pointer'`, loading spinner, and immediate unauthenticated layout transition back to `LoginScreen`.
 - **User-Scoped SSO Integrations**: Active SSO connected applications and OAuth authorizations are dynamically scoped and filtered to the logged-in user account.
+- **User Metadata & Full Name Resolution (SCRUM-82)**: Resolves user full names identically to `frontend-vanguard` using top-level properties (`firstName`, `lastName`, `name`) and nested `user_metadata` (`first_name`, `last_name`, `name`, `department`, `role`, `company_name`, `phone`, `account_type`), preventing fallback to email prefix handles.
 
 ---
 
 ## 🏛️ Architecture & Modules
 
-- `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
+- `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser` (with `user_metadata`, `companyName`, `phone`, `accountType`), `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
 - `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, `EncryptedVaultEnvelope`, and `ISecureStorageProvider`.
 - `src/models/push-mfa.models.ts`: TypeScript definitions for `PushApprovalRequest`, `PushApprovalResult`, `PushGeoLocation`, `NumberMatchingChallenge`, and `PushHarnessPreset`.
@@ -344,7 +345,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/services/biometric-auth.service.ts`: Standalone biometric authentication provider with native hardware abstraction (`ExpoBiometricAdapter`), mock testing adapter (`MockBiometricProvider`), capability queries, and settings persistence.
 - `src/services/push-mfa.service.ts`: Reactive out-of-band push verification service with request dispatching, number matching challenge validation, audit history, and offline presets.
 - `src/services/vault.service.ts`: Standalone hardware-backed Authenticator Vault service with AES-GCM encryption, full CRUD operations, Base32 validation, and RFC 6238 TOTP computation.
-- `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, and AsyncStorage token/user session management.
+- `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, user metadata extraction/normalization (`user_metadata`), and AsyncStorage token/user session management with in-memory test fallback.
 - `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
 - `src/services/app-launcher.service.ts`: Centralized application launch dispatcher integrating Expo's in-app browser (`expo-web-browser`) and external linking (`expo-linking`) with Cyber Dark theme styling, URL normalization, and personal vault credential matching.
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
@@ -367,7 +368,7 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
 - `src/components/apps/`: Reusable applications directory UI components (`PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `metadata-name-resolution.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 
 
 

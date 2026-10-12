@@ -23,9 +23,23 @@ export const DEMO_USERS: Record<string, AuthUser> = {
     name: 'Ellen Ripley',
     firstName: 'Ellen',
     lastName: 'Ripley',
+    companyName: 'Weyland-Yutani Corp',
+    phone: '+1 (555) 019-2834',
+    accountType: 'individual',
     role: 'user',
     department: 'Engineering',
     avatar: '👩‍🚀',
+    avatarUrl: '',
+    user_metadata: {
+      first_name: 'Ellen',
+      last_name: 'Ripley',
+      name: 'Ellen Ripley',
+      role: 'user',
+      department: 'Engineering',
+      company_name: 'Weyland-Yutani Corp',
+      phone: '+1 (555) 019-2834',
+      account_type: 'individual',
+    },
   },
   'user@company.com': {
     id: 'usr_sec_1002',
@@ -33,9 +47,23 @@ export const DEMO_USERS: Record<string, AuthUser> = {
     name: 'John Roben Manayon',
     firstName: 'John',
     lastName: 'Manayon',
+    companyName: 'Company Inc.',
+    phone: '+1 (555) 014-9988',
+    accountType: 'individual',
     role: 'user',
     department: 'Engineering',
     avatar: '👨‍💻',
+    avatarUrl: '',
+    user_metadata: {
+      first_name: 'John',
+      last_name: 'Manayon',
+      name: 'John Roben Manayon',
+      role: 'user',
+      department: 'Engineering',
+      company_name: 'Company Inc.',
+      phone: '+1 (555) 014-9988',
+      account_type: 'individual',
+    },
   },
   'admin@vanguard.security': {
     id: 'usr_sec_0001',
@@ -43,14 +71,30 @@ export const DEMO_USERS: Record<string, AuthUser> = {
     name: 'Security Operations Admin',
     firstName: 'SecOps',
     lastName: 'Admin',
+    companyName: 'Vanguard Security Inc.',
+    phone: '+1 (555) 010-0001',
+    accountType: 'company',
     role: 'admin',
     department: 'Security Operations',
     avatar: '🛡️',
+    avatarUrl: '',
+    user_metadata: {
+      first_name: 'SecOps',
+      last_name: 'Admin',
+      name: 'Security Operations Admin',
+      role: 'admin',
+      department: 'Security Operations',
+      company_name: 'Vanguard Security Inc.',
+      phone: '+1 (555) 010-0001',
+      account_type: 'company',
+    },
   },
 };
 
 // Internal simulated OTP cache for offline Expo Go development & tests
 const simulatedOtpStore = new Map<string, { code: string; expiresAt: number }>();
+// In-memory session cache for headless tests & SSR fallback
+const memoryAuthStore = new Map<string, string>();
 
 export class AuthService {
   /**
@@ -62,37 +106,184 @@ export class AuthService {
       if (data) {
         return JSON.parse(data);
       }
-      return null;
     } catch {
-      return null;
+      // In-memory fallback if AsyncStorage fails (e.g. Node test runner)
     }
+
+    const memData = memoryAuthStore.get(AUTH_STORAGE_KEYS.CURRENT_USER);
+    if (memData) {
+      try {
+        return JSON.parse(memData);
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 
   /**
-   * Synthesizes a valid AuthUser structure from an email address
+   * Synthesizes a valid AuthUser structure from an email address and optional metadata
    */
-  static synthesizeUser(cleanEmail: string, role?: string): AuthUser {
+  static synthesizeUser(
+    cleanEmail: string,
+    role?: string,
+    userMetadata?: Record<string, any>
+  ): AuthUser {
     const demo = DEMO_USERS[cleanEmail];
     if (demo) {
+      const mergedMeta = {
+        first_name: demo.firstName,
+        last_name: demo.lastName,
+        name: demo.name,
+        role: role || demo.role,
+        department: demo.department,
+        company_name: demo.companyName || 'Vanguard Security Inc.',
+        phone: demo.phone || '',
+        account_type: demo.accountType || 'individual',
+        ...(demo.user_metadata || {}),
+        ...(userMetadata || {}),
+      };
       return {
         ...demo,
         role: role || demo.role,
+        user_metadata: mergedMeta,
         accessToken: `mock_jwt_${Date.now()}`,
       };
     }
 
+    const meta = userMetadata || {};
+    const metaFirstName = meta['first_name'] || meta['firstName'] || meta['given_name'];
+    const metaLastName = meta['last_name'] || meta['lastName'] || meta['family_name'];
+    const metaName = meta['name'];
+
     const names = cleanEmail.split('@')[0].split('.');
-    const firstName = names[0] ? names[0].charAt(0).toUpperCase() + names[0].slice(1) : 'User';
-    const lastName = names[1] ? names[1].charAt(0).toUpperCase() + names[1].slice(1) : '';
+    const firstName = metaFirstName || (names[0] ? names[0].charAt(0).toUpperCase() + names[0].slice(1) : 'User');
+    const lastName = metaLastName !== undefined ? metaLastName : (names[1] ? names[1].charAt(0).toUpperCase() + names[1].slice(1) : '');
+    const fullName = metaName || (firstName || lastName ? `${firstName} ${lastName}`.trim() : cleanEmail.split('@')[0]);
+    const resolvedRole = role || meta['role'] || 'user';
+    const department = meta['department'] || 'Engineering';
+    const companyName = meta['company_name'] || meta['companyName'] || 'Vanguard Security Inc.';
+    const phone = meta['phone'] || '';
+    const accountType = meta['account_type'] || meta['accountType'] || 'individual';
+    const avatar = meta['avatar'] || meta['avatarUrl'] || meta['picture'];
+    const avatarUrl = meta['avatar_url'] || meta['avatarUrl'] || meta['picture'] || '';
+
     return {
       id: `usr_local_${Date.now()}`,
       email: cleanEmail,
-      name: `${firstName} ${lastName}`.trim(),
+      name: fullName,
       firstName,
       lastName,
-      role: role || 'user',
-      department: 'Engineering',
+      role: resolvedRole,
+      department,
+      companyName,
+      phone,
+      accountType,
+      avatar,
+      avatarUrl,
       accessToken: `mock_jwt_${Date.now()}`,
+      user_metadata: {
+        first_name: firstName,
+        last_name: lastName,
+        name: fullName,
+        role: resolvedRole,
+        department,
+        company_name: companyName,
+        phone,
+        account_type: accountType,
+        ...meta,
+      },
+    };
+  }
+
+  /**
+   * Normalizes raw user information from backend or local synthesis into a complete AuthUser
+   * ensuring full name and user_metadata match frontend-vanguard standard.
+   */
+  static normalizeUser(rawUser: any, cleanEmail: string, fallbackRole?: string): AuthUser {
+    const meta = rawUser?.user_metadata || {};
+    const baseUser = this.synthesizeUser(cleanEmail, rawUser?.role || fallbackRole, meta);
+
+    const firstName =
+      rawUser?.firstName ||
+      meta['first_name'] ||
+      meta['firstName'] ||
+      meta['given_name'] ||
+      baseUser.firstName ||
+      '';
+    const lastName =
+      rawUser?.lastName ||
+      meta['last_name'] ||
+      meta['lastName'] ||
+      meta['family_name'] ||
+      baseUser.lastName ||
+      '';
+
+    let resolvedName = '';
+    if (firstName && lastName) {
+      resolvedName = `${firstName} ${lastName}`.trim();
+    } else if (rawUser?.name && rawUser.name.trim()) {
+      resolvedName = rawUser.name.trim();
+    } else if (meta['name'] && typeof meta['name'] === 'string' && meta['name'].trim()) {
+      resolvedName = meta['name'].trim();
+    } else if (baseUser.name && baseUser.name.trim()) {
+      resolvedName = baseUser.name.trim();
+    } else {
+      resolvedName = cleanEmail.split('@')[0];
+    }
+
+    const role = rawUser?.role || meta['role'] || fallbackRole || baseUser.role || 'user';
+    const department = rawUser?.department || meta['department'] || baseUser.department || 'Engineering';
+    const companyName =
+      rawUser?.companyName ||
+      meta['company_name'] ||
+      meta['companyName'] ||
+      baseUser.companyName ||
+      'Vanguard Security Inc.';
+    const phone = rawUser?.phone || meta['phone'] || baseUser.phone || '';
+    const accountType =
+      rawUser?.accountType ||
+      meta['account_type'] ||
+      meta['accountType'] ||
+      baseUser.accountType ||
+      'individual';
+    const avatar = rawUser?.avatar || meta['avatar'] || baseUser.avatar;
+    const avatarUrl =
+      rawUser?.avatarUrl ||
+      meta['avatar_url'] ||
+      meta['avatarUrl'] ||
+      meta['picture'] ||
+      baseUser.avatarUrl ||
+      '';
+
+    const mergedMetadata: Record<string, any> = {
+      ...(baseUser.user_metadata || {}),
+      ...meta,
+      first_name: firstName,
+      last_name: lastName,
+      name: resolvedName,
+      role,
+      department,
+      company_name: companyName,
+      phone,
+      account_type: accountType,
+    };
+
+    return {
+      ...baseUser,
+      id: rawUser?.id || baseUser.id,
+      email: rawUser?.email || cleanEmail,
+      name: resolvedName,
+      firstName,
+      lastName,
+      role,
+      department,
+      companyName,
+      phone,
+      accountType,
+      avatar,
+      avatarUrl,
+      user_metadata: mergedMetadata,
     };
   }
 
@@ -112,7 +303,7 @@ export class AuthService {
 
     // Bypass MFA for explicit SSO federation requests
     if (credentials.isSso) {
-      const user = this.synthesizeUser(cleanEmail);
+      const user = this.normalizeUser(null, cleanEmail);
       await this.saveSession(user, user.accessToken);
       return { requireMfa: false, user };
     }
@@ -157,15 +348,10 @@ export class AuthService {
 
         // Direct authentication without MFA
         if (body.success && body.user) {
-          const baseUser = this.synthesizeUser(cleanEmail, body.user.role);
-          const user: AuthUser = {
-            ...baseUser,
-            id: body.user.id || baseUser.id,
-            email: body.user.email,
-            name: body.user.name || baseUser.name,
-            role: body.user.role || baseUser.role,
-            accessToken: body.session?.accessToken || body.session?.access_token || baseUser.accessToken,
-          };
+          const user = this.normalizeUser(body.user, cleanEmail, body.user.role);
+          if (body.session?.accessToken || body.session?.access_token) {
+            user.accessToken = body.session.accessToken || body.session.access_token;
+          }
           await this.saveSession(user, user.accessToken);
           return { requireMfa: false, user };
         }
@@ -229,7 +415,7 @@ export class AuthService {
       process.env.NODE_ENV === 'test' &&
       (cleanToken === '123456' || cleanToken === '12345678' || cleanToken === '000000')
     ) {
-      const user = this.synthesizeUser(cleanEmail);
+      const user = this.normalizeUser(null, cleanEmail);
       await this.saveSession(user, user.accessToken);
       return user;
     }
@@ -258,15 +444,10 @@ export class AuthService {
       if (response.ok) {
         const body: AuthResponse = await response.json();
         if (body.success && body.user) {
-          const baseUser = this.synthesizeUser(cleanEmail, body.user.role);
-          const user: AuthUser = {
-            ...baseUser,
-            id: body.user.id || baseUser.id,
-            email: body.user.email,
-            name: body.user.name || baseUser.name,
-            role: body.user.role || baseUser.role,
-            accessToken: body.session?.accessToken || body.session?.access_token || baseUser.accessToken,
-          };
+          const user = this.normalizeUser(body.user, cleanEmail, body.user.role);
+          if (body.session?.accessToken || body.session?.access_token) {
+            user.accessToken = body.session.accessToken || body.session.access_token;
+          }
           await this.saveSession(user, user.accessToken);
           return user;
         }
@@ -286,7 +467,7 @@ export class AuthService {
         const sim = simulatedOtpStore.get(cleanEmail);
         if (sim && sim.code === cleanToken && sim.expiresAt > Date.now()) {
           simulatedOtpStore.delete(cleanEmail);
-          const user = this.synthesizeUser(cleanEmail);
+          const user = this.normalizeUser(null, cleanEmail);
           await this.saveSession(user, user.accessToken);
           return user;
         }
@@ -315,7 +496,7 @@ export class AuthService {
       process.env.NODE_ENV === 'test' &&
       cleanCode === '654321'
     ) {
-      const user = this.synthesizeUser(cleanEmail);
+      const user = this.normalizeUser(null, cleanEmail);
       await this.saveSession(user, user.accessToken);
       return user;
     }
@@ -342,11 +523,10 @@ export class AuthService {
 
       if (response.ok) {
         const body: AuthResponse = await response.json();
-        const baseUser = this.synthesizeUser(cleanEmail);
-        const user: AuthUser = {
-          ...baseUser,
-          accessToken: body.session?.accessToken || body.session?.access_token || baseUser.accessToken,
-        };
+        const user = this.normalizeUser(body.user, cleanEmail);
+        if (body.session?.accessToken || body.session?.access_token) {
+          user.accessToken = body.session.accessToken || body.session.access_token;
+        }
         await this.saveSession(user, user.accessToken);
         return user;
       } else {
@@ -358,7 +538,7 @@ export class AuthService {
         throw err;
       }
       if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
-        const user = this.synthesizeUser(cleanEmail);
+        const user = this.normalizeUser(null, cleanEmail);
         await this.saveSession(user, user.accessToken);
         return user;
       }
@@ -428,7 +608,7 @@ export class AuthService {
     if (!result.requireMfa && result.user) {
       return result.user;
     }
-    const user = this.synthesizeUser(targetEmail);
+    const user = this.normalizeUser(null, targetEmail);
     await this.saveSession(user, user.accessToken);
     return user;
   }
@@ -437,8 +617,14 @@ export class AuthService {
    * Saves the user session to local storage
    */
   static async saveSession(user: AuthUser, token?: string): Promise<void> {
+    const serialized = JSON.stringify(user);
+    memoryAuthStore.set(AUTH_STORAGE_KEYS.CURRENT_USER, serialized);
+    if (token) {
+      memoryAuthStore.set(AUTH_STORAGE_KEYS.ACCESS_TOKEN, token);
+    }
+
     try {
-      await AsyncStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+      await AsyncStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER, serialized);
       if (token) {
         await AsyncStorage.setItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN, token);
       }
@@ -451,6 +637,9 @@ export class AuthService {
    * Clears the user session locally and notifies Vanguard backend
    */
   static async logout(): Promise<void> {
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.CURRENT_USER);
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();

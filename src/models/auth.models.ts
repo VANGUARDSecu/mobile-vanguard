@@ -4,11 +4,16 @@ export interface AuthUser {
   name: string;
   firstName?: string;
   lastName?: string;
+  companyName?: string;
+  phone?: string;
   role: 'admin' | 'security_officer' | 'user' | string;
+  accountType?: 'individual' | 'company';
   department?: string;
   avatar?: string;
+  avatarUrl?: string;
   accessToken?: string;
   tenantId?: string;
+  user_metadata?: Record<string, any>;
 }
 
 export interface LoginCredentials {

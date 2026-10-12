@@ -87,15 +87,23 @@ export function AuthenticatorNavigator({
   }, []);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const isAuthenticatingRef = useRef<boolean>(false);
+  const lastUnlockTimestampRef = useRef<number>(0);
+  const isLockedRef = useRef<boolean>(forceLocked ?? false);
 
   // Sync forced lock state if prop changes
   useEffect(() => {
     if (forceLocked !== undefined) {
+      isLockedRef.current = forceLocked;
       setIsLocked(forceLocked);
     }
   }, [forceLocked]);
 
   const triggerUnlock = useCallback(async (disableFallback = false) => {
+    if (isAuthenticatingRef.current) {
+      return;
+    }
+    isAuthenticatingRef.current = true;
     setIsAuthenticating(true);
     setAuthError(null);
 
@@ -108,6 +116,8 @@ export function AuthenticatorNavigator({
       });
 
       if (res.success) {
+        lastUnlockTimestampRef.current = Date.now();
+        isLockedRef.current = false;
         setIsLocked(false);
         setAuthError(null);
       } else {
@@ -117,6 +127,10 @@ export function AuthenticatorNavigator({
       setAuthError(err?.message || 'Biometric authentication failed');
     } finally {
       setIsAuthenticating(false);
+      // Give the OS 600ms to settle its native active/inactive AppState transition
+      setTimeout(() => {
+        isAuthenticatingRef.current = false;
+      }, 600);
     }
   }, []);
 
@@ -140,6 +154,7 @@ export function AuthenticatorNavigator({
 
       const required = await biometricService.isBiometricsRequiredOnLaunch();
       if (required && isMounted) {
+        isLockedRef.current = true;
         setIsLocked(true);
         if (autoPromptBiometrics) {
           triggerUnlock();
@@ -160,23 +175,30 @@ export function AuthenticatorNavigator({
       const previousState = appStateRef.current;
       appStateRef.current = nextAppState;
 
-      // When app moves to background or inactive, immediately lock and obscure vault
-      if (
-        nextAppState === 'background' ||
-        nextAppState === 'inactive'
-      ) {
+      // Ignore transient inactive/active transitions triggered by native biometric modal dialogs
+      if (isAuthenticatingRef.current) {
+        return;
+      }
+
+      // Debounce window: do not re-lock if unlocked within the last 2 seconds
+      if (Date.now() - lastUnlockTimestampRef.current < 2000) {
+        return;
+      }
+
+      // When app moves to background (user switches apps or minimizes to homescreen)
+      if (nextAppState === 'background') {
         const required = await biometricService.isBiometricsRequiredOnLaunch();
         if (required) {
+          isLockedRef.current = true;
           setIsLocked(true);
         }
       } else if (
-        (previousState === 'background' || previousState === 'inactive') &&
+        previousState === 'background' &&
         nextAppState === 'active'
       ) {
-        // When app returns to foreground, prompt biometric challenge
+        // When app returns to foreground from true background, prompt biometric challenge
         const required = await biometricService.isBiometricsRequiredOnLaunch();
-        if (required) {
-          setIsLocked(true);
+        if (required && isLockedRef.current) {
           if (autoPromptBiometrics) {
             triggerUnlock();
           }

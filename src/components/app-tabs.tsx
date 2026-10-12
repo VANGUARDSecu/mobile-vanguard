@@ -8,16 +8,16 @@ export default function AppTabs() {
       backgroundColor={CyberColors.background}
       indicatorColor={CyberColors.cyanGlow}
       labelStyle={{ selected: { color: CyberColors.cyan } }}>
-      <NativeTabs.Trigger name="vault">
-        <NativeTabs.Trigger.Label>Vault</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="index">
+        <NativeTabs.Trigger.Label>Apps</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/home.png')}
           renderingMode="template"
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Apps</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="vault">
+        <NativeTabs.Trigger.Label>Vault</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/home.png')}
           renderingMode="template"

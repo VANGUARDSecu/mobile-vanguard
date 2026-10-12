@@ -171,6 +171,18 @@ export default function LoginScreen() {
                 )}
               </Pressable>
 
+              {/* Create Account Prompt */}
+              <View style={styles.signUpPromptWrap}>
+                <Text style={styles.signUpPromptText}>Don't have an account?</Text>
+                <Pressable
+                  onPress={() => router.push('/register')}
+                  accessibilityRole="link"
+                  accessibilityLabel="Create Account"
+                >
+                  <Text style={styles.signUpLinkText}> Create Account</Text>
+                </Pressable>
+              </View>
+
             </View>
 
             {/* Zero-Trust Security Footer */}
@@ -347,6 +359,21 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  signUpPromptWrap: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  signUpPromptText: {
+    color: CyberColors.textSecondary,
+    fontSize: 12.5,
+  },
+  signUpLinkText: {
+    color: CyberColors.cyan,
+    fontSize: 12.5,
+    fontWeight: '800',
   },
 
   footer: {

@@ -26,6 +26,7 @@ import {
   RequestAppModal,
   RequestAppInput,
   RequestedAppsSection,
+  CompanyAdminBanner,
 } from '@/components/apps';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import {
@@ -39,7 +40,7 @@ export default function MyAppsScreen() {
   const { currentUser, isAuthenticated, isInitializing: authInitializing, logout } = useAuth();
   const {
     isPersonalWorkspace,
-    setIsPersonalWorkspace,
+    isCompanyAdmin,
     selectedCategory,
     setSelectedCategory,
     activeAppsList,
@@ -54,6 +55,9 @@ export default function MyAppsScreen() {
     apps,
     accessRequests,
     pendingRequestsCount,
+    pendingAdminRequests,
+    approveAccessRequest,
+    rejectAccessRequest,
     refreshApps,
   } = useApps();
 
@@ -220,21 +224,18 @@ export default function MyAppsScreen() {
                 <Text style={styles.brandTitle}>VANGUARD</Text>
               </View>
 
-              {/* Workspace Switcher Pill Toggle */}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.workspaceToggle,
-                  pressed && styles.workspaceTogglePressed,
-                ]}
-                onPress={() => setIsPersonalWorkspace(!isPersonalWorkspace)}
-                accessibilityRole="button"
-                accessibilityLabel="Switch Workspace Mode"
-              >
-                <Text style={styles.workspaceToggleText}>
+              {/* Immutable Workspace Mode Badge (SCRUM-84: Non-switchable) */}
+              <View style={styles.workspaceBadge}>
+                <Text style={styles.workspaceBadgeText}>
                   {isPersonalWorkspace ? '👤 Personal Mode' : '🏢 Company Org'}
                 </Text>
-                <Text style={styles.workspaceSwitchHint}>⇄</Text>
-              </Pressable>
+                <View style={styles.workspaceBadgeDot} />
+                <Text style={styles.workspaceBadgeOrg}>
+                  {isPersonalWorkspace
+                    ? 'INDIVIDUAL'
+                    : (currentUser?.companyName ? currentUser.companyName.toUpperCase() : 'ENTERPRISE')}
+                </Text>
+              </View>
             </View>
 
             {/* Title & Subtitle */}
@@ -266,6 +267,17 @@ export default function MyAppsScreen() {
               </Text>
             </Pressable>
           </View>
+
+          {/* Company Admin Governance Console & Review Banner (SCRUM-84) */}
+          {isCompanyAdmin && (
+            <CompanyAdminBanner
+              companyName={currentUser?.companyName || 'Enterprise Organization'}
+              adminName={currentUser?.name || 'Security Administrator'}
+              pendingRequests={pendingAdminRequests}
+              onApprove={approveAccessRequest}
+              onReject={rejectAccessRequest}
+            />
+          )}
 
           {/* Active SSO Integrations & Connected Applications (SCRUM-64) */}
           <ConnectedAppsSection
@@ -371,29 +383,33 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1.5,
   },
-  workspaceToggle: {
+  workspaceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: CyberColors.cardBgSecondary,
-    borderColor: CyberColors.cyan,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: CyberRadius.full,
-    gap: 6,
+    gap: 7,
   },
-  workspaceTogglePressed: {
-    opacity: 0.75,
-  },
-  workspaceToggleText: {
+  workspaceBadgeText: {
     color: CyberColors.cyan,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
-  workspaceSwitchHint: {
+  workspaceBadgeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: CyberColors.textMuted,
+  },
+  workspaceBadgeOrg: {
     color: CyberColors.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   titleWrap: {
     marginBottom: 16,

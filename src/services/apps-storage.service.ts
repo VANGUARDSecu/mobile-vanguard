@@ -521,6 +521,56 @@ export class AppsStorageService {
     return newReq;
   }
 
+  static async approveAccessRequest(
+    id: string,
+    reviewedBy: string = 'Company Admin'
+  ): Promise<AppAccessRequest | null> {
+    const requests = await this.getAccessRequests();
+    let updatedTarget: AppAccessRequest | null = null;
+    const updated = requests.map((r) => {
+      if (r.id === id) {
+        updatedTarget = {
+          ...r,
+          status: 'Approved' as const,
+          reviewedAt: new Date().toISOString(),
+          reviewedBy,
+        };
+        return updatedTarget;
+      }
+      return r;
+    });
+    if (updatedTarget) {
+      await this.saveAccessRequests(updated);
+    }
+    return updatedTarget;
+  }
+
+  static async rejectAccessRequest(
+    id: string,
+    reviewedBy: string = 'Company Admin',
+    adminNotes?: string
+  ): Promise<AppAccessRequest | null> {
+    const requests = await this.getAccessRequests();
+    let updatedTarget: AppAccessRequest | null = null;
+    const updated = requests.map((r) => {
+      if (r.id === id) {
+        updatedTarget = {
+          ...r,
+          status: 'Rejected' as const,
+          reviewedAt: new Date().toISOString(),
+          reviewedBy,
+          adminNotes: adminNotes || 'Access request declined by company administrator.',
+        };
+        return updatedTarget;
+      }
+      return r;
+    });
+    if (updatedTarget) {
+      await this.saveAccessRequests(updated);
+    }
+    return updatedTarget;
+  }
+
   /**
    * Personal Vault Credentials (SCRUM-83: starts empty, dynamic detection)
    */

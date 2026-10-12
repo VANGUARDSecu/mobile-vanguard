@@ -85,7 +85,7 @@ npx expo start
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (150 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, registration architecture, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (158 automated tests):
 ```bash
 npm test
 ```
@@ -93,6 +93,7 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
+| `src/__tests__/account-registration-architecture.test.ts` | Personal vs. Company registration enforcement, immutable workspace mode derivation, Company Admin role scoping, employee access request submission with complete dossier metadata, and 1-tap Approve/Reject review workflow (SCRUM-84) |
 | `src/__tests__/zero-hardcoded-dashboard.test.ts` | Zero hardcoded dashboard verification, dynamic access request generation without mock identity fallbacks, legacy seed cache auto-purging, and storage integrity (SCRUM-83) |
 | `src/__tests__/metadata-name-resolution.test.ts` | Full name derivation from user metadata (`first_name`, `last_name`, `name`, `full_name`, `given_name`, `display_name`) with space-separated title-casing fallback (SCRUM-82) |
 | `src/__tests__/push-mfa.test.ts` | Out-of-band push verification modal, rich contextual login metadata (app, IP, location, device, 60s countdown), biometric prompt challenge execution, 2-digit number matching challenge (MFA fatigue protection), deny & fraud reporting, request expiration, and offline test harness presets (SCRUM-21) |
@@ -355,10 +356,48 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 
 ---
 
+## 🏢 Account Architecture & Company Admin Review Console (SCRUM-84)
+
+Vanguard enforces strict account isolation between **Personal (Individual)** and **Company Organization** accounts across both frontend and mobile platforms.
+
+### 1. Dual Persona Mobile Registration Flow (`src/app/register.tsx`)
+- **Persona Selector Tabs**:
+  - **👤 Personal Account**: Designed for individual users managing their own credentials and bookmarks in a private Personal Vault. Does not require or prompt for company details.
+  - **🏢 Company Org Account**: Designed for organizational employees and administrators. Requires company name, department, and role to identify the organization.
+- **Strict Validation**: Validates full names, valid email syntax, minimum 6-character passwords, and mandatory company name for company registrations.
+- **Direct OTP Transition**: Initiates registration with the Vanguard backend (or simulated OTP store for offline dev/test) and automatically navigates to `VerifyOtpScreen`.
+
+### 2. Strict Account Immutability (Non-Switchable Workspace Mode)
+- **Immutable Workspace Derivation**:
+  - Accounts registered with `accountType: 'individual'` are permanently bound to the **Personal Vault** (`isPersonalWorkspace: true`).
+  - Accounts registered with `accountType: 'company'` are permanently bound to the **Company Org** (`isPersonalWorkspace: false`).
+- **Elimination of Arbitrary Mode Toggle**: The previous interactive mode toggle (`⇄`) has been replaced with an immutable account status badge (`👤 Personal Mode • INDIVIDUAL` or `🏢 Company Org • <COMPANY_NAME>`). Users cannot arbitrarily switch between personal and company modes.
+
+### 3. Dedicated Company Admin Review Console (`CompanyAdminBanner`)
+- **Admin Role Scoping**: Automatically activates for Company Admins (`currentUser.accountType === 'company'` and `currentUser.role === 'admin' | 'security_officer'`).
+- **Complete Employee Applicant Dossier**: When an employee submits a SaaS access request, the Admin Status Banner renders the complete request profile:
+  - **Application Details**: App Name, Protocol (`SAML 2.0`, `OIDC`), Category (`Cloud`, `Developer`, `Collaboration`), and Icon.
+  - **Applicant Identity**: Full Name, Work Email, Department, and Role.
+  - **Business Justification**: Detailed operational reason provided by the employee.
+  - **Audit Timestamp**: Submission date and time.
+- **1-Tap Governance Actions**:
+  - 🟢 **Approve Access**: Immediately approves the request, registers `reviewedBy: <AdminName>`, and unlocks the application with Launch & Auto-fill for the employee.
+  - 🔴 **Reject Access**: Denies access, records audit administrator notes, and activates the Zero-Trust assertion block for the employee.
+- **Zero Hardcoded Data & Demo Accounts**:
+  - Initialized with zero hardcoded mock requests; access requests are generated and managed dynamically.
+  - Pre-configured demo accounts for presentation:
+    - **Company Admin**: `admin@vanguard.security` (Security Operations Admin)
+    - **Company Admin**: `johnroben.manayon21@gmail.com` (Core Infrastructure Admin)
+    - **Company Employee**: `user@company.com` (Engineering Member)
+    - **Company Employee**: `ellen.ripley@weyland.corp` (Engineering Member)
+    - **Personal Vault Owner**: `personal@vanguard.local` (Private Vault Admin)
+
+---
+
 ## 🏛️ Architecture & Modules
 
-- `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser` (with `user_metadata`, `companyName`, `phone`, `accountType`), `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
-- `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests, and personal bookmarks.
+- `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser` (with `user_metadata`, `companyName`, `phone`, `accountType`), `SignupPayload`, `SignupResult`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
+- `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests (`AppAccessRequest`), and personal bookmarks.
 - `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, `EncryptedVaultEnvelope`, and `ISecureStorageProvider`.
 - `src/models/push-mfa.models.ts`: TypeScript definitions for `PushApprovalRequest`, `PushApprovalResult`, `PushGeoLocation`, `NumberMatchingChallenge`, and `PushHarnessPreset`.
 - `src/services/totp-engine.service.ts`: Standalone RFC 6238 TOTP calculation engine with Base32 decoding, countdown calculations, warning color shifts, and drift tolerance.
@@ -367,11 +406,11 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/services/biometric-auth.service.ts`: Standalone biometric authentication provider with native hardware abstraction (`ExpoBiometricAdapter`), mock testing adapter (`MockBiometricProvider`), capability queries, and settings persistence.
 - `src/services/push-mfa.service.ts`: Reactive out-of-band push verification service with request dispatching, number matching challenge validation, audit history, and offline presets.
 - `src/services/vault.service.ts`: Standalone hardware-backed Authenticator Vault service with AES-GCM encryption, full CRUD operations, Base32 validation, and RFC 6238 TOTP computation.
-- `src/services/auth.service.ts`: Authentication service supporting local directory fallback, live backend API authentication (`POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, user metadata extraction/normalization (`user_metadata`), and AsyncStorage token/user session management with in-memory test fallback.
-- `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with seed data, live backend synchronization (`/oauth/connected-apps`), and deduplication safeguards.
+- `src/services/auth.service.ts`: Authentication and registration service supporting local directory fallback, live backend API authentication (`POST /auth/signup`, `POST /auth/login`, `POST /auth/verify-otp`, `POST /auth/verify-totp`, `POST /auth/resend-otp`), SSO federation, user metadata extraction/normalization (`user_metadata`), and AsyncStorage token/user session management with in-memory test fallback.
+- `src/services/apps-storage.service.ts`: Offline persistence layer backed by `@react-native-async-storage/async-storage` with zero hardcoded defaults, live backend synchronization (`/oauth/connected-apps`), dynamic access requests, and admin approval/rejection operations (`approveAccessRequest`, `rejectAccessRequest`).
 - `src/services/app-launcher.service.ts`: Centralized application launch dispatcher integrating Expo's in-app browser (`expo-web-browser`) and external linking (`expo-linking`) with Cyber Dark theme styling, URL normalization, and personal vault credential matching.
-- `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, login, 2-step OTP/TOTP verification, and logout.
-- `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing workspace mode switching (Personal vs. Enterprise), category filtering, active SSO connected apps management, and request queueing scoped to current user.
+- `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, registration (`signup`), login, 2-step OTP/TOTP verification, and logout.
+- `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing immutable workspace derivation (`isPersonalWorkspace`), Company Admin detection (`isCompanyAdmin`), pending admin requests queue (`pendingAdminRequests`), approval/rejection handlers, category filtering, and active SSO connected apps management.
 - `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards, shadows, radius).
 - `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`, `VaultLockScreen`, `PushApprovalModal`).
 - `src/components/cyber/vault-lock-screen.tsx`: Full-screen cyber security shield obscuring vaulted credentials with biometric unlock trigger, device passcode fallback, and sensor status indicator.
@@ -385,12 +424,13 @@ All simulated quick demo accounts and developer test shortcuts have been removed
 - `src/screens/verify-otp-screen.tsx`: Cyber Dark 2-Step Verification screen with auto-advancing digit inputs, paste support, timer countdown, and test bypass chips.
 - `src/app/vault.tsx`: Route mounting `AuthenticatorNavigator`.
 - `src/app/verify-otp.tsx`: Route entry point mounting `VerifyOtpScreen`.
-- `src/app/login.tsx`: Cyber Dark login screen with email/password validation, show/hide password toggle, and seamless 2-step verification transition.
+- `src/app/login.tsx`: Cyber Dark login screen with email/password validation, show/hide password toggle, and seamless navigation to `RegisterScreen` and `VerifyOtpScreen`.
+- `src/app/register.tsx`: Cyber Dark registration screen featuring Personal vs Company persona selection tabs, full validation, and transition to OTP verification.
 - `src/app/index.tsx`: Clean route mounting `MyAppsScreen` as the primary launchpad entry point.
-- `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, workspace switching (Personal Bookmarks vs. Enterprise SSO), category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
+- `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, immutable workspace status badge, Company Admin Review Console banner, category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
-- `src/components/apps/`: Reusable applications directory UI components (`PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `metadata-name-resolution.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/components/apps/`: Reusable applications directory UI components (`CompanyAdminBanner`, `PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
+- `src/__tests__/`: Automated unit and integration test specifications (`account-registration-architecture.test.ts`, `zero-hardcoded-dashboard.test.ts`, `metadata-name-resolution.test.ts`, `push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 
 
 

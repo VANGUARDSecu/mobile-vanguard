@@ -8,6 +8,8 @@ import type {
   VerifyTotpRequest,
   ResendOtpRequest,
   ResendOtpResponse,
+  SignupPayload,
+  SignupResult,
 } from '../models/auth.models.ts';
 import { AppsStorageService } from './apps-storage.service.ts';
 
@@ -25,7 +27,7 @@ export const DEMO_USERS: Record<string, AuthUser> = {
     lastName: 'Ripley',
     companyName: 'Weyland-Yutani Corp',
     phone: '+1 (555) 019-2834',
-    accountType: 'individual',
+    accountType: 'company',
     role: 'user',
     department: 'Engineering',
     avatar: '👩‍🚀',
@@ -38,7 +40,7 @@ export const DEMO_USERS: Record<string, AuthUser> = {
       department: 'Engineering',
       company_name: 'Weyland-Yutani Corp',
       phone: '+1 (555) 019-2834',
-      account_type: 'individual',
+      account_type: 'company',
     },
   },
   'user@company.com': {
@@ -47,9 +49,9 @@ export const DEMO_USERS: Record<string, AuthUser> = {
     name: 'John Roben Manayon',
     firstName: 'John',
     lastName: 'Manayon',
-    companyName: 'Company Inc.',
+    companyName: 'Vanguard Security Inc.',
     phone: '+1 (555) 014-9988',
-    accountType: 'individual',
+    accountType: 'company',
     role: 'user',
     department: 'Engineering',
     avatar: '👨‍💻',
@@ -60,9 +62,9 @@ export const DEMO_USERS: Record<string, AuthUser> = {
       name: 'John Roben Manayon',
       role: 'user',
       department: 'Engineering',
-      company_name: 'Company Inc.',
+      company_name: 'Vanguard Security Inc.',
       phone: '+1 (555) 014-9988',
-      account_type: 'individual',
+      account_type: 'company',
     },
   },
   'admin@vanguard.security': {
@@ -87,6 +89,54 @@ export const DEMO_USERS: Record<string, AuthUser> = {
       company_name: 'Vanguard Security Inc.',
       phone: '+1 (555) 010-0001',
       account_type: 'company',
+    },
+  },
+  'johnroben.manayon21@gmail.com': {
+    id: 'usr_sec_0002',
+    email: 'johnroben.manayon21@gmail.com',
+    name: 'John Roben Manayon',
+    firstName: 'John Roben',
+    lastName: 'Manayon',
+    companyName: 'Vanguard Security Inc.',
+    phone: '+1 (555) 010-0002',
+    accountType: 'company',
+    role: 'admin',
+    department: 'Core Infrastructure',
+    avatar: '🛡️',
+    avatarUrl: '',
+    user_metadata: {
+      first_name: 'John Roben',
+      last_name: 'Manayon',
+      name: 'John Roben Manayon',
+      role: 'admin',
+      department: 'Core Infrastructure',
+      company_name: 'Vanguard Security Inc.',
+      phone: '+1 (555) 010-0002',
+      account_type: 'company',
+    },
+  },
+  'personal@vanguard.local': {
+    id: 'usr_sec_0003',
+    email: 'personal@vanguard.local',
+    name: 'Personal Vault Owner',
+    firstName: 'Personal',
+    lastName: 'User',
+    companyName: "Personal's Vault",
+    phone: '+1 (555) 010-0003',
+    accountType: 'individual',
+    role: 'admin',
+    department: 'Personal',
+    avatar: '👤',
+    avatarUrl: '',
+    user_metadata: {
+      first_name: 'Personal',
+      last_name: 'User',
+      name: 'Personal Vault Owner',
+      role: 'admin',
+      department: 'Personal',
+      company_name: "Personal's Vault",
+      phone: '+1 (555) 010-0003',
+      account_type: 'individual',
     },
   },
 };
@@ -398,6 +448,98 @@ export class AuthService {
     throw new Error('Login failed. Please check your credentials.');
   }
 
+  // Internal cache of pending registration metadata during OTP verification
+  private static pendingRegistrations = new Map<string, SignupPayload>();
+
+  /**
+   * Registers a new account via Vanguard backend (or offline fallback)
+   * and dispatches 6-digit Email OTP challenge.
+   */
+  static async signup(payload: SignupPayload): Promise<SignupResult> {
+    const cleanEmail = payload.email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+    if (!payload.password || payload.password.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+    if (!payload.firstName?.trim() || !payload.lastName?.trim()) {
+      throw new Error('First and last name are required.');
+    }
+    if (payload.accountType === 'company' && (!payload.companyName || !payload.companyName.trim())) {
+      throw new Error('Company name is required for company accounts.');
+    }
+
+    // Cache pending registration details for OTP resolution
+    this.pendingRegistrations.set(cleanEmail, payload);
+
+    const simCode = '123456';
+    simulatedOtpStore.set(cleanEmail, {
+      code: simCode,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    });
+
+    try {
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await fetch(`${baseUrl}/auth/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: payload.password,
+          firstName: payload.firstName.trim(),
+          lastName: payload.lastName.trim(),
+          companyName: payload.companyName?.trim(),
+          phone: payload.phone?.trim(),
+          accountType: payload.accountType,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const body = await response.json();
+        return {
+          success: true,
+          message: body.message || 'Registration initiated. Please enter your verification code.',
+          requireOtp: true,
+          email: cleanEmail,
+          accountType: payload.accountType,
+          companyName: payload.companyName,
+        };
+      } else {
+        const errJson = await response.json().catch(() => null);
+        if (errJson?.message) {
+          throw new Error(Array.isArray(errJson.message) ? errJson.message.join(', ') : errJson.message);
+        }
+      }
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        !err.message.includes('fetch') &&
+        !err.message.includes('Network') &&
+        err.name !== 'AbortError'
+      ) {
+        throw err;
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Registration initiated. Please enter the verification code sent to your email.',
+      requireOtp: true,
+      email: cleanEmail,
+      accountType: payload.accountType,
+      companyName: payload.companyName,
+    };
+  }
+
   /**
    * Verifies an Email One-Time Password (OTP) via Vanguard backend or local fallback
    */
@@ -415,7 +557,27 @@ export class AuthService {
       process.env.NODE_ENV === 'test' &&
       (cleanToken === '123456' || cleanToken === '12345678' || cleanToken === '000000')
     ) {
-      const user = this.normalizeUser(null, cleanEmail);
+      const pending = this.pendingRegistrations.get(cleanEmail);
+      const rawUser = pending
+        ? {
+            firstName: pending.firstName,
+            lastName: pending.lastName,
+            companyName: pending.companyName,
+            phone: pending.phone,
+            accountType: pending.accountType,
+            role: 'admin',
+            user_metadata: {
+              first_name: pending.firstName,
+              last_name: pending.lastName,
+              account_type: pending.accountType,
+              company_name: pending.companyName,
+              phone: pending.phone,
+              role: 'admin',
+            },
+          }
+        : null;
+      if (pending) this.pendingRegistrations.delete(cleanEmail);
+      const user = this.normalizeUser(rawUser, cleanEmail);
       await this.saveSession(user, user.accessToken);
       return user;
     }
@@ -448,6 +610,7 @@ export class AuthService {
           if (body.session?.accessToken || body.session?.access_token) {
             user.accessToken = body.session.accessToken || body.session.access_token;
           }
+          this.pendingRegistrations.delete(cleanEmail);
           await this.saveSession(user, user.accessToken);
           return user;
         }
@@ -463,14 +626,32 @@ export class AuthService {
           throw err;
         }
       }
-      if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
-        const sim = simulatedOtpStore.get(cleanEmail);
-        if (sim && sim.code === cleanToken && sim.expiresAt > Date.now()) {
-          simulatedOtpStore.delete(cleanEmail);
-          const user = this.normalizeUser(null, cleanEmail);
-          await this.saveSession(user, user.accessToken);
-          return user;
-        }
+      const sim = simulatedOtpStore.get(cleanEmail);
+      if (sim && sim.code === cleanToken && sim.expiresAt > Date.now()) {
+        simulatedOtpStore.delete(cleanEmail);
+        const pending = this.pendingRegistrations.get(cleanEmail);
+        const rawUser = pending
+          ? {
+              firstName: pending.firstName,
+              lastName: pending.lastName,
+              companyName: pending.companyName,
+              phone: pending.phone,
+              accountType: pending.accountType,
+              role: 'admin',
+              user_metadata: {
+                first_name: pending.firstName,
+                last_name: pending.lastName,
+                account_type: pending.accountType,
+                company_name: pending.companyName,
+                phone: pending.phone,
+                role: 'admin',
+              },
+            }
+          : null;
+        if (pending) this.pendingRegistrations.delete(cleanEmail);
+        const user = this.normalizeUser(rawUser, cleanEmail);
+        await this.saveSession(user, user.accessToken);
+        return user;
       }
       throw new Error(
         err instanceof Error ? err.message : 'Invalid or expired verification code.'

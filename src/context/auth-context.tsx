@@ -15,6 +15,8 @@ import type {
   VerifyTotpRequest,
   ResendOtpRequest,
   ResendOtpResponse,
+  SignupPayload,
+  SignupResult,
 } from '../models/auth.models.ts';
 import { AuthService } from '../services/auth.service.ts';
 
@@ -24,6 +26,7 @@ interface AuthContextType {
   isLoading: boolean;
   isInitializing: boolean;
   login: (credentials: LoginCredentials) => Promise<LoginResult>;
+  signup: (payload: SignupPayload) => Promise<SignupResult>;
   verifyOtp: (request: VerifyOtpRequest) => Promise<AuthUser>;
   verifyTotp: (request: VerifyTotpRequest) => Promise<AuthUser>;
   resendOtp: (request: ResendOtpRequest) => Promise<ResendOtpResponse>;
@@ -67,6 +70,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCurrentUser(result.user);
       }
       return result;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const signup = useCallback(async (payload: SignupPayload): Promise<SignupResult> => {
+    setIsLoading(true);
+    try {
+      return await AuthService.signup(payload);
     } finally {
       setIsLoading(false);
     }
@@ -126,13 +138,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       isInitializing,
       login,
+      signup,
       verifyOtp,
       verifyTotp,
       resendOtp,
       loginWithSSO,
       logout,
     }),
-    [currentUser, isLoading, isInitializing, login, verifyOtp, verifyTotp, resendOtp, loginWithSSO, logout]
+    [currentUser, isLoading, isInitializing, login, signup, verifyOtp, verifyTotp, resendOtp, loginWithSSO, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

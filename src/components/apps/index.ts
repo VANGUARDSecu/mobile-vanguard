@@ -20,5 +20,9 @@ export {
   RequestedAppsSection,
   RequestedAppsSectionProps,
 } from './requested-apps-section';
+export {
+  CompanyAdminBanner,
+  CompanyAdminBannerProps,
+} from './company-admin-banner';
 
 

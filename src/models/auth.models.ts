@@ -72,3 +72,22 @@ export interface AuthResponse {
     refresh_token?: string;
   };
 }
+
+export interface SignupPayload {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  companyName?: string;
+  phone?: string;
+  accountType: 'individual' | 'company';
+}
+
+export interface SignupResult {
+  success: boolean;
+  message: string;
+  requireOtp: boolean;
+  email: string;
+  accountType?: 'individual' | 'company';
+  companyName?: string;
+}

@@ -23,6 +23,7 @@ import { AuthContext } from './auth-context';
 interface AppsContextType {
   isPersonalWorkspace: boolean;
   setIsPersonalWorkspace: (isPersonal: boolean) => void;
+  isCompanyAdmin: boolean;
   selectedCategory: AppCategory;
   setSelectedCategory: (category: AppCategory) => void;
   apps: SaaSApp[];
@@ -33,6 +34,9 @@ interface AppsContextType {
   activeConnectedApps: UserConnectedApp[];
   accessRequests: AppAccessRequest[];
   pendingRequestsCount: number;
+  pendingAdminRequests: AppAccessRequest[];
+  approveAccessRequest: (id: string) => Promise<void>;
+  rejectAccessRequest: (id: string, notes?: string) => Promise<void>;
   vaultCredentials: PersonalVaultItem[];
   findCredentialsForDomain: (domainOrUrl: string) => PersonalVaultItem[];
   addPersonalApp: (input: PersonalAppInput) => Promise<SaaSApp>;
@@ -155,18 +159,67 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     );
   }, [connectedApps, userEmail]);
 
-  // Access Requests Count - user-scoped (SCRUM-83)
-  const myAccessRequests = useMemo(() => {
+  const isCompanyAdmin =
+    currentUser?.accountType === 'company' &&
+    (currentUser?.role === 'admin' || currentUser?.role === 'security_officer');
+
+  // SCRUM-84: isPersonalWorkspace is strictly derived from accountType (no arbitrary mode toggling)
+  const isPersonalWorkspace = useMemo(() => {
+    if (!currentUser) return false;
+    return currentUser.accountType === 'individual';
+  }, [currentUser]);
+
+  // For Admin: all requests in organization; for Employee: only their own requests
+  const visibleAccessRequests = useMemo(() => {
+    if (isCompanyAdmin) {
+      return accessRequests;
+    }
     if (!userEmail) return accessRequests;
     const clean = userEmail.toLowerCase().trim();
     return accessRequests.filter(
       (r) => !r.userEmail || r.userEmail.toLowerCase().trim() === clean
     );
-  }, [accessRequests, userEmail]);
+  }, [accessRequests, isCompanyAdmin, userEmail]);
+
+  // Pending requests requiring Company Admin action
+  const pendingAdminRequests = useMemo(() => {
+    return accessRequests.filter(
+      (r) => r.status === 'Pending Approval' || (r.status as string) === 'Pending Review'
+    );
+  }, [accessRequests]);
 
   const pendingRequestsCount = useMemo(() => {
-    return myAccessRequests.filter((r) => r.status === 'Pending Approval').length;
-  }, [myAccessRequests]);
+    return isCompanyAdmin
+      ? pendingAdminRequests.length
+      : visibleAccessRequests.filter((r) => r.status === 'Pending Approval').length;
+  }, [isCompanyAdmin, pendingAdminRequests, visibleAccessRequests]);
+
+  const approveAccessRequest = useCallback(
+    async (id: string) => {
+      const updated = await AppsStorageService.approveAccessRequest(
+        id,
+        currentUser?.name || 'Company Admin'
+      );
+      if (updated) {
+        setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      }
+    },
+    [currentUser]
+  );
+
+  const rejectAccessRequest = useCallback(
+    async (id: string, notes?: string) => {
+      const updated = await AppsStorageService.rejectAccessRequest(
+        id,
+        currentUser?.name || 'Company Admin',
+        notes
+      );
+      if (updated) {
+        setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      }
+    },
+    [currentUser]
+  );
 
   // Matching Vault Credential Detection (for Auto-Fill Ready badge)
   const findCredentialsForDomain = useCallback(
@@ -225,6 +278,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     () => ({
       isPersonalWorkspace,
       setIsPersonalWorkspace,
+      isCompanyAdmin,
       selectedCategory,
       setSelectedCategory,
       apps,
@@ -233,8 +287,11 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       filteredApps,
       connectedApps,
       activeConnectedApps,
-      accessRequests: myAccessRequests,
+      accessRequests: visibleAccessRequests,
       pendingRequestsCount,
+      pendingAdminRequests,
+      approveAccessRequest,
+      rejectAccessRequest,
       vaultCredentials,
       findCredentialsForDomain,
       addPersonalApp,
@@ -248,6 +305,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [
       isPersonalWorkspace,
       setIsPersonalWorkspace,
+      isCompanyAdmin,
       selectedCategory,
       apps,
       personalApps,
@@ -255,8 +313,11 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       filteredApps,
       connectedApps,
       activeConnectedApps,
-      myAccessRequests,
+      visibleAccessRequests,
       pendingRequestsCount,
+      pendingAdminRequests,
+      approveAccessRequest,
+      rejectAccessRequest,
       vaultCredentials,
       findCredentialsForDomain,
       addPersonalApp,

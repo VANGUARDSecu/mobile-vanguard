@@ -100,7 +100,11 @@ export function AuthenticatorNavigator({
   }, [forceLocked]);
 
   const triggerUnlock = useCallback(async (disableFallback = false) => {
-    if (isAuthenticatingRef.current) {
+    if (
+      isAuthenticatingRef.current ||
+      biometricService.isAuthenticationInFlight() ||
+      Date.now() - biometricService.getLastAuthenticationTimestamp() < 2500
+    ) {
       return;
     }
     isAuthenticatingRef.current = true;
@@ -127,10 +131,10 @@ export function AuthenticatorNavigator({
       setAuthError(err?.message || 'Biometric authentication failed');
     } finally {
       setIsAuthenticating(false);
-      // Give the OS 600ms to settle its native active/inactive AppState transition
+      // Give the OS 800ms to settle its native active/inactive AppState transition
       setTimeout(() => {
         isAuthenticatingRef.current = false;
-      }, 600);
+      }, 800);
     }
   }, []);
 
@@ -154,6 +158,12 @@ export function AuthenticatorNavigator({
 
       const required = await biometricService.isBiometricsRequiredOnLaunch();
       if (required && isMounted) {
+        // If user already authenticated very recently (e.g. push approval), stay unlocked
+        if (Date.now() - biometricService.getLastAuthenticationTimestamp() < 5000) {
+          isLockedRef.current = false;
+          setIsLocked(false);
+          return;
+        }
         isLockedRef.current = true;
         setIsLocked(true);
         if (autoPromptBiometrics) {
@@ -176,12 +186,12 @@ export function AuthenticatorNavigator({
       appStateRef.current = nextAppState;
 
       // Ignore transient inactive/active transitions triggered by native biometric modal dialogs
-      if (isAuthenticatingRef.current) {
-        return;
-      }
-
-      // Debounce window: do not re-lock if unlocked within the last 2 seconds
-      if (Date.now() - lastUnlockTimestampRef.current < 2000) {
+      if (
+        isAuthenticatingRef.current ||
+        biometricService.isAuthenticationInFlight() ||
+        Date.now() - biometricService.getLastAuthenticationTimestamp() < 3000 ||
+        Date.now() - lastUnlockTimestampRef.current < 3000
+      ) {
         return;
       }
 
@@ -292,6 +302,12 @@ export function AuthenticatorNavigator({
         onApprove={async (opts) => {
           if (activePushRequest) {
             pushMfaService.approveRequest(activePushRequest.id, opts);
+            // User successfully verified identity via native biometric/passcode challenge
+            biometricService.recordAuthenticationSuccess();
+            lastUnlockTimestampRef.current = Date.now();
+            isLockedRef.current = false;
+            setIsLocked(false);
+            setAuthError(null);
           }
         }}
         onDeny={(isFraud) => {

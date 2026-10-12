@@ -152,6 +152,10 @@ export class MockBiometricProvider implements IBiometricAuthProvider {
  */
 export class BiometricAuthService {
   private provider: IBiometricAuthProvider;
+  private promptActive: boolean = false;
+  private isSettling: boolean = false;
+  private settlingTimer: any = null;
+  private lastAuthenticationTimestamp: number = 0;
 
   constructor(provider?: IBiometricAuthProvider) {
     this.provider = provider || new ExpoBiometricAdapter();
@@ -163,6 +167,28 @@ export class BiometricAuthService {
 
   getProvider(): IBiometricAuthProvider {
     return this.provider;
+  }
+
+  /**
+   * Indicates whether a native biometric prompt is actively presented on screen,
+   * or within the post-dismissal OS AppState transition settling grace period.
+   */
+  isAuthenticationInFlight(): boolean {
+    return this.promptActive || this.isSettling;
+  }
+
+  /**
+   * Returns epoch timestamp (ms) of the most recent successful biometric/passcode challenge.
+   */
+  getLastAuthenticationTimestamp(): number {
+    return this.lastAuthenticationTimestamp;
+  }
+
+  /**
+   * Records a verified authentication occurrence to debounce redundant challenges.
+   */
+  recordAuthenticationSuccess(): void {
+    this.lastAuthenticationTimestamp = Date.now();
   }
 
   /**
@@ -201,13 +227,41 @@ export class BiometricAuthService {
    * Prompts native biometric challenge with automatic passcode fallback
    */
   async authenticate(options?: BiometricPromptOptions): Promise<BiometricAuthResult> {
-    const promptMessage = options?.promptMessage || 'Unlock Vanguard Authenticator Vault';
-    return this.provider.authenticateAsync({
-      promptMessage,
-      cancelLabel: options?.cancelLabel || 'Cancel',
-      fallbackLabel: options?.fallbackLabel || 'Use Device Passcode',
-      disableDeviceFallback: options?.disableDeviceFallback ?? false,
-    });
+    if (this.promptActive) {
+      return { success: false, error: 'Authentication challenge already in progress' };
+    }
+
+    if (this.settlingTimer) {
+      clearTimeout(this.settlingTimer);
+      this.settlingTimer = null;
+    }
+
+    this.promptActive = true;
+    this.isSettling = true;
+
+    try {
+      const promptMessage = options?.promptMessage || 'Unlock Vanguard Authenticator Vault';
+      const res = await this.provider.authenticateAsync({
+        promptMessage,
+        cancelLabel: options?.cancelLabel || 'Cancel',
+        fallbackLabel: options?.fallbackLabel || 'Use Device Passcode',
+        disableDeviceFallback: options?.disableDeviceFallback ?? false,
+      });
+
+      if (res.success) {
+        this.lastAuthenticationTimestamp = Date.now();
+      }
+
+      return res;
+    } finally {
+      this.promptActive = false;
+      // Keep isSettling active for 1500ms after the native modal is dismissed to prevent
+      // OS AppState changes (inactive -> active) from triggering secondary lock challenges.
+      this.settlingTimer = setTimeout(() => {
+        this.isSettling = false;
+        this.settlingTimer = null;
+      }, 1500);
+    }
   }
 
   /**

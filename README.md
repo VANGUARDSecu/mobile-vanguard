@@ -300,8 +300,9 @@ The Authenticator Vault implements native biometric authentication and automatic
 
 ### 3. App Lifecycle Auto-Lock & Screen Obscuration (`AppState`)
 - **Lifecycle Monitoring**: `AppState.addEventListener('change')` monitors app transitions across foreground and background states in `AuthenticatorNavigator`.
-- **Automatic Screen Obscuration**: When the app shifts to `background` or `inactive`, the vault immediately locks (`isLocked: true`) and obscures all sensitive TOTP tokens, account identifiers, and secret keys behind `VaultLockScreen`.
-- **Automatic Unlock Prompt**: When returning to `active` foreground, the app automatically triggers the native biometric challenge if biometrics are required.
+- **Automatic Screen Obscuration**: When the app shifts to `background`, the vault locks (`isLocked: true`) and obscures sensitive TOTP tokens and credentials behind `VaultLockScreen`.
+- **Automatic Unlock Prompt**: When returning to `active` foreground from background, the app automatically triggers the native biometric challenge if biometrics are required.
+- **Biometric Challenge In-Flight Debouncing (SCRUM-85)**: Native OS biometric prompt dialogs (such as Out-of-Band Push MFA approvals) trigger transient OS `inactive`/`background`/`active` lifecycle events. `BiometricAuthService` tracks in-flight challenges (`isAuthenticationInFlight()`) and records verification timestamps (`getLastAuthenticationTimestamp()`) with a post-dismissal settling window, preventing redundant secondary passcode/biometric prompts when approving push logins.
 
 ### 4. Security Settings Toggle & Sensor Badge
 - **Launch Policy Toggle**: Users can enable/disable "Require Biometrics on Launch" from the Security Settings screen (`SecuritySettingsScreen`), persisting the choice instantly via `BiometricAuthService.setBiometricsRequiredOnLaunch()`.

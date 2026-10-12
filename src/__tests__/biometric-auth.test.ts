@@ -144,4 +144,70 @@ test('Biometric Authentication (FaceID / Fingerprint) for App Lock (SCRUM-20)', 
     await simulateAppStateTransition('background');
     assert.equal(isLocked, false, 'Vault remains unlocked if biometrics policy is disabled');
   });
+
+  await t.test('7. In-flight challenge state and timestamp recording (SCRUM-85)', async () => {
+    const mockProvider = new MockBiometricProvider();
+    const service = new BiometricAuthService(mockProvider);
+
+    assert.equal(service.isAuthenticationInFlight(), false);
+    assert.equal(service.getLastAuthenticationTimestamp(), 0);
+
+    const initialAuth = await service.authenticate({ promptMessage: 'Approve Sign-in' });
+    assert.equal(initialAuth.success, true);
+    assert.equal(service.isAuthenticationInFlight(), true, 'Must remain in-flight during settling window');
+    assert.ok(service.getLastAuthenticationTimestamp() > 0, 'Must record authentication timestamp');
+
+    // Manual recording updates timestamp
+    const manualTimestampBefore = service.getLastAuthenticationTimestamp();
+    service.recordAuthenticationSuccess();
+    assert.ok(service.getLastAuthenticationTimestamp() >= manualTimestampBefore);
+  });
+
+  await t.test('8. Duplicate passcode prompt prevention during Push MFA approval (SCRUM-85)', async () => {
+    const mockProvider = new MockBiometricProvider();
+    const service = new BiometricAuthService(mockProvider);
+    await service.setBiometricsRequiredOnLaunch(true);
+
+    let isLocked = false;
+    let unlockPromptsCount = 0;
+
+    // Simulate the AuthenticatorNavigator AppState handler with biometric debounce
+    const handleAppState = async (nextState: 'background' | 'active') => {
+      if (
+        service.isAuthenticationInFlight() ||
+        Date.now() - service.getLastAuthenticationTimestamp() < 3000
+      ) {
+        return; // Debounced
+      }
+
+      if (nextState === 'background') {
+        isLocked = true;
+      } else if (nextState === 'active') {
+        if (isLocked) {
+          unlockPromptsCount++;
+          const res = await service.authenticate();
+          if (res.success) isLocked = false;
+        }
+      }
+    };
+
+    // User is on dashboard with unlocked vault
+    isLocked = false;
+
+    // 1. Push notification triggers biometric prompt #1 ("Approve Sign-in")
+    const pushAuthPromise = service.authenticate({ promptMessage: 'Approve Sign-in to Web App' });
+
+    // While prompt is active on screen, OS fires background transition
+    await handleAppState('background');
+    assert.equal(isLocked, false, 'AppState background during Push MFA prompt must NOT lock vault');
+
+    // User enters lock screen passcode/biometric for Prompt #1
+    const pushAuthResult = await pushAuthPromise;
+    assert.equal(pushAuthResult.success, true);
+
+    // Prompt #1 closes, OS fires active transition
+    await handleAppState('active');
+    assert.equal(unlockPromptsCount, 0, 'No secondary unlock prompt must fire on resume');
+    assert.equal(isLocked, false, 'Vault remains unlocked');
+  });
 });

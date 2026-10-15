@@ -114,6 +114,7 @@ npm test
 #### Test Suite Breakdown
 | Suite File | Scope & Capabilities Verified |
 | :--- | :--- |
+| `src/__tests__/first-timer-guide.test.ts` | Standard employee onboarding checklist initialization, dynamic progress calculation (0-100%), slide walkthrough navigation (7 slides), task toggling & reset, local storage persistence, and zero exposure of Admin Console governance concepts (SCRUM-87) |
 | `src/__tests__/account-registration-architecture.test.ts` | Personal vs. Company registration enforcement, immutable workspace mode derivation, Company Admin role scoping, employee access request submission with complete dossier metadata, and 1-tap Approve/Reject review workflow (SCRUM-84) |
 | `src/__tests__/zero-hardcoded-dashboard.test.ts` | Zero hardcoded dashboard verification, dynamic access request generation without mock identity fallbacks, legacy seed cache auto-purging, and storage integrity (SCRUM-83) |
 | `src/__tests__/metadata-name-resolution.test.ts` | Full name derivation from user metadata (`first_name`, `last_name`, `name`, `full_name`, `given_name`, `display_name`) with space-separated title-casing fallback (SCRUM-82) |
@@ -416,8 +417,33 @@ Vanguard enforces strict account isolation between **Personal (Individual)** and
 
 ---
 
+---
+
+## 📖 Standard First-Timer User Guide & Onboarding Checklist (SCRUM-87)
+
+To streamline onboarding for new employees and corporate users without exposing administrative governance tools (Admin Console, SCIM directory synchronization, LDAP/RADIUS server management, or emergency killswitches), Vanguard Mobile includes an integrated **First-Timer User Guide & Onboarding Checklist**:
+
+- **7-Step Standard User Checklist**:
+  1. Authenticate to Vanguard Mobile Companion
+  2. Enable Biometric Hardware Lock (Face ID / Fingerprint)
+  3. Explore Air-Gapped Authenticator Vault (RFC 6238 TOTP)
+  4. Understand Out-of-Band Push Notification MFA with 2-digit number matching
+  5. Explore Single Sign-On (SSO) Applications Launchpad
+  6. Learn Self-Service Application Access Requests
+  7. Secure Emergency Recovery Codes on the web portal
+- **Dynamic Progress Bar**: Live completion tracking (0% → 100%) with automated status badges (`In Progress` / `Setup Complete`).
+- **7-Slide Walkthrough**: Modal carousel guiding users through security concepts, mobile-optimized cards, and direct in-app navigation triggers.
+- **Top Session Trigger**: "📖 Guide" button embedded in the user session header with a green pulsing dot reminder when onboarding tasks remain uncompleted.
+- **Offline & Storage Persistence**: Automatically remembers completed checklist items and dismissal state across app relaunches.
+- **Comprehensive Documentation**: Complete standard user guide manual available in [`docs/FIRST_TIMER_USER_GUIDE.md`](docs/FIRST_TIMER_USER_GUIDE.md).
+
+---
+
 ## 🏛️ Architecture & Modules
 
+- `src/models/guide.models.ts`: TypeScript definitions for `MobileChecklistItem`, `MobileGuideSlide`, and `MobileGuideAction` (SCRUM-87).
+- `src/services/guide.service.ts`: Standalone First-Timer Guide service with persistent storage, checklist progress computation, and default walkthrough slides (SCRUM-87).
+- `src/components/cyber/first-timer-guide-modal.tsx`: Interactive Cyber Dark modal with tabbed Walkthrough and Onboarding Checklist views (SCRUM-87).
 - `src/models/auth.models.ts`: TypeScript interfaces for `AuthUser` (with `user_metadata`, `companyName`, `phone`, `accountType`), `SignupPayload`, `SignupResult`, `LoginCredentials`, `LoginResult`, `MfaChallengeResponse`, `VerifyOtpRequest`, `VerifyTotpRequest`, and `AuthResponse`.
 - `src/models/apps.models.ts`: Core TypeScript definitions for SaaS applications, connected SSO clients, access requests (`AppAccessRequest`), and personal bookmarks.
 - `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, `EncryptedVaultEnvelope`, and `ISecureStorageProvider`.
@@ -434,7 +460,7 @@ Vanguard enforces strict account isolation between **Personal (Individual)** and
 - `src/context/auth-context.tsx`: Reactive authentication provider (`AuthProvider` and `useAuth`) managing session state, registration (`signup`), login, 2-step OTP/TOTP verification, and logout.
 - `src/context/apps-context.tsx`: Reactive React Context (`AppsProvider` and `useApps`) providing immutable workspace derivation (`isPersonalWorkspace`), Company Admin detection (`isCompanyAdmin`), pending admin requests queue (`pendingAdminRequests`), approval/rejection handlers, category filtering, and active SSO connected apps management.
 - `src/constants/cyber-theme.ts`: Cyber Dark palette design tokens (`#0a0e17`, `#00e5ff`, `#10b981`, `#6366f1`, translucent glass cards, shadows, radius).
-- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`, `VaultLockScreen`, `PushApprovalModal`).
+- `src/components/cyber/`: Reusable cyber design system UI components (`CyberButton`, `CyberCard`, `Badge`, `StatusIndicator`, `ModalHeader`, `CircularCountdown`, `ManualEntryModal`, `VaultLockScreen`, `PushApprovalModal`, `FirstTimerGuideModal`).
 - `src/components/cyber/vault-lock-screen.tsx`: Full-screen cyber security shield obscuring vaulted credentials with biometric unlock trigger, device passcode fallback, and sensor status indicator.
 - `src/components/cyber/push-approval-modal.tsx`: High-priority out-of-band push verification modal with rich contextual metadata, number matching picker, expiration countdown, biometric approval trigger, and fraud denial actions.
 - `src/screens/vault-screen.tsx`: Air-gapped TOTP authenticator screen with circular countdown visualizers, tap-to-copy codes, floating toast notifications, and manual entry modal.
@@ -452,7 +478,7 @@ Vanguard enforces strict account isolation between **Personal (Individual)** and
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, immutable workspace status badge, Company Admin Review Console banner, category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
 - `src/components/apps/`: Reusable applications directory UI components (`CompanyAdminBanner`, `PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`account-registration-architecture.test.ts`, `zero-hardcoded-dashboard.test.ts`, `metadata-name-resolution.test.ts`, `push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/__tests__/`: Automated unit and integration test specifications (`first-timer-guide.test.ts`, `account-registration-architecture.test.ts`, `zero-hardcoded-dashboard.test.ts`, `metadata-name-resolution.test.ts`, `push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
 
 
 

@@ -12,11 +12,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 import { AppLauncherService } from '@/services/app-launcher.service';
 import { useAuth } from '@/context/auth-context';
 import { useApps } from '@/context/apps-context';
 import LoginScreen from '@/app/login';
+import { FirstTimerGuideModal } from '@/components/cyber';
+import guideService from '@/services/guide.service';
+import type { MobileGuideAction } from '@/models/guide.models';
 import {
   CategoryFilterBar,
   AppCard,
@@ -66,6 +70,46 @@ export default function MyAppsScreen() {
   const [showAddPersonalAppModal, setShowAddPersonalAppModal] = useState(false);
   const [showRequestAppModal, setShowRequestAppModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // SCRUM-87: Mobile First-Timer Guide
+  const router = useRouter();
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [guideCompleted, setGuideCompleted] = useState(false);
+
+  React.useEffect(() => {
+    let mounted = true;
+    guideService.isCompleted().then((completed) => {
+      if (mounted) {
+        setGuideCompleted(completed);
+        if (!completed && isAuthenticated) {
+          setShowGuideModal(true);
+        }
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [isAuthenticated]);
+
+  const handleGuideNavigate = (action: MobileGuideAction) => {
+    switch (action) {
+      case 'navigate_vault':
+      case 'navigate_settings':
+      case 'open_push_sandbox':
+        try {
+          router.push('/vault');
+        } catch {
+          // Fallback
+        }
+        break;
+      case 'request_app':
+        setShowRequestAppModal(true);
+        break;
+      case 'navigate_apps':
+        setSelectedCategory('all');
+        break;
+    }
+  };
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -181,24 +225,39 @@ export default function MyAppsScreen() {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.logoutBtn,
-                isLoggingOut && styles.logoutBtnDisabled,
-              ]}
-              onPress={handleLogout}
-              disabled={isLoggingOut}
-              activeOpacity={0.7}
-              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-              accessibilityRole="button"
-              accessibilityLabel="Sign Out"
-            >
-              {isLoggingOut ? (
-                <ActivityIndicator size="small" color="#f87171" />
-              ) : (
-                <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.userActionsWrap}>
+              <TouchableOpacity
+                style={styles.guideBtn}
+                onPress={() => setShowGuideModal(true)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="First-Timer Guide"
+                testID="open-first-timer-guide-btn"
+              >
+                <Text style={styles.guideBtnText}>📖 Guide</Text>
+                {!guideCompleted && <View style={styles.guidePulseDot} />}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.logoutBtn,
+                  isLoggingOut && styles.logoutBtnDisabled,
+                ]}
+                onPress={handleLogout}
+                disabled={isLoggingOut}
+                activeOpacity={0.7}
+                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                accessibilityRole="button"
+                accessibilityLabel="Sign Out"
+              >
+                {isLoggingOut ? (
+                  <ActivityIndicator size="small" color="#f87171" />
+                ) : (
+                  <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -339,6 +398,13 @@ export default function MyAppsScreen() {
         visible={showRequestAppModal}
         onClose={() => setShowRequestAppModal(false)}
         onSubmit={handleRequestApp}
+      />
+
+      {/* First-Timer User Guide Modal (SCRUM-87) */}
+      <FirstTimerGuideModal
+        visible={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        onNavigateAction={handleGuideNavigate}
       />
     </View>
   );
@@ -522,6 +588,39 @@ const styles = StyleSheet.create({
     color: CyberColors.textMuted,
     fontSize: 11,
     marginTop: 1,
+  },
+  userActionsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  guideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 11,
+    borderRadius: CyberRadius.sm,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    position: 'relative',
+    cursor: 'pointer' as any,
+  },
+  guideBtnText: {
+    color: CyberColors.cyan,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  guidePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: CyberColors.green,
+    shadowColor: CyberColors.green,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
   },
   logoutBtn: {
     paddingHorizontal: 12,

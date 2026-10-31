@@ -71,17 +71,18 @@ test('Authentication Layer & Login Validation (SCRUM-72)', async (t) => {
     );
   });
 
-  await t.test('signInWithSSO defaults to Ellen Ripley and bypasses password check', async () => {
-    const user = await AuthService.signInWithSSO();
-    assert.equal(user.email, 'ellen.ripley@weyland.corp');
-    assert.ok(user.accessToken);
+  await t.test('signInWithSSO is unavailable and never fabricates a session (SCRUM-129)', async () => {
+    await assert.rejects(
+      async () => { await AuthService.signInWithSSO(); },
+      { message: /not available/i },
+    );
   });
 
-  await t.test('signInWithSSO supports custom target email', async () => {
-    const user = await AuthService.signInWithSSO('admin@vanguard.security');
-    assert.equal(user.email, 'admin@vanguard.security');
-    assert.equal(user.role, 'admin');
-    assert.ok(user.accessToken);
+  await t.test('signInWithSSO rejects a custom target too (no local login)', async () => {
+    await assert.rejects(
+      async () => { await AuthService.signInWithSSO('admin@vanguard.security'); },
+      { message: /not available/i },
+    );
   });
 
   await t.test('login rejects fictional demo domains when not registered in database (SCRUM-79)', async () => {

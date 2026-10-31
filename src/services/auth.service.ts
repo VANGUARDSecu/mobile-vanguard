@@ -347,16 +347,13 @@ export class AuthService {
       throw new Error('Please enter a valid email address.');
     }
 
-    if (!credentials.isSso && !credentials.password?.trim()) {
+    if (!credentials.password?.trim()) {
       throw new Error('Password is required.');
     }
 
-    // Bypass MFA for explicit SSO federation requests
-    if (credentials.isSso) {
-      const user = this.normalizeUser(null, cleanEmail);
-      await this.saveSession(user, user.accessToken);
-      return { requireMfa: false, user };
-    }
+    // SCRUM-129: the `isSso` branch that created a local authenticated session
+    // with no server verification has been removed. SSO must go through a real
+    // authorization-code/PKCE flow; a client flag cannot log a user in.
 
     // Attempt live authentication against Vanguard backend if online
     try {
@@ -372,7 +369,7 @@ export class AuthService {
         },
         body: JSON.stringify({
           email: cleanEmail,
-          password: credentials.password?.trim() || 'Password123!',
+          password: credentials.password?.trim(),
         }),
         signal: controller.signal,
       });
@@ -779,19 +776,15 @@ export class AuthService {
   }
 
   /**
-   * Performs 1-tap Single Sign-On federation login (convenience wrapper)
+   * SCRUM-129: the 1-tap SSO wrapper previously fabricated a local authenticated
+   * session for a hardcoded email. That bypass is removed. Real mobile SSO
+   * requires an authorization-code/PKCE flow and is tracked under C2 (SCRUM-139);
+   * until then this is explicitly unavailable rather than faking a login.
    */
-  static async signInWithSSO(targetEmail = 'ellen.ripley@weyland.corp'): Promise<AuthUser> {
-    const result = await this.login({
-      email: targetEmail,
-      isSso: true,
-    });
-    if (!result.requireMfa && result.user) {
-      return result.user;
-    }
-    const user = this.normalizeUser(null, targetEmail);
-    await this.saveSession(user, user.accessToken);
-    return user;
+  static async signInWithSSO(_targetEmail?: string): Promise<AuthUser> {
+    throw new Error(
+      'Single Sign-On is not available in this build. Sign in with your email and password.',
+    );
   }
 
   /**

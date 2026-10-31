@@ -75,8 +75,8 @@ test('Mobile User Metadata & Full Name Alignment with Frontend (SCRUM-82)', asyn
     assert.equal(normalized.user_metadata?.name, 'Johnathan Doe');
   });
 
-  await t.test('signInWithSSO returns user with rich user_metadata and matching name', async () => {
-    const ssoUser = await AuthService.signInWithSSO('ellen.ripley@weyland.corp');
+  await t.test('normalizeUser returns rich user_metadata and matching name (SCRUM-129)', async () => {
+    const ssoUser = AuthService.normalizeUser(null, 'ellen.ripley@weyland.corp');
     assert.equal(ssoUser.name, 'Ellen Ripley');
     assert.equal(ssoUser.firstName, 'Ellen');
     assert.equal(ssoUser.lastName, 'Ripley');

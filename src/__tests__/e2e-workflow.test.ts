@@ -12,7 +12,8 @@ import {
 
 test('End-to-End Application Portal & Zero-Trust Governance Workflow (SCRUM-71)', async (t) => {
   await t.test('1. Authenticates corporate identity (Ellen Ripley)', async () => {
-    const user = await AuthService.signInWithSSO('ellen.ripley@weyland.corp');
+    // SCRUM-129: build the corporate identity via normalizeUser (no SSO bypass).
+    const user = AuthService.normalizeUser(null, 'ellen.ripley@weyland.corp');
     assert.ok(user);
     assert.equal(user.email, 'ellen.ripley@weyland.corp');
     assert.equal(user.department, 'Engineering');

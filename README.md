@@ -2,6 +2,12 @@
 
 Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, delivering Zero-Trust Identity, SSO Application Launchpad, and Authenticator Vault capabilities for iOS, Android, and Web.
 
+> **Note (SCRUM-129):** 1-tap "Sign in with SSO" is temporarily **unavailable**.
+> The previous implementation fabricated a local authenticated session for a
+> hardcoded identity with no server verification; that bypass has been removed.
+> Real mobile SSO (authorization-code + PKCE) is deferred to the mobile
+> qualification milestone (C2 / SCRUM-139). Sign in with email + password.
+
 ---
 
 ## 🛠️ Prerequisites & Requirements

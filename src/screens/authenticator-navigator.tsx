@@ -300,15 +300,19 @@ export function AuthenticatorNavigator({
         visible={Boolean(activePushRequest)}
         request={activePushRequest}
         onApprove={async (opts) => {
-          if (activePushRequest) {
-            pushMfaService.approveRequest(activePushRequest.id, opts);
-            // User successfully verified identity via native biometric/passcode challenge
-            biometricService.recordAuthenticationSuccess();
-            lastUnlockTimestampRef.current = Date.now();
-            isLockedRef.current = false;
-            setIsLocked(false);
-            setAuthError(null);
+          if (!activePushRequest) return undefined;
+          const result = await pushMfaService.approveRequest(activePushRequest.id, opts);
+          if (!result.success) {
+            // Keep the request on screen so the user can retry. Do not record a success.
+            return { success: false, error: result.error };
           }
+          // User successfully verified identity via native biometric/passcode challenge
+          biometricService.recordAuthenticationSuccess();
+          lastUnlockTimestampRef.current = Date.now();
+          isLockedRef.current = false;
+          setIsLocked(false);
+          setAuthError(null);
+          return { success: true };
         }}
         onDeny={(isFraud) => {
           if (activePushRequest) {

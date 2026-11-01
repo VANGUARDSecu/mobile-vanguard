@@ -14,7 +14,7 @@ export interface PushGeoLocation {
 
 export interface NumberMatchingChallenge {
   enabled: boolean;
-  correctCode: number; // 2-digit integer (e.g. 42)
+  correctCode?: number; // Offline demo presets only. Live challenges omit it: the backend checks the number.
   options: number[]; // 3 candidate choices (e.g. [17, 42, 89])
 }
 

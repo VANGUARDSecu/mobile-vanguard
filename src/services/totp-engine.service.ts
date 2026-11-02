@@ -50,16 +50,28 @@ export class TotpEngine {
   /**
    * Generates offline RFC 6238 TOTP code matching standard Google Authenticator output
    */
-  static generate(options: GenerateTotpOptions): string {
-    const clean = this.cleanSecret(options.secret);
+  static generate(
+    secretOrOptions: string | GenerateTotpOptions,
+    maybeOptions?: Partial<GenerateTotpOptions>
+  ): string {
+    const opts: GenerateTotpOptions =
+      typeof secretOrOptions === 'string'
+        ? { secret: secretOrOptions, ...maybeOptions }
+        : secretOrOptions;
+
+    const clean = this.cleanSecret(opts?.secret);
     if (!clean) {
       throw new Error('Secret key is required to generate TOTP code');
     }
 
-    const algorithm = options.algorithm || 'SHA1';
-    const digits = options.digits || 6;
-    const period = options.period || 30;
-    const timestamp = options.timestamp !== undefined ? options.timestamp : Date.now();
+    if (!this.isValidBase32(clean)) {
+      throw new Error('TOTP_INVALID_SECRET: Secret is not valid RFC 4648 Base32');
+    }
+
+    const algorithm = opts.algorithm || 'SHA1';
+    const digits = opts.digits || 6;
+    const period = opts.period || 30;
+    const timestamp = opts.timestamp !== undefined ? opts.timestamp : Date.now();
 
     try {
       const secretObj = OTPAuth.Secret.fromBase32(clean);
@@ -73,17 +85,8 @@ export class TotpEngine {
       });
 
       return totp.generate({ timestamp });
-    } catch {
-      // Fallback RFC 4226 dynamic truncation computation if secret format is atypical
-      const epoch = Math.floor(timestamp / 1000);
-      const counter = Math.floor(epoch / period);
-      let hash = 0;
-      for (let i = 0; i < clean.length; i++) {
-        hash = (hash * 31 + clean.charCodeAt(i) + counter) >>> 0;
-      }
-      hash = (hash ^ (counter * 2654435761)) >>> 0;
-      const codeInt = hash % Math.pow(10, digits);
-      return codeInt.toString().padStart(digits, '0');
+    } catch (err: any) {
+      throw new Error(`TOTP_GENERATION_FAILED: ${err?.message || 'Cryptographic TOTP generation failed'}`);
     }
   }
 

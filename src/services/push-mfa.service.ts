@@ -174,9 +174,13 @@ export class PushMfaService {
    * Fetches active pending push challenges from backend-vanguard (SCRUM-85)
    */
   public async fetchPendingPush(email?: string): Promise<PushApprovalRequest | null> {
-    const targetEmail = email || this.currentUserEmail;
+    const targetEmail = (email || this.currentUserEmail)?.trim();
+    if (!targetEmail) {
+      // P1-03: Require authenticated registered-device ownership; never query challenges anonymously
+      return null;
+    }
     try {
-      const url = `${getApiBaseUrl()}/oauth/mfa/push/pending${targetEmail ? '?email=' + encodeURIComponent(targetEmail) : ''}`;
+      const url = `${getApiBaseUrl()}/oauth/mfa/push/pending?email=${encodeURIComponent(targetEmail)}`;
       const response = await fetch(url);
       if (!response.ok) return null;
       const data = await response.json();

@@ -33,6 +33,7 @@ test('React Native Authenticator Scaffolding & Dark Cyber Theme System (SCRUM-17
   });
 
   await t.test('2. VaultService loads default accounts with zero external network dependencies', async () => {
+    await vaultService.seedDemoAccountsForTesting();
     const accounts = await vaultService.getAccounts();
     assert.ok(Array.isArray(accounts));
     assert.ok(accounts.length >= 5);
@@ -128,11 +129,11 @@ test('React Native Authenticator Scaffolding & Dark Cyber Theme System (SCRUM-17
     assert.equal(updated.autoLockSeconds, 60);
     assert.equal(updated.clearClipboardSeconds, 15);
 
-    const exportData = await vaultService.exportVault();
+    const exportData = await vaultService.exportVault('SecureBackupPassword123!');
     const parsed = JSON.parse(exportData);
     assert.equal(parsed.version, '1.0.0');
-    assert.ok(Array.isArray(parsed.accounts));
-    assert.ok(parsed.accounts.length >= 5);
+    assert.equal(parsed.format, 'vanguard-encrypted-vault-backup');
+    assert.ok(parsed.accountCount >= 5);
   });
 
   await t.test('7. Screen navigation transitions navigate cleanly across all 4 screens', () => {

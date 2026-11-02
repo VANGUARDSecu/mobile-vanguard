@@ -22,6 +22,7 @@ import {
 import { TotpAccount, TotpAlgorithm } from '@/models/vault.models';
 import vaultService from '@/services/vault.service';
 import { TotpEngine } from '@/services/totp-engine.service';
+import { OtpAuthParser } from '@/services/otpauth-parser.service';
 
 export interface AddAccountScreenProps {
   onClose: () => void;
@@ -125,17 +126,33 @@ export function AddAccountScreen({
     }
   };
 
-  const handleSimulatedQrScan = () => {
-    // Simulated QR scan payload
-    setAccountName('dev-security@cloudflare.corp');
-    setIssuer('Cloudflare Access');
-    setSecret('HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ');
-    setSelectedIcon('⚡');
-    setMode('manual');
-    Alert.alert(
-      'QR Code Decoded',
-      'Extracted Cloudflare Access TOTP payload successfully!'
-    );
+  const handleQrDecoded = (uri: string) => {
+    try {
+      setValidationError(null);
+      const parsed = OtpAuthParser.parse(uri);
+      setAccountName(parsed.accountName);
+      setIssuer(parsed.issuer);
+      setSecret(parsed.secret);
+      setAlgorithm(parsed.algorithm);
+      setDigits(parsed.digits);
+      setPeriod(parsed.period);
+      setMode('manual');
+      Alert.alert(
+        'QR Code Decoded',
+        `Successfully extracted credentials for ${parsed.issuer} (${parsed.accountName}).`
+      );
+    } catch (err: any) {
+      setValidationError(err?.message || 'Invalid QR code otpauth payload.');
+    }
+  };
+
+  const handleSimulatedQrScan = (rawUri?: string) => {
+    // Real standard otpauth:// decoding using OtpAuthParser
+    const uriToDecode =
+      typeof rawUri === 'string' && rawUri.trim()
+        ? rawUri.trim()
+        : 'otpauth://totp/Vanguard%20Security:admin%40vanguard.security?secret=JBSWY3DPEHPK3PXP&issuer=Vanguard%20Security&algorithm=SHA1&digits=6&period=30';
+    handleQrDecoded(uriToDecode);
   };
 
   return (

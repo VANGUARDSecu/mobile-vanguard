@@ -4,11 +4,13 @@ import type {
   AddTotpAccountInput,
   ISecureStorageProvider,
   EncryptedVaultEnvelope,
+  EncryptedVaultBackup,
 } from '../models/vault.models.ts';
 import { AesGcmService } from './aes-gcm.service.ts';
 import {
   createDefaultSecureProvider,
   MockKeychainProvider,
+  SecureStorageError,
 } from './secure-storage.provider.ts';
 import { TotpEngine } from './totp-engine.service.ts';
 
@@ -16,6 +18,10 @@ const KEYCHAIN_MASTER_KEY = '@vanguard:keychain_master_key_v1';
 const SECURE_VAULT_PAYLOAD_KEY = '@vanguard:encrypted_totp_vault_v1';
 const SECURE_SETTINGS_KEY = '@vanguard:secure_settings_v1';
 
+/**
+ * Seed accounts fixture kept strictly for test/demo harnesses.
+ * Normal builds and fresh installs MUST NOT seed these accounts.
+ */
 export const DEFAULT_ACCOUNTS: TotpAccount[] = [
   {
     id: 'c0a80101-0001-4000-8000-000000000001',
@@ -27,7 +33,7 @@ export const DEFAULT_ACCOUNTS: TotpAccount[] = [
     digits: 6,
     period: 30,
     icon: '🛡️',
-    backupCodes: ['VG-9841-A', 'VG-2104-B', 'VG-7893-C'],
+    backupCodes: [],
     createdAt: '2026-09-01T08:00:00Z',
     updatedAt: '2026-09-01T08:00:00Z',
   },
@@ -41,7 +47,7 @@ export const DEFAULT_ACCOUNTS: TotpAccount[] = [
     digits: 6,
     period: 30,
     icon: '☁️',
-    backupCodes: ['AWS-4412-X', 'AWS-9021-Y'],
+    backupCodes: [],
     createdAt: '2026-09-02T09:30:00Z',
     updatedAt: '2026-09-02T09:30:00Z',
   },
@@ -55,7 +61,7 @@ export const DEFAULT_ACCOUNTS: TotpAccount[] = [
     digits: 6,
     period: 30,
     icon: '🐙',
-    backupCodes: ['GH-7782-Q', 'GH-3391-R', 'GH-1094-S'],
+    backupCodes: [],
     createdAt: '2026-09-03T11:15:00Z',
     updatedAt: '2026-09-03T11:15:00Z',
   },
@@ -69,7 +75,7 @@ export const DEFAULT_ACCOUNTS: TotpAccount[] = [
     digits: 6,
     period: 30,
     icon: '⚡',
-    backupCodes: ['CF-6621-M'],
+    backupCodes: [],
     createdAt: '2026-09-04T14:45:00Z',
     updatedAt: '2026-09-04T14:45:00Z',
   },
@@ -83,7 +89,7 @@ export const DEFAULT_ACCOUNTS: TotpAccount[] = [
     digits: 6,
     period: 30,
     icon: '🔷',
-    backupCodes: ['ATL-8891-K', 'ATL-4420-L'],
+    backupCodes: [],
     createdAt: '2026-09-05T16:00:00Z',
     updatedAt: '2026-09-05T16:00:00Z',
   },
@@ -102,7 +108,6 @@ function generateUuid(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
     return globalThis.crypto.randomUUID();
   }
-  // Fallback RFC 4122 v4 UUID generator
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -111,11 +116,18 @@ function generateUuid(): string {
 }
 
 export class VaultService {
-  private secureStorage: ISecureStorageProvider = createDefaultSecureProvider();
+  private secureStorage: ISecureStorageProvider;
   private masterKey: string | null = null;
   private memoryCache: TotpAccount[] = [];
   private memorySettings: VaultSecuritySettings = { ...DEFAULT_SETTINGS };
   private isInitialized = false;
+  private isLockedState = false;
+  private lockTimer: ReturnType<typeof setTimeout> | null = null;
+  private storageError: string | null = null;
+
+  constructor(customProvider?: ISecureStorageProvider) {
+    this.secureStorage = customProvider || createDefaultSecureProvider();
+  }
 
   /**
    * Inject a custom secure storage provider (e.g. MockKeychainProvider for unit tests)
@@ -125,17 +137,86 @@ export class VaultService {
     this.isInitialized = false;
     this.masterKey = null;
     this.memoryCache = [];
+    this.storageError = null;
+    this.isLockedState = false;
+    if (this.lockTimer) {
+      clearTimeout(this.lockTimer);
+      this.lockTimer = null;
+    }
   }
 
   getStorageProvider(): ISecureStorageProvider {
     return this.secureStorage;
   }
 
+  getStorageStatus(): {
+    available: boolean;
+    provider: string;
+    error: string | null;
+    isLocked: boolean;
+    accountCount: number;
+  } {
+    return {
+      available: !this.storageError,
+      provider: (this.secureStorage as any)?.isMock ? 'MockKeychainProvider' : 'ExpoSecureStoreAdapter',
+      error: this.storageError,
+      isLocked: this.isLockedState,
+      accountCount: this.memoryCache.length,
+    };
+  }
+
+  getIsLocked(): boolean {
+    return this.isLockedState;
+  }
+
   /**
-   * Initializes master encryption key in Keychain/Keystore and decrypts vault cache
+   * Manually lock the vault, wiping in-memory decrypted accounts
+   */
+  lock(): void {
+    this.memoryCache = [];
+    this.isLockedState = true;
+    if (this.lockTimer) {
+      clearTimeout(this.lockTimer);
+      this.lockTimer = null;
+    }
+  }
+
+  /**
+   * Unlocks the vault by re-decrypting accounts from secure storage
+   */
+  async unlock(): Promise<boolean> {
+    this.isInitialized = false;
+    await this.ensureInitialized();
+    this.isLockedState = false;
+    this.resetAutoLock();
+    return true;
+  }
+
+  private resetAutoLock(): void {
+    if (this.lockTimer) {
+      clearTimeout(this.lockTimer);
+      this.lockTimer = null;
+    }
+    const seconds = this.memorySettings.autoLockSeconds;
+    if (seconds > 0) {
+      this.lockTimer = setTimeout(() => {
+        this.lock();
+      }, seconds * 1000);
+      if (typeof (this.lockTimer as any)?.unref === 'function') {
+        (this.lockTimer as any).unref();
+      }
+    }
+  }
+
+  /**
+   * Initializes master encryption key in Keychain/Keystore and decrypts vault cache.
+   * Fresh installs start EMPTY (no seeded demo accounts).
    */
   private async ensureInitialized(): Promise<void> {
-    if (this.isInitialized && this.masterKey) return;
+    if (this.isInitialized && this.masterKey && !this.isLockedState) {
+      this.resetAutoLock();
+      return;
+    }
 
     try {
       // 1. Retrieve or generate hardware master key in secure storage
@@ -147,40 +228,37 @@ export class VaultService {
       this.masterKey = key;
 
       // 2. Retrieve encrypted vault envelope
-      const rawEnvelope = await this.secureStorage.getItemAsync(
-        SECURE_VAULT_PAYLOAD_KEY
-      );
+      const rawEnvelope = await this.secureStorage.getItemAsync(SECURE_VAULT_PAYLOAD_KEY);
 
       if (rawEnvelope) {
         const envelope: EncryptedVaultEnvelope = JSON.parse(rawEnvelope);
         const decryptedJson = await AesGcmService.decrypt(envelope, this.masterKey);
         this.memoryCache = JSON.parse(decryptedJson);
       } else {
-        // First boot: encrypt default accounts using AES-GCM and store in secure storage
-        this.memoryCache = [...DEFAULT_ACCOUNTS];
+        // Fresh boot: start EMPTY (do not seed demo accounts in production)
+        this.memoryCache = [];
         await this.persistEncryptedAccounts(this.memoryCache);
       }
 
       // 3. Retrieve settings
-      const rawSettings = await this.secureStorage.getItemAsync(
-        SECURE_SETTINGS_KEY
-      );
+      const rawSettings = await this.secureStorage.getItemAsync(SECURE_SETTINGS_KEY);
       if (rawSettings) {
         this.memorySettings = JSON.parse(rawSettings);
       }
-    } catch {
-      // In-memory fallback if secure store throws
-      if (this.memoryCache.length === 0) {
-        this.memoryCache = [...DEFAULT_ACCOUNTS];
-      }
+      this.storageError = null;
+      this.isLockedState = false;
+      this.resetAutoLock();
+    } catch (err: any) {
+      this.storageError = err?.message || 'Secure storage failure';
+      this.memoryCache = [];
+      throw new SecureStorageError(`Secure storage initialization failed: ${this.storageError}`, err);
     } finally {
       this.isInitialized = true;
     }
   }
 
   /**
-   * Encrypts accounts payload using AES-GCM-256 and writes ONLY ciphertext to secure storage
-   * Note: Plaintext secrets are NEVER written to unencrypted storage (AsyncStorage).
+   * Encrypts accounts payload using AES-GCM-256 and writes ONLY ciphertext to secure storage.
    */
   private async persistEncryptedAccounts(accounts: TotpAccount[]): Promise<void> {
     if (!this.masterKey) {
@@ -191,16 +269,16 @@ export class VaultService {
     const plaintext = JSON.stringify(accounts);
     const envelope = await AesGcmService.encrypt(plaintext, this.masterKey);
 
-    await this.secureStorage.setItemAsync(
-      SECURE_VAULT_PAYLOAD_KEY,
-      JSON.stringify(envelope)
-    );
+    await this.secureStorage.setItemAsync(SECURE_VAULT_PAYLOAD_KEY, JSON.stringify(envelope));
   }
 
   /**
    * Returns all stored TOTP accounts decrypted from secure storage
    */
   async getAccounts(): Promise<TotpAccount[]> {
+    if (this.isLockedState) {
+      throw new Error('VAULT_LOCKED: Unlock the vault to view accounts.');
+    }
     await this.ensureInitialized();
     return this.memoryCache.map((acc) => ({
       ...acc,
@@ -213,6 +291,9 @@ export class VaultService {
    * Returns a specific account by UUID
    */
   async getAccountById(id: string): Promise<TotpAccount | null> {
+    if (this.isLockedState) {
+      throw new Error('VAULT_LOCKED: Unlock the vault to view accounts.');
+    }
     await this.ensureInitialized();
     const found = this.memoryCache.find((acc) => acc.id === id);
     if (!found) return null;
@@ -224,9 +305,13 @@ export class VaultService {
   }
 
   /**
-   * Saves a new account into the hardware-backed secure vault (SCRUM-18 CRUD: saveAccount)
+   * Saves a new account into the hardware-backed secure vault.
+   * Real backup codes only (never fabricate fake recovery codes).
    */
   async saveAccount(input: AddTotpAccountInput): Promise<TotpAccount> {
+    if (this.isLockedState) {
+      throw new Error('VAULT_LOCKED: Unlock the vault to save accounts.');
+    }
     await this.ensureInitialized();
 
     const accountIdentifier = (input.accountName || input.name || '').trim();
@@ -250,33 +335,28 @@ export class VaultService {
       digits: input.digits || 6,
       period: input.period || 30,
       icon: input.icon || '🔑',
-      backupCodes: input.backupCodes || [
-        `REC-${Math.floor(1000 + Math.random() * 9000)}-A`,
-        `REC-${Math.floor(1000 + Math.random() * 9000)}-B`,
-      ],
+      backupCodes: input.backupCodes ? [...input.backupCodes] : [],
       createdAt: now,
       updatedAt: now,
     };
 
     this.memoryCache.unshift(newAccount);
     await this.persistEncryptedAccounts(this.memoryCache);
+    this.resetAutoLock();
     return { ...newAccount };
   }
 
-  /**
-   * Alias for saveAccount (backwards compatibility with SCRUM-17 addAccount)
-   */
   async addAccount(input: AddTotpAccountInput): Promise<TotpAccount> {
     return this.saveAccount(input);
   }
 
-  /**
-   * Updates an existing account and re-encrypts the vault payload (SCRUM-18 CRUD: updateAccount)
-   */
   async updateAccount(
     id: string,
     updates: Partial<Omit<TotpAccount, 'id' | 'createdAt'>>
   ): Promise<TotpAccount> {
+    if (this.isLockedState) {
+      throw new Error('VAULT_LOCKED: Unlock the vault to update accounts.');
+    }
     await this.ensureInitialized();
     const index = this.memoryCache.findIndex((acc) => acc.id === id);
     if (index === -1) {
@@ -304,27 +384,26 @@ export class VaultService {
 
     this.memoryCache[index] = updated;
     await this.persistEncryptedAccounts(this.memoryCache);
+    this.resetAutoLock();
     return { ...updated };
   }
 
-  /**
-   * Deletes an account from the secure vault (SCRUM-18 CRUD: deleteAccount)
-   */
   async deleteAccount(id: string): Promise<boolean> {
+    if (this.isLockedState) {
+      throw new Error('VAULT_LOCKED: Unlock the vault to delete accounts.');
+    }
     await this.ensureInitialized();
     const initialLength = this.memoryCache.length;
     this.memoryCache = this.memoryCache.filter((acc) => acc.id !== id);
 
     if (this.memoryCache.length !== initialLength) {
       await this.persistEncryptedAccounts(this.memoryCache);
+      this.resetAutoLock();
       return true;
     }
     return false;
   }
 
-  /**
-   * Generates offline RFC 6238 TOTP code matching standard Google Authenticator output (SCRUM-19)
-   */
   generateCode(
     account: TotpAccount | { secret: string; period?: number; digits?: number; algorithm?: any },
     timestamp: number = Date.now()
@@ -369,40 +448,182 @@ export class VaultService {
     return { ...this.memorySettings };
   }
 
-  async updateSettings(
-    updates: Partial<VaultSecuritySettings>
-  ): Promise<VaultSecuritySettings> {
+  async updateSettings(updates: Partial<VaultSecuritySettings>): Promise<VaultSecuritySettings> {
     await this.ensureInitialized();
     this.memorySettings = {
       ...this.memorySettings,
       ...updates,
     };
-    await this.secureStorage.setItemAsync(
-      SECURE_SETTINGS_KEY,
-      JSON.stringify(this.memorySettings)
-    );
+    await this.secureStorage.setItemAsync(SECURE_SETTINGS_KEY, JSON.stringify(this.memorySettings));
+    this.resetAutoLock();
     return { ...this.memorySettings };
   }
 
-  async exportVault(): Promise<string> {
+  /**
+   * Encrypted export of all vault credentials using PBKDF2-SHA256 (100k) + AES-GCM-256.
+   * Never exports secret plaintext to clipboard.
+   */
+  async exportVault(passphrase?: string): Promise<string> {
     await this.ensureInitialized();
-    const payload = {
+    if (this.isLockedState) {
+      throw new Error('VAULT_LOCKED: Unlock vault before exporting.');
+    }
+
+    if (!passphrase || passphrase.length < 8) {
+      throw new Error('EXPORT_FAILED: A passphrase of at least 8 characters is required to encrypt the backup.');
+    }
+
+    const payload = JSON.stringify({
       version: '1.0.0',
       exportedAt: new Date().toISOString(),
       accountCount: this.memoryCache.length,
       accounts: this.memoryCache,
+    });
+
+    const encrypted = await AesGcmService.encryptWithPassword(payload, passphrase, 100000);
+
+    const backup: EncryptedVaultBackup = {
+      format: 'vanguard-encrypted-vault-backup',
+      version: '1.0.0',
+      kdf: {
+        algorithm: 'PBKDF2',
+        hash: 'SHA-256',
+        iterations: encrypted.iterations,
+        salt: encrypted.salt,
+      },
+      cipher: {
+        algorithm: 'AES-GCM-256',
+        iv: encrypted.iv,
+        ciphertext: encrypted.ciphertext,
+      },
+      accountCount: this.memoryCache.length,
+      exportedAt: new Date().toISOString(),
     };
-    return JSON.stringify(payload, null, 2);
+
+    return JSON.stringify(backup, null, 2);
   }
 
-  async resetVault(): Promise<void> {
-    this.memoryCache = [...DEFAULT_ACCOUNTS];
-    this.memorySettings = { ...DEFAULT_SETTINGS };
+  /**
+   * Imports an encrypted backup envelope, verifying passphrase and account schema.
+   */
+  async importVault(
+    encryptedBackupJson: string,
+    passphrase: string
+  ): Promise<{ importedCount: number }> {
+    await this.ensureInitialized();
+    if (!encryptedBackupJson || !passphrase) {
+      throw new Error('IMPORT_FAILED: Encrypted backup JSON and passphrase are required.');
+    }
+
+    let parsedBackup: EncryptedVaultBackup;
+    try {
+      parsedBackup = JSON.parse(encryptedBackupJson);
+    } catch {
+      throw new Error('IMPORT_MALFORMED: Backup file is not valid JSON.');
+    }
+
+    if (parsedBackup.format !== 'vanguard-encrypted-vault-backup' || !parsedBackup.cipher?.ciphertext) {
+      throw new Error('IMPORT_INVALID_FORMAT: Unrecognized backup format.');
+    }
+
+    let decryptedJson: string;
+    try {
+      decryptedJson = await AesGcmService.decryptWithPassword(
+        parsedBackup.cipher.ciphertext,
+        parsedBackup.cipher.iv,
+        parsedBackup.kdf.salt,
+        passphrase,
+        parsedBackup.kdf.iterations || 100000
+      );
+    } catch (err: any) {
+      throw new Error(`IMPORT_DECRYPTION_FAILED: Invalid passphrase or corrupted backup (${err?.message || 'decryption failed'}).`);
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(decryptedJson);
+    } catch {
+      throw new Error('IMPORT_CORRUPT: Decrypted content is not valid JSON.');
+    }
+
+    const accounts: TotpAccount[] = payload.accounts;
+    if (!Array.isArray(accounts)) {
+      throw new Error('IMPORT_INVALID_DATA: Accounts payload must be an array.');
+    }
+
+    // Validate every account
+    for (const acc of accounts) {
+      if (!acc.id || !acc.secret || !acc.issuer) {
+        throw new Error(`IMPORT_INVALID_ACCOUNT: Account "${acc.accountName || acc.id}" missing required fields.`);
+      }
+      const val = this.validateSecret(acc.secret);
+      if (!val.valid) {
+        throw new Error(`IMPORT_INVALID_ACCOUNT: Account "${acc.accountName || acc.id}" has invalid secret.`);
+      }
+    }
+
+    // Merge into memoryCache without duplicating IDs
+    let importedCount = 0;
+    for (const acc of accounts) {
+      const existingIdx = this.memoryCache.findIndex((a) => a.id === acc.id);
+      if (existingIdx >= 0) {
+        this.memoryCache[existingIdx] = acc;
+      } else {
+        this.memoryCache.push(acc);
+      }
+      importedCount++;
+    }
+
     await this.persistEncryptedAccounts(this.memoryCache);
-    await this.secureStorage.setItemAsync(
-      SECURE_SETTINGS_KEY,
-      JSON.stringify(this.memorySettings)
-    );
+    this.resetAutoLock();
+    return { importedCount };
+  }
+
+  /**
+   * Genuine wipe operation that completely destroys vault ciphertext, keys, and memory cache.
+   * Stays completely empty after wipe (no demo reseeding).
+   */
+  async wipeVault(options?: { confirmed: boolean }): Promise<void> {
+    if (!options?.confirmed) {
+      throw new Error('WIPE_UNCONFIRMED: Vault wipe requires explicit confirmation.');
+    }
+
+    this.memoryCache = [];
+    this.memorySettings = { ...DEFAULT_SETTINGS };
+    this.masterKey = null;
+    this.isInitialized = false;
+    this.isLockedState = false;
+
+    if (this.lockTimer) {
+      clearTimeout(this.lockTimer);
+      this.lockTimer = null;
+    }
+
+    try {
+      await this.secureStorage.deleteItemAsync(SECURE_VAULT_PAYLOAD_KEY);
+      await this.secureStorage.deleteItemAsync(KEYCHAIN_MASTER_KEY);
+      await this.secureStorage.deleteItemAsync(SECURE_SETTINGS_KEY);
+    } catch {
+      // ignore deletion errors
+    }
+  }
+
+  /**
+   * For backwards-compatible tests only: populates default demo accounts.
+   * Normal production boots start completely empty.
+   */
+  async seedDemoAccountsForTesting(): Promise<VaultAccount[]> {
+    await this.ensureInitialized();
+    this.memoryCache = [...DEFAULT_ACCOUNTS];
+    await this.persistEncryptedAccounts(this.memoryCache);
+    return [...this.memoryCache];
+  }
+
+  /**
+   * Backwards-compatible alias for wipeVault
+   */
+  async resetVault(options?: { confirmed?: boolean }): Promise<void> {
+    return this.wipeVault({ confirmed: options?.confirmed ?? true });
   }
 }
 

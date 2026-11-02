@@ -59,3 +59,21 @@ export interface EncryptedVaultEnvelope {
   updatedAt: string;
 }
 
+export interface EncryptedVaultBackup {
+  format: 'vanguard-encrypted-vault-backup';
+  version: '1.0.0';
+  kdf: {
+    algorithm: 'PBKDF2';
+    hash: 'SHA-256';
+    iterations: number;
+    salt: string;
+  };
+  cipher: {
+    algorithm: 'AES-GCM-256';
+    iv: string;
+    ciphertext: string;
+  };
+  accountCount: number;
+  exportedAt: string;
+}
+

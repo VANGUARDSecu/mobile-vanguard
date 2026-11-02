@@ -42,6 +42,7 @@ test('Local Secure Vault & Keychain Storage for TOTP Secrets (SCRUM-18)', async 
     const mockKeychain = new MockKeychainProvider();
     const service = new VaultService();
     service.setStorageProvider(mockKeychain);
+    await service.seedDemoAccountsForTesting();
 
     const accounts = await service.getAccounts();
     assert.ok(accounts.length >= 5);

@@ -46,7 +46,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
     assert.equal(active?.id, req.id);
   });
 
-  await t.test('2. Notifies reactive subscribers on request trigger and resolution', () => {
+  await t.test('2. Notifies reactive subscribers on request trigger and resolution', async () => {
     initService();
     const updates: (PushApprovalRequest | null)[] = [];
     const unsubscribe = service.subscribe((req) => {
@@ -63,7 +63,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
     assert.equal(updates[1]?.id, req.id);
 
     // Approve push
-    service.approveRequest(req.id, { biometricVerified: true });
+    await service.approveRequest(req.id, { biometricVerified: true });
     assert.equal(updates.length, 3);
     assert.equal(updates[2], null);
 
@@ -95,14 +95,14 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
     assert.equal(triggered.numberMatchingChallenge?.correctCode, 74);
   });
 
-  await t.test('4. Approves standard biometric request and records in audit history', () => {
+  await t.test('4. Approves standard biometric request and records in audit history', async () => {
     initService();
     const req = service.triggerMockPush({
       appName: 'Production Vault Portal',
       validitySeconds: 60,
     });
 
-    const result = service.approveRequest(req.id, { biometricVerified: true });
+    const result = await service.approveRequest(req.id, { biometricVerified: true });
     assert.equal(result.success, true);
     assert.equal(result.action, 'approved');
     assert.equal(result.biometricVerified, true);
@@ -120,7 +120,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
 
   await t.test(
     '5. Number matching challenge verifies correct 2-digit code to prevent MFA fatigue',
-    () => {
+    async () => {
       initService();
       const req = service.triggerMockPush({
         appName: 'Corporate VPN Gateway',
@@ -132,7 +132,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
       });
 
       // 1. Attempt approval with wrong number
-      const failResult = service.approveRequest(req.id, {
+      const failResult = await service.approveRequest(req.id, {
         biometricVerified: true,
         selectedCode: 28,
       });
@@ -144,14 +144,14 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
       assert.equal(service.getActiveRequest()?.id, req.id);
 
       // 2. Attempt approval with missing code
-      const missingResult = service.approveRequest(req.id, {
+      const missingResult = await service.approveRequest(req.id, {
         biometricVerified: true,
       });
       assert.equal(missingResult.success, false);
       assert.equal(missingResult.numberMatched, false);
 
       // 3. Attempt approval with correct code
-      const successResult = service.approveRequest(req.id, {
+      const successResult = await service.approveRequest(req.id, {
         biometricVerified: true,
         selectedCode: 74,
       });
@@ -195,7 +195,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
     assert.equal(history[0].status, 'denied');
   });
 
-  await t.test('8. Expiration window rejects timed-out requests', () => {
+  await t.test('8. Expiration window rejects timed-out requests', async () => {
     initService();
     // Create an already-expired request
     const expiredReq = service.triggerMockPush({
@@ -203,7 +203,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
       validitySeconds: -10, // in the past
     });
 
-    const result = service.approveRequest(expiredReq.id, {
+    const result = await service.approveRequest(expiredReq.id, {
       biometricVerified: true,
     });
     assert.equal(result.success, false);
@@ -349,7 +349,6 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
           expiresAt: new Date(Date.now() + 60000).toISOString(),
           numberMatchingChallenge: {
             enabled: true,
-            correctCode: 88,
             options: [31, 88, 92],
           },
           status: 'pending',
@@ -358,7 +357,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
         (service as any).activeRequest = mockChallenge;
 
         // 1. Approve
-        const approveRes = service.approveRequest(
+        const approveRes = await service.approveRequest(
           'push_mfa_live_challenge_999',
           {
             selectedCode: 88,
@@ -392,6 +391,58 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
           'push_mfa_fraud_challenge_123'
         );
         assert.equal(dispatchedCalls[1].action, 'fraud_reported');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+
+  await t.test(
+    '14. A live approval the backend rejects is not recorded as approved (SCRUM-135 number matching)',
+    async () => {
+      initService();
+      const originalFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (async () => {
+        calls++;
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({
+            statusCode: 400,
+            message: 'Number mismatch. Please select the correct 2-digit number shown on screen.',
+          }),
+        } as any;
+      }) as any;
+
+      try {
+        const liveChallenge: PushApprovalRequest = {
+          id: 'push_mfa_live_reject_1',
+          appName: 'Acme Dummy Web',
+          appIcon: '🌐',
+          category: 'Enterprise Web Application',
+          ipAddress: '127.0.0.1',
+          location: { city: 'Local', country: 'Dev', flagEmoji: '🛡️' },
+          device: 'Chrome on Windows',
+          timestamp: new Date().toISOString(),
+          validitySeconds: 60,
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+          numberMatchingChallenge: { enabled: true, options: [20, 47, 75] },
+          status: 'pending',
+        };
+        (service as any).activeRequest = liveChallenge;
+
+        // The app no longer compares locally: a wrong pick must reach the backend.
+        const result = await service.approveRequest(liveChallenge.id, {
+          biometricVerified: true,
+          selectedCode: 47,
+        });
+        assert.equal(calls, 1);
+        assert.equal(result.success, false);
+        assert.match(result.error ?? '', /Number mismatch/);
+        // The request stays on screen so the user can retry, and nothing is recorded as approved.
+        assert.equal(service.getActiveRequest()?.id, liveChallenge.id);
+        assert.equal(service.getHistory().length, 0);
       } finally {
         globalThis.fetch = originalFetch;
       }

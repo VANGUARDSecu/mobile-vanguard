@@ -103,4 +103,86 @@ export class AesGcmService {
 
     return new TextDecoder().decode(decryptedBuffer);
   }
+
+  /**
+   * Derives a 256-bit AES-GCM CryptoKey from a passphrase and salt using PBKDF2-SHA256
+   */
+  static async deriveKeyFromPassword(
+    passphrase: string,
+    salt: Uint8Array,
+    iterations = 100000
+  ): Promise<CryptoKey> {
+    const enc = new TextEncoder();
+    const keyMaterial = await globalThis.crypto.subtle.importKey(
+      'raw',
+      enc.encode(passphrase),
+      'PBKDF2',
+      false,
+      ['deriveKey']
+    );
+
+    return globalThis.crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt as unknown as BufferSource,
+        iterations,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  /**
+   * Password-based encryption for secure exports (PBKDF2-SHA256 + AES-GCM-256)
+   */
+  static async encryptWithPassword(
+    plaintext: string,
+    passphrase: string,
+    iterations = 100000
+  ): Promise<{ salt: string; iv: string; ciphertext: string; iterations: number }> {
+    const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    const key = await this.deriveKeyFromPassword(passphrase, salt, iterations);
+    const encoded = new TextEncoder().encode(plaintext);
+
+    const encryptedBuffer = await globalThis.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv as unknown as BufferSource },
+      key,
+      encoded as unknown as BufferSource
+    );
+
+    return {
+      salt: uint8ArrayToBase64(salt),
+      iv: uint8ArrayToBase64(iv),
+      ciphertext: uint8ArrayToBase64(new Uint8Array(encryptedBuffer)),
+      iterations,
+    };
+  }
+
+  /**
+   * Password-based decryption for secure imports (PBKDF2-SHA256 + AES-GCM-256)
+   */
+  static async decryptWithPassword(
+    ciphertextBase64: string,
+    ivBase64: string,
+    saltBase64: string,
+    passphrase: string,
+    iterations = 100000
+  ): Promise<string> {
+    const salt = base64ToUint8Array(saltBase64);
+    const iv = base64ToUint8Array(ivBase64);
+    const ciphertext = base64ToUint8Array(ciphertextBase64);
+    const key = await this.deriveKeyFromPassword(passphrase, salt, iterations);
+
+    const decryptedBuffer = await globalThis.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv as unknown as BufferSource },
+      key,
+      ciphertext as unknown as BufferSource
+    );
+
+    return new TextDecoder().decode(decryptedBuffer);
+  }
 }

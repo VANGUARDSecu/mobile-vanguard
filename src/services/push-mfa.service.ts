@@ -174,9 +174,13 @@ export class PushMfaService {
    * Fetches active pending push challenges from backend-vanguard (SCRUM-85)
    */
   public async fetchPendingPush(email?: string): Promise<PushApprovalRequest | null> {
-    const targetEmail = email || this.currentUserEmail;
+    const targetEmail = (email || this.currentUserEmail)?.trim();
+    if (!targetEmail) {
+      // P1-03: Require authenticated registered-device ownership; never query challenges anonymously
+      return null;
+    }
     try {
-      const url = `${getApiBaseUrl()}/oauth/mfa/push/pending${targetEmail ? '?email=' + encodeURIComponent(targetEmail) : ''}`;
+      const url = `${getApiBaseUrl()}/oauth/mfa/push/pending?email=${encodeURIComponent(targetEmail)}`;
       const response = await fetch(url);
       if (!response.ok) return null;
       const data = await response.json();
@@ -291,10 +295,21 @@ export class PushMfaService {
     });
   }
 
-  public approveRequest(
+  /**
+   * Approve the active request.
+   *
+   * Live challenges (`push_mfa_*`) are decided by the backend. The app sends the number the
+   * user selected, and the request resolves as approved only when the backend accepts it
+   * (SCRUM-135 stores only a keyed verifier of the number, so the app cannot check it locally).
+   * On rejection the request stays active so the user can retry, and the backend's message is returned.
+   *
+   * Offline demo presets (`triggerMockPush` / `triggerPreset`) carry the expected number and
+   * are checked locally. They never contact the backend.
+   */
+  public async approveRequest(
     id: string,
     options?: { biometricVerified?: boolean; selectedCode?: number }
-  ): PushApprovalResult {
+  ): Promise<PushApprovalResult> {
     if (!this.activeRequest || this.activeRequest.id !== id) {
       return {
         success: false,
@@ -309,10 +324,38 @@ export class PushMfaService {
       return this.expireRequest(id);
     }
 
-    // Number matching verification check
-    if (this.activeRequest.numberMatchingChallenge?.enabled) {
-      const expected = this.activeRequest.numberMatchingChallenge.correctCode;
-      if (options?.selectedCode === undefined || options.selectedCode !== expected) {
+    const isLive = id.startsWith('push_mfa_');
+    const numberMatchingRequired = Boolean(this.activeRequest.numberMatchingChallenge?.enabled);
+
+    if (numberMatchingRequired && options?.selectedCode === undefined) {
+      return {
+        success: false,
+        action: 'canceled',
+        biometricVerified: options?.biometricVerified,
+        numberMatched: false,
+        error: 'Select the 2-digit number shown on your screen',
+      };
+    }
+
+    if (isLive) {
+      const outcome = await this.sendLiveResponse({
+        challengeId: id,
+        action: 'approved',
+        selectedCode: options?.selectedCode,
+        biometricVerified: options?.biometricVerified ?? true,
+      });
+      if (!outcome.ok) {
+        return {
+          success: false,
+          action: 'canceled',
+          biometricVerified: options?.biometricVerified,
+          numberMatched: false,
+          error: outcome.error,
+        };
+      }
+    } else if (numberMatchingRequired) {
+      const expected = this.activeRequest.numberMatchingChallenge?.correctCode;
+      if (expected === undefined || options?.selectedCode !== expected) {
         return {
           success: false,
           action: 'canceled',
@@ -321,6 +364,15 @@ export class PushMfaService {
           error: `Number mismatch: selected ${options?.selectedCode ?? 'none'}, expected ${expected}`,
         };
       }
+    }
+
+    // Re-check: the request may have been resolved while the backend call was in flight.
+    if (!this.activeRequest || this.activeRequest.id !== id) {
+      return {
+        success: false,
+        action: 'canceled',
+        error: 'No active push request matching identifier',
+      };
     }
 
     const resolved: PushApprovalRequest = {
@@ -334,26 +386,45 @@ export class PushMfaService {
     this.activeRequest = null;
     this.notify();
 
-    // Dispatch approval to backend-vanguard if live challenge
-    if (id.startsWith('push_mfa_')) {
-      fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challengeId: id,
-          action: 'approved',
-          selectedCode: options?.selectedCode,
-          biometricVerified: options?.biometricVerified ?? true,
-        }),
-      }).catch(() => {});
-    }
-
     return {
       success: true,
       action: 'approved',
       biometricVerified: options?.biometricVerified ?? true,
-      numberMatched: true,
+      numberMatched: numberMatchingRequired ? true : undefined,
     };
+  }
+
+  /** POST a decision to the backend. Returns the backend's message when it rejects the decision. */
+  private async sendLiveResponse(body: {
+    challengeId: string;
+    action: 'approved';
+    selectedCode?: number;
+    biometricVerified: boolean;
+  }): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        return { ok: true };
+      }
+      let message = `The server rejected this response (HTTP ${res.status}).`;
+      try {
+        const json = await res.json();
+        if (typeof json?.message === 'string') {
+          message = json.message;
+        } else if (Array.isArray(json?.message)) {
+          message = json.message.join(' ');
+        }
+      } catch {
+        // Keep the generic message when the body is not JSON.
+      }
+      return { ok: false, error: message };
+    } catch {
+      return { ok: false, error: 'Could not reach the server. Try again.' };
+    }
   }
 
   public denyRequest(id: string, isFraud = false): PushApprovalResult {

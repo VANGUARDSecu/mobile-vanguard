@@ -1,10 +1,21 @@
 import type { ISecureStorageProvider } from '../models/vault.models.ts';
 
+export class SecureStorageError extends Error {
+  public readonly cause?: unknown;
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = 'SecureStorageError';
+    this.cause = cause;
+  }
+}
+
 /**
  * MockKeychainProvider
  * Simulates hardware-backed iOS Keychain / Android Keystore for unit tests and headless environments.
+ * Must be explicitly selected for testing; never used as a silent production fallback.
  */
 export class MockKeychainProvider implements ISecureStorageProvider {
+  public readonly isMock = true;
   private store = new Map<string, string>();
 
   async getItemAsync(key: string): Promise<string | null> {
@@ -34,83 +45,94 @@ export class MockKeychainProvider implements ISecureStorageProvider {
 
 /**
  * ExpoSecureStoreAdapter
- * Connects to expo-secure-store (backed by iOS Keychain and Android Keystore) on mobile devices.
- * Gracefully falls back if native module is not linked in non-native environments.
+ * Connects to expo-secure-store (backed by iOS Keychain and Android Keystore).
+ * Fails explicitly if native storage throws or is unavailable — no silent in-memory fallback.
  */
 export class ExpoSecureStoreAdapter implements ISecureStorageProvider {
+  public readonly isMock = false;
   private secureStoreModule: any = null;
   private isLoaded = false;
-  private fallbackStore: MockKeychainProvider = new MockKeychainProvider();
+  private loadError: string | null = null;
 
   private async getModule(): Promise<any> {
-    if (this.isLoaded) return this.secureStoreModule;
+    if (this.isLoaded) {
+      if (this.loadError) throw new SecureStorageError(this.loadError);
+      return this.secureStoreModule;
+    }
     try {
-      // Dynamic import to prevent bundler failure in test environments lacking native bindings
       const mod = await import('expo-secure-store');
       if (mod && typeof mod.getItemAsync === 'function') {
         this.secureStoreModule = mod;
+      } else {
+        this.loadError = 'Native secure storage module is missing required methods.';
       }
-    } catch {
+    } catch (err: any) {
       this.secureStoreModule = null;
+      this.loadError = `Device secure storage module could not be loaded: ${err?.message || 'missing native binding'}`;
     } finally {
       this.isLoaded = true;
+    }
+
+    if (this.loadError) {
+      throw new SecureStorageError(this.loadError);
     }
     return this.secureStoreModule;
   }
 
   async getItemAsync(key: string): Promise<string | null> {
     const mod = await this.getModule();
-    if (mod) {
-      try {
-        return await mod.getItemAsync(key);
-      } catch {
-        return this.fallbackStore.getItemAsync(key);
-      }
+    try {
+      return await mod.getItemAsync(key);
+    } catch (err: any) {
+      throw new SecureStorageError(`Failed to read key "${key}" from secure storage: ${err?.message}`, err);
     }
-    return this.fallbackStore.getItemAsync(key);
   }
 
   async setItemAsync(key: string, value: string): Promise<void> {
     const mod = await this.getModule();
-    if (mod) {
-      try {
-        await mod.setItemAsync(key, value);
-        return;
-      } catch {
-        await this.fallbackStore.setItemAsync(key, value);
-        return;
-      }
+    try {
+      await mod.setItemAsync(key, value);
+    } catch (err: any) {
+      throw new SecureStorageError(`Failed to write key "${key}" to secure storage: ${err?.message}`, err);
     }
-    await this.fallbackStore.setItemAsync(key, value);
   }
 
   async deleteItemAsync(key: string): Promise<void> {
     const mod = await this.getModule();
-    if (mod) {
-      try {
-        await mod.deleteItemAsync(key);
-        return;
-      } catch {
-        await this.fallbackStore.deleteItemAsync(key);
-        return;
-      }
+    try {
+      await mod.deleteItemAsync(key);
+    } catch (err: any) {
+      throw new SecureStorageError(`Failed to delete key "${key}" from secure storage: ${err?.message}`, err);
     }
-    await this.fallbackStore.deleteItemAsync(key);
   }
 
   async isAvailableAsync(): Promise<boolean> {
-    const mod = await this.getModule();
-    if (mod && typeof mod.isAvailableAsync === 'function') {
-      try {
+    try {
+      const mod = await this.getModule();
+      if (mod && typeof mod.isAvailableAsync === 'function') {
         return await mod.isAvailableAsync();
-      } catch {
-        return true;
       }
+      return !!mod;
+    } catch {
+      return false;
     }
-    return true;
   }
 }
 
+export function isNodeTestEnvironment(): boolean {
+  if (typeof process !== 'undefined') {
+    if (process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID)) return true;
+    if (process.argv?.some((arg) => arg.includes('test'))) return true;
+    if (typeof (globalThis as any).expo === 'undefined' && typeof (globalThis as any).navigator?.product !== 'ReactNative') {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function createDefaultSecureProvider(): ISecureStorageProvider {
+  if (isNodeTestEnvironment()) {
+    return new MockKeychainProvider();
+  }
   return new ExpoSecureStoreAdapter();
 }

@@ -22,7 +22,7 @@ import biometricService from '@/services/biometric-auth.service';
 export interface PushApprovalModalProps {
   request: PushApprovalRequest | null;
   visible: boolean;
-  onApprove: (options: { biometricVerified: boolean; selectedCode?: number }) => Promise<void> | void;
+  onApprove: (options: { biometricVerified: boolean; selectedCode?: number }) => Promise<{ success: boolean; error?: string } | void> | void;
   onDeny: (isFraud: boolean) => void;
   onClose: () => void;
   testID?: string;
@@ -91,16 +91,11 @@ export function PushApprovalModal({
       return;
     }
 
-    // Number matching guard
+    // Number matching: the user must pick a number. The backend checks it (live challenges
+    // never include the expected number), so a wrong pick is reported from the server response.
     if (isNumberMatchingRequired) {
       if (selectedCode === null) {
         setErrorMessage('Please select the 2-digit number shown on your screen');
-        return;
-      }
-      if (selectedCode !== request.numberMatchingChallenge?.correctCode) {
-        setErrorMessage(
-          `Number mismatch: ${selectedCode} does not match the prompt on your screen`
-        );
         return;
       }
     }
@@ -121,19 +116,25 @@ export function PushApprovalModal({
       }
 
       if (isSuccess) {
-        await onApprove({
+        const result = await onApprove({
           biometricVerified: true,
           selectedCode: selectedCode ?? undefined,
         });
+        if (result && result.success === false) {
+          setErrorMessage(result.error || 'The sign-in was not approved. Try again.');
+        }
       } else {
         setErrorMessage(authRes.error || 'Biometric authentication challenge unconfirmed');
       }
     } catch (err: any) {
       if (Platform.OS === 'web') {
-        await onApprove({
+        const result = await onApprove({
           biometricVerified: true,
           selectedCode: selectedCode ?? undefined,
         });
+        if (result && result.success === false) {
+          setErrorMessage(result.error || 'The sign-in was not approved. Try again.');
+        }
       } else {
         setErrorMessage(err?.message || 'Biometric verification failed');
       }

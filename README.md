@@ -2,6 +2,12 @@
 
 Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, delivering Zero-Trust Identity, SSO Application Launchpad, and Authenticator Vault capabilities for iOS, Android, and Web.
 
+> **Note (SCRUM-129):** 1-tap "Sign in with SSO" is temporarily **unavailable**.
+> The previous implementation fabricated a local authenticated session for a
+> hardcoded identity with no server verification; that bypass has been removed.
+> Real mobile SSO (authorization-code + PKCE) is deferred to the mobile
+> qualification milestone (C2 / SCRUM-139). Sign in with email + password.
+
 ---
 
 ## 🛠️ Prerequisites & Requirements
@@ -452,7 +458,30 @@ Vanguard enforces strict account isolation between **Personal (Individual)** and
 - `src/screens/my-apps-screen.tsx`: Unified applications launchpad combining live user session banner, immutable workspace status badge, Company Admin Review Console banner, category navigation, active SSO connected clients, governance requests queue, application cards, and interactive modal sheets.
 - `src/components/app-tabs.tsx`: Cyber-styled bottom navigation tab bar mapping Vault, Apps, and Security tabs.
 - `src/components/apps/`: Reusable applications directory UI components (`CompanyAdminBanner`, `PulseDot`, `ConnectedAppCard`, `ConnectedAppsSection`, `AddPersonalAppModal`, `RequestAppModal`, `RequestCard`, `RequestedAppsSection`, `CategoryFilterBar`, `AppCard`, `EmptyAppsState`).
-- `src/__tests__/`: Automated unit and integration test specifications (`account-registration-architecture.test.ts`, `zero-hardcoded-dashboard.test.ts`, `metadata-name-resolution.test.ts`, `push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+- `src/services/otpauth-parser.service.ts`: RFC 6238 KeyUriFormat parser validating `otpauth://totp/...` URIs, extracts label, issuer, secret, algorithm, digits, and period.
+- `src/services/clipboard.service.ts`: Secure clipboard manager with automatic expiration wipe timer (TTL) and clipboard ownership check to prevent overwriting third-party clipboard content.
+- `src/__tests__/`: Automated unit and integration test specifications (`mobile-security-vault.test.ts`, `account-registration-architecture.test.ts`, `zero-hardcoded-dashboard.test.ts`, `metadata-name-resolution.test.ts`, `push-mfa.test.ts`, `biometric-auth.test.ts`, `offline-totp-generator.test.ts`, `secure-vault-keychain.test.ts`, `otp-paste-centering.test.ts`, `authenticator-cyber-theme.test.ts`, `auth.test.ts`, `otp-auth.test.ts`, `apps-data.test.ts`, `apps-ui.test.ts`, `connected-apps.test.ts`, `personal-app-modal.test.ts`, `request-app-modal.test.ts`, `governance-queue.test.ts`, `app-launcher.test.ts`, `my-apps-screen.test.ts`, `e2e-workflow.test.ts`).
+
+---
+
+## 🔐 Mobile Security Vault & Hardware-Backed Keyring (SCRUM-139 / P1-02 / P1-03)
+
+The Authenticator Vault implements production-grade mobile security standards aligned with RFC 6238, WebCrypto AES-GCM-256, and platform secure enclaves:
+
+1. **Zero-Seeded Clean Boot**: Fresh installs launch completely empty (`0` accounts). Automatic mock seeding in normal builds has been eliminated.
+2. **Explicit Secure Storage Exceptions**: `ExpoSecureStoreAdapter` surfaces `SecureStorageError` on platform keychain or Keystore outages; in-memory fallback is restricted to explicit test environments (`MockKeychainProvider`).
+3. **Strict RFC 6238 TOTP Engine**: Non-standard polynomial hash fallbacks have been removed in favor of strict RFC 4648 Base32 validation and genuine HMAC-SHA1/256 dynamic truncation tested against RFC 6238 Appendix B test vectors.
+4. **Real KeyUriFormat QR Parser (`OtpAuthParser`)**: Parses and validates `otpauth://totp/...` URIs with RFC compliant label, issuer, Base32 secret, algorithm (SHA1, SHA256, SHA512), digits (6 or 8), and period.
+5. **Secure Clipboard Expiration (`ClipboardService`)**: Copies sensitive TOTP codes with a configurable TTL (default 30 seconds), automatically clearing the clipboard only if it still owns the copied code.
+6. **Inactivity Auto-Lock & Genuine Wipe**:
+   - In-memory vault cache is wiped when locked; credentials cannot be read without biometric/passcode unlock.
+   - `wipeVault({ confirmed: true })` permanently destroys keychain master keys and ciphertext envelopes without reseeding mock data.
+7. **PBKDF2-SHA256 + AES-GCM Encrypted Backups**:
+   - Passphrase-protected export derives a 256-bit encryption key using PBKDF2 (100,000 iterations, random salt) and encrypts the backup with AES-GCM-256.
+   - Plaintext secrets are never exported unencrypted.
+8. **Device-Bound Push MFA Approvals**:
+   - Background polling requires authenticated user email identity (`GET /oauth/mfa/push/pending?email=...`), preventing anonymous challenge enumeration.
+
 
 
 

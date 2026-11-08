@@ -278,7 +278,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
         assert.equal(res?.id, 'push_mfa_test_backend_101');
         assert.equal(res?.appName, 'Dummy Mobile App');
         assert.equal(res?.numberMatchingChallenge?.correctCode, 42);
-        assert.equal(notifiedReq?.id, 'push_mfa_test_backend_101');
+        assert.equal((notifiedReq as any)?.id, 'push_mfa_test_backend_101');
         assert.equal(
           receivedUrl.includes('email=ellen.ripley%40weyland.corp'),
           true

@@ -92,6 +92,29 @@ To test on a physical iOS or Android phone using **Expo Go**:
   npx expo start --tunnel --port 8082
   ```
 
+### 🌐 Production Deployment (Cloudflare Pages Web & Mobile)
+
+#### 1. Web Version (Cloudflare Pages)
+The mobile app can be compiled to an optimized static Progressive Web App and hosted on Cloudflare Pages:
+```bash
+# 1. Export production static web assets
+npm run build:web
+# Output generated in ./dist/
+
+# 2. Deploy to Cloudflare Pages (Direct upload or Git integration)
+# Build command: npm run build:web
+# Build output directory: dist
+# Environment variable: EXPO_PUBLIC_API_URL=https://backend-vanguard.onrender.com
+npx wrangler pages deploy dist --project-name vanguard-mobile
+```
+
+#### 2. Physical Mobile Testing with Production Backend
+To test on real iOS/Android devices connected to the live Render backend:
+```bash
+# Launch Expo Go with Tunnel mode pointing to production Render backend:
+EXPO_PUBLIC_API_URL=https://backend-vanguard.onrender.com npx expo start --tunnel --port 8082
+```
+
 ### Platform-Specific Launch Targets
 - **Web Preview (Port 8082)**:
   ```bash

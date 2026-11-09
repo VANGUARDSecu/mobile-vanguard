@@ -32,18 +32,27 @@ export default function VerifyOtpScreen({
 }: VerifyOtpScreenProps) {
   const { verifyOtp, verifyTotp, resendOtp, isLoading } = useAuth();
 
-  const [email] = useState<string>(initialEmail || '');
+  const [email, setEmail] = useState<string>(initialEmail || '');
   const [method, setMethod] = useState<'email_otp' | 'totp'>(initialHasTotp ? 'totp' : 'email_otp');
-  const [hasTotp] = useState<boolean>(initialHasTotp);
+  const [hasTotp, setHasTotp] = useState<boolean>(initialHasTotp);
+
+  useEffect(() => {
+    if (initialEmail && initialEmail !== email) {
+      setEmail(initialEmail);
+    }
+    setHasTotp(initialHasTotp);
+  }, [initialEmail, initialHasTotp]);
 
   // Dynamic code length: 6 digits for TOTP/SSO, 8 digits for direct Email OTP (also accepts 6 digits)
   const codeLength = method === 'totp' ? 6 : 8;
   const [digits, setDigits] = useState<string[]>(new Array(codeLength).fill(''));
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(
+    initialHasTotp ? null : 'An 8-digit verification code has been sent to your email.'
+  );
   const [submitting, setSubmitting] = useState(false);
-  const [countdown, setCountdown] = useState<number>(45);
+  const [countdown, setCountdown] = useState<number>(15);
   const [pastedSuccess, setPastedSuccess] = useState(false);
 
   const inputRefs = useRef<(TextInput | null)[]>([]);

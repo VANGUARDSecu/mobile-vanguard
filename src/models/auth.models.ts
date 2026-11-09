@@ -79,6 +79,7 @@ export interface SignupPayload {
   firstName: string;
   lastName: string;
   companyName?: string;
+  department?: string;
   phone?: string;
   accountType: 'individual' | 'company';
 }

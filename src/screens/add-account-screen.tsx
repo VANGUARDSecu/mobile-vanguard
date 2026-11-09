@@ -59,7 +59,15 @@ export function AddAccountScreen({
       }
 
       if (!clipText || !clipText.trim()) {
-        setValidationError('Clipboard is empty. Copy a Base32 secret key first.');
+        setValidationError('Clipboard is empty. Copy a Base32 secret key or otpauth:// URI first.');
+        return;
+      }
+
+      // SCRUM-166: Auto-parse otpauth:// URI when pasted from clipboard
+      if (clipText.trim().toLowerCase().startsWith('otpauth://')) {
+        handleQrDecoded(clipText.trim());
+        setPasteSuccess(true);
+        setTimeout(() => setPasteSuccess(false), 2000);
         return;
       }
 
@@ -80,6 +88,10 @@ export function AddAccountScreen({
   };
 
   const handleSecretChange = (text: string) => {
+    if (text.trim().toLowerCase().startsWith('otpauth://')) {
+      handleQrDecoded(text.trim());
+      return;
+    }
     setSecret(text);
     if (validationError) setValidationError(null);
   };

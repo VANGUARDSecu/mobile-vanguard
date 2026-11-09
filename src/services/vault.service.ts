@@ -612,7 +612,7 @@ export class VaultService {
    * For backwards-compatible tests only: populates default demo accounts.
    * Normal production boots start completely empty.
    */
-  async seedDemoAccountsForTesting(): Promise<VaultAccount[]> {
+  async seedDemoAccountsForTesting(): Promise<TotpAccount[]> {
     await this.ensureInitialized();
     this.memoryCache = [...DEFAULT_ACCOUNTS];
     await this.persistEncryptedAccounts(this.memoryCache);

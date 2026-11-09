@@ -123,7 +123,7 @@ export function isNodeTestEnvironment(): boolean {
   if (typeof process !== 'undefined') {
     if (process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID)) return true;
     if (process.argv?.some((arg) => arg.includes('test'))) return true;
-    if (typeof (globalThis as any).expo === 'undefined' && typeof (globalThis as any).navigator?.product !== 'ReactNative') {
+    if (typeof (globalThis as any).expo === 'undefined' && (globalThis as any).navigator?.product !== 'ReactNative') {
       return true;
     }
   }

@@ -414,22 +414,40 @@ export class AppsStorageService {
       return this.activeApiUrlOverride;
     }
 
-    // 2. Explicit environment variable if provided
+    // 2. Web browser running on localhost / 127.0.0.1
+    if (
+      typeof window !== 'undefined' &&
+      (window.location?.hostname === 'localhost' ||
+        window.location?.hostname === '127.0.0.1' ||
+        window.location?.hostname === '[::1]')
+    ) {
+      return 'http://localhost:3000';
+    }
+
+    // 3. Dynamic resolution for local Metro LAN / emulator in dev mode
+    const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production');
+    if (isDev) {
+      try {
+        const host = this.getLocalhostIp();
+        if (host && host !== 'localhost' && host !== '127.0.0.1') {
+          return `http://${host}:3000`;
+        }
+      } catch {
+        // Non-native / headless fallback
+      }
+
+      const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+      if (isWeb) {
+        return 'http://localhost:3000';
+      }
+    }
+
+    // 4. Explicit environment variable if provided
     if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
       return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
     }
 
-    // 3. Dynamic resolution for local Metro LAN / emulator
-    try {
-      const host = this.getLocalhostIp();
-      if (host && host !== 'localhost' && host !== '127.0.0.1') {
-        return `http://${host}:3000`;
-      }
-    } catch {
-      // Non-native / headless fallback
-    }
-
-    // 4. Default to localhost for local web development, production Render for native builds
+    // 5. Default to localhost for web, production Render for native builds
     const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
     if (isWeb) {
       return 'http://localhost:3000';

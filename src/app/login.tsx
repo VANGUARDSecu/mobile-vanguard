@@ -255,6 +255,59 @@ export default function LoginScreen() {
                 </Text>
               </View>
 
+              {/* Localhost / Offline Quick Test Bar */}
+              {isLocalServer ? (
+                <View style={styles.quickTestBox}>
+                  <Text style={styles.quickTestTitle}>⚡ Localhost Quick Fill</Text>
+                  <View style={styles.quickTestChipsRow}>
+                    <Pressable
+                      style={styles.quickTestChip}
+                      onPress={() => {
+                        handleSelectAccountType('company');
+                        setEmail('user@company.com');
+                        setPassword('Password123!');
+                        setErrorMessage(null);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Fill Company Demo Account"
+                    >
+                      <Text style={styles.quickTestChipText}>🏢 Company</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={styles.quickTestChip}
+                      onPress={() => {
+                        handleSelectAccountType('individual');
+                        setEmail('personal@vanguard.local');
+                        setPassword('Password123!');
+                        setErrorMessage(null);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Fill Personal Vault Demo Account"
+                    >
+                      <Text style={styles.quickTestChipText}>👤 Personal</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={styles.quickTestChip}
+                      onPress={() => {
+                        handleSelectAccountType('company');
+                        setEmail('admin@vanguard.security');
+                        setPassword('Password123!');
+                        setErrorMessage(null);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Fill Admin Demo Account"
+                    >
+                      <Text style={styles.quickTestChipText}>🛡️ Admin</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.quickTestHint}>
+                    Local test OTP code: <Text style={{ color: CyberColors.cyan, fontWeight: '800' }}>123456</Text> (works offline & localhost)
+                  </Text>
+                </View>
+              ) : null}
+
               {/* Error Alert */}
               {errorMessage ? (
                 <View style={styles.errorBanner}>
@@ -543,6 +596,45 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     color: CyberColors.textSecondary,
     lineHeight: 17,
+  },
+  quickTestBox: {
+    backgroundColor: 'rgba(0, 229, 255, 0.06)',
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    padding: 10,
+    marginBottom: 14,
+  },
+  quickTestTitle: {
+    color: CyberColors.cyan,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  quickTestChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 6,
+  },
+  quickTestChip: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.sm,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickTestChipText: {
+    color: CyberColors.textPrimary,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  quickTestHint: {
+    color: CyberColors.textMuted,
+    fontSize: 10.5,
   },
   errorBanner: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',

@@ -24,20 +24,20 @@ Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, 
 
 ## ⚙️ Environment Configuration
 
-The application is configured to connect directly to the live deployed Vanguard backend API on Render, with dynamic fallbacks for local Metro LAN development:
+The application is configured to connect to the Vanguard backend API, supporting seamless localhost development without requiring internet access, as well as live production cloud deployment:
 
-| Variable | Description | Production Default |
-| :--- | :--- | :--- |
-| `EXPO_PUBLIC_API_URL` | Vanguard Identity Provider backend URL | `https://backend-vanguard.onrender.com` |
+| Variable | Description | Localhost Default | Production Cloud |
+| :--- | :--- | :--- | :--- |
+| `EXPO_PUBLIC_API_URL` | Vanguard Identity Provider backend URL | `http://localhost:3000` | `https://backend-vanguard.onrender.com` |
 
-*Note: In local development, the app dynamically detects your workstation's LAN IP from the Metro bundler. When compiled into a standalone Android APK, it authoritatively defaults to `https://backend-vanguard.onrender.com`.*
+*Note: In local development, the app dynamically detects your workstation's LAN IP from the Metro bundler or browser `localhost`. Standalone production APK builds can be pointed to `https://backend-vanguard.onrender.com` via environment variable or in-app toggle.*
 
 ---
 
 ## 📱 Mobile & Devices Hub & Ecosystem SSO Verification (SCRUM-182)
 
 ### 1. Production Authentication & Zero-Hardcoded Policy
-- **Authoritative Backend Authentication**: Eliminated all mock persona drawers, hardcoded test accounts, and fake auto-fill buttons from the UI. Users authenticate with real credentials against `https://backend-vanguard.onrender.com/auth/login`.
+- **Authoritative Backend Authentication**: Connects with real credentials against the backend API with seamless offline/localhost simulation fallback when running locally without an internet connection.
 - **Account Type Segregation**:
   - 🏢 **Company Account**: Enterprise Single Sign-On, workplace applications catalog, employee corporate directory, and device compliance tracking.
   - 👤 **Individual Vault**: Zero-knowledge encrypted personal vault, private 2FA authenticators, personal notes, and bookmarks.
@@ -55,8 +55,17 @@ The application is configured to connect directly to the live deployed Vanguard 
   - Requires biometric approval (Face ID / Fingerprint) before signing and submitting approval (`POST /oauth/mfa/push/respond`).
 - **Device Management**: 1-tap "Unlink Companion Device" action safely deregisters the device and clears local session tokens.
 
-### 3. Dual Localhost & Cloud Access Architecture
+### 3. Dual Localhost & Cloud Access Architecture (Zero-Internet Localhost Testing)
+- **Localhost Testing Without Internet**: You can run and test `mobile-vanguard` entirely on `localhost` (in web browser or simulator) with zero internet connection required.
+- **Graceful Localhost & Offline Fallback**: If `backend-vanguard` is not actively running on `http://localhost:3000` (or if your machine is offline), `mobile-vanguard` automatically falls back to local simulated authentication rather than blocking with internet connection errors.
 - **In-App Server Target Switcher**: Toggle seamlessly between **💻 Localhost (`http://localhost:3000` / `http://10.0.2.2:3000`)** and **🌐 Production Cloud (`https://backend-vanguard.onrender.com`)** directly on the Login screen and Mobile & Devices Hub.
+- **Quick Test Presets (Localhost Mode)**: When pointing to localhost, the Login screen displays 1-tap quick fill presets:
+  - 🏢 **Company User**: `user@company.com` / `Password123!`
+  - 👤 **Personal Vault**: `personal@vanguard.local` / `Password123!`
+  - 🛡️ **Security Admin**: `admin@vanguard.security` / `Password123!`
+- **Localhost / Offline Verification Codes**:
+  - **Email OTP**: Enter `123456` (or `12345678` / `000000`).
+  - **TOTP / Authenticator App**: Enter `654321` (or `123456`).
 - **Android Cleartext Traffic Permitted**: Enabled `android.usesCleartextTraffic: true` in `app.json` so Android APKs and emulators can reach local HTTP development servers (`localhost:3000`, `10.0.2.2:3000`, and LAN IPs) without network security policy exceptions.
 - **Dynamic Host IP Mapping for Android**: When launching local applications (e.g., Acme Dummy Web on port `4201` or Dashboard on port `4200`), Android automatically maps `localhost` to the host machine alias `10.0.2.2` (or Metro host LAN IP) so services remain fully accessible during local testing.
 

@@ -20,12 +20,10 @@ import type { MfaChallengeResponse } from '@/models/auth.models';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
-const REMEMBERED_ACCOUNT_TYPE_KEY = 'vanguard_selected_account_type';
 
 export default function LoginScreen() {
   const { login } = useAuth();
 
-  const [accountType, setAccountType] = useState<'company' | 'individual'>('company');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberEmail, setRememberEmail] = useState(false);
@@ -39,18 +37,10 @@ export default function LoginScreen() {
     let isMounted = true;
     (async () => {
       try {
-        const [savedEmail, savedType] = await Promise.all([
-          AsyncStorage.getItem(REMEMBERED_EMAIL_KEY),
-          AsyncStorage.getItem(REMEMBERED_ACCOUNT_TYPE_KEY),
-        ]);
-        if (isMounted) {
-          if (savedEmail) {
-            setEmail(savedEmail);
-            setRememberEmail(true);
-          }
-          if (savedType === 'company' || savedType === 'individual') {
-            setAccountType(savedType);
-          }
+        const savedEmail = await AsyncStorage.getItem(REMEMBERED_EMAIL_KEY);
+        if (isMounted && savedEmail) {
+          setEmail(savedEmail);
+          setRememberEmail(true);
         }
       } catch {
         // Non-blocking preference retrieval
@@ -60,12 +50,6 @@ export default function LoginScreen() {
       isMounted = false;
     };
   }, []);
-
-  const handleSelectAccountType = (type: 'company' | 'individual') => {
-    setAccountType(type);
-    AsyncStorage.setItem(REMEMBERED_ACCOUNT_TYPE_KEY, type).catch(() => {});
-    if (errorMessage) setErrorMessage(null);
-  };
 
   const handleSignIn = async () => {
     const cleanEmail = email.trim();
@@ -152,58 +136,10 @@ export default function LoginScreen() {
 
             {/* Login Card */}
             <View style={styles.card}>
-              {/* Account Type Segmented Selector */}
-              <View style={styles.segmentContainer}>
-                <Pressable
-                  style={[
-                    styles.segmentButton,
-                    accountType === 'company' && styles.segmentButtonActive,
-                  ]}
-                  onPress={() => handleSelectAccountType('company')}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: accountType === 'company' }}
-                >
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      accountType === 'company' && styles.segmentTextActive,
-                    ]}
-                  >
-                    🏢 Company Account
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.segmentButton,
-                    accountType === 'individual' && styles.segmentButtonActive,
-                  ]}
-                  onPress={() => handleSelectAccountType('individual')}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: accountType === 'individual' }}
-                >
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      accountType === 'individual' && styles.segmentTextActive,
-                    ]}
-                  >
-                    👤 Individual Vault
-                  </Text>
-                </Pressable>
-              </View>
-
-              {/* Mode Context Description */}
               <View style={styles.modeDescriptionWrap}>
-                <Text style={styles.cardTitle}>
-                  {accountType === 'company'
-                    ? 'Sign In to Workplace Portal'
-                    : 'Unlock Personal Encrypted Vault'}
-                </Text>
+                <Text style={styles.cardTitle}>Sign In to Vanguard</Text>
                 <Text style={styles.cardSubtitle}>
-                  {accountType === 'company'
-                    ? 'Access corporate Single Sign-On, workplace applications & corporate directory.'
-                    : 'Access your encrypted credentials, personal 2FA authenticators & secure notes.'}
+                  Enter your credentials to access your workplace portal or personal encrypted vault.
                 </Text>
               </View>
 
@@ -216,9 +152,7 @@ export default function LoginScreen() {
 
               {/* Email Input */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>
-                  {accountType === 'company' ? 'Work Email Address' : 'Personal Email Address'}
-                </Text>
+                <Text style={styles.fieldLabel}>Email Address</Text>
                 <TextInput
                   style={styles.input}
                   value={email}
@@ -226,9 +160,7 @@ export default function LoginScreen() {
                     setEmail(text);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  placeholder={
-                    accountType === 'company' ? 'name@company.com' : 'personal@domain.com'
-                  }
+                  placeholder="name@company.com or personal@domain.com"
                   placeholderTextColor={CyberColors.textMuted}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -238,9 +170,7 @@ export default function LoginScreen() {
 
               {/* Password Input */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>
-                  {accountType === 'company' ? 'Account Password' : 'Vault Master Password'}
-                </Text>
+                <Text style={styles.fieldLabel}>Password</Text>
                 <View style={styles.passwordWrap}>
                   <TextInput
                     style={[styles.input, styles.passwordInput]}
@@ -296,9 +226,7 @@ export default function LoginScreen() {
                     <Text style={[styles.signInBtnText, { marginLeft: 8 }]}>Authenticating...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.signInBtnText}>
-                    {accountType === 'company' ? 'Sign In' : 'Sign In'}
-                  </Text>
+                  <Text style={styles.signInBtnText}>Sign In</Text>
                 )}
               </Pressable>
 
@@ -401,36 +329,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 5,
-  },
-  segmentContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    padding: 4,
-    marginBottom: 18,
-  },
-  segmentButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: CyberRadius.sm,
-  },
-  segmentButtonActive: {
-    backgroundColor: 'rgba(0, 229, 255, 0.18)',
-    borderColor: CyberColors.cyan,
-    borderWidth: 1,
-  },
-  segmentText: {
-    color: CyberColors.textMuted,
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  segmentTextActive: {
-    color: CyberColors.cyan,
-    fontWeight: '800',
   },
   modeDescriptionWrap: {
     marginBottom: 16,

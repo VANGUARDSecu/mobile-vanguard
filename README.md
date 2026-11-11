@@ -38,12 +38,17 @@ The application is configured to connect directly to the live deployed Vanguard 
 
 ### 1. Production Authentication & Zero-Hardcoded Policy
 - **Authoritative Backend Authentication**: Users authenticate with real credentials against the deployed Vanguard backend (`https://backend-vanguard.onrender.com/auth/login`).
-- **Account Type Segregation**:
+- **Unified Login Credentials**: Simplified single login credential form for all account types. The system automatically identifies company workspaces or personal vaults upon authentication without redundant manual selector tabs.
+- **Account Type Architecture**:
   - 🏢 **Company Account**: Enterprise Single Sign-On, workplace applications catalog, employee corporate directory, and device compliance tracking.
   - 👤 **Individual Vault**: Zero-knowledge encrypted personal vault, private 2FA authenticators, personal notes, and bookmarks.
 - **Remember Email & Password Security**: Remembers user email securely across launches via `@react-native-async-storage/async-storage` (`vanguard_remembered_email`) with password visibility toggle.
 
-### 2. Mobile & Devices Hub (`src/screens/devices-screen.tsx`, `/devices`)
+### 2. Testing Environment & Native Mobile Connectivity
+- **Native Android / iOS Device or Emulator (Recommended)**: Runs within Expo Go or a native build. Native network runtimes do not send browser `Origin` headers and are not subject to web browser CORS sandbox restrictions, connecting directly to `https://backend-vanguard.onrender.com`.
+- **Local Web Browser Preview (`npm run web` / `localhost:8082`)**: When previewing the React Native Web build in a desktop browser, web browsers attach `Origin: http://localhost:8082`. The production backend on Render restricts CORS to production client domains (`https://vanguard-security.pages.dev`). For backend connectivity testing, use Expo Go on a physical phone/emulator or test against the live deployment.
+
+### 3. Mobile & Devices Hub (`src/screens/devices-screen.tsx`, `/devices`)
 - **Zero-Trust Hardware Attestation**: Evaluates device platform (`Android` / `iOS`), real biometric sensor availability (`Face ID`, `Touch ID`, `Fingerprint`) via `expo-local-authentication`, and hardware-backed AES-256-GCM Secure Enclave / Keystore integrity.
 - **Web Dashboard Pairing**:
   - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
@@ -55,7 +60,7 @@ The application is configured to connect directly to the live deployed Vanguard 
   - Requires biometric approval (Face ID / Fingerprint) before signing and submitting approval (`POST /oauth/mfa/push/respond`).
 - **Device Management**: 1-tap "Unlink Companion Device" action safely deregisters the device and clears local session tokens.
 
-### 3. Production Cloud Connectivity
+### 4. Production Cloud Connectivity
 - **Deployed Backend Integration**: Every authentication challenge, device pairing verification, and push MFA response is securely submitted to `https://backend-vanguard.onrender.com`.
 - **Extended Warm-Up Tolerance**: Network timeout handlers allocate 30 seconds to gracefully accommodate cloud spin-up latency on server cold starts without aborting verification requests prematurely.
 

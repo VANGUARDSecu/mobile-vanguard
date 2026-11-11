@@ -302,12 +302,19 @@ export class AppsStorageService {
     }
   }
 
-  static async addPersonalApp(input: PersonalAppInput, email?: string): Promise<SaaSApp> {
+  static async addPersonalApp(
+    input: PersonalAppInput,
+    email?: string,
+    token?: string,
+    userId?: string
+  ): Promise<SaaSApp> {
     const apps = await this.getPersonalApps(email);
     let formattedUrl = input.launchUrl.trim();
     if (!/^https?:\/\//i.test(formattedUrl)) {
       formattedUrl = 'https://' + formattedUrl;
     }
+
+    const cleanEmail = email?.trim().toLowerCase() || undefined;
 
     const newApp: SaaSApp = {
       id: 'papp-' + Date.now(),
@@ -316,16 +323,28 @@ export class AppsStorageService {
       launchUrl: formattedUrl,
       description: input.description?.trim() || `${input.name.trim()} web application`,
       icon: input.icon?.trim() || '🌐',
-      protocol: 'Web Auth',
+      protocol: 'Extension Autofill',
       assigned: true,
-      status: 'Active',
+      status: 'Approved',
       assignedUsername: input.username?.trim() || undefined,
       assignedPassword: input.password || undefined,
-      targetUserEmail: email?.trim().toLowerCase() || undefined,
+      targetUserEmail: cleanEmail,
+      targetUserId: userId || undefined,
     };
 
-    const updated = [newApp, ...apps];
-    await this.savePersonalApps(updated, email);
+    const updatedPersonal = [
+      newApp,
+      ...apps.filter((a) => a.name.toLowerCase().trim() !== newApp.name.toLowerCase().trim()),
+    ];
+    await this.savePersonalApps(updatedPersonal, email);
+
+    // SCRUM-182: Also update enterprise apps store so newly added apps display in all views
+    const entApps = await this.getEnterpriseApps(email);
+    const updatedEnt = [
+      newApp,
+      ...entApps.filter((a) => a.name.toLowerCase().trim() !== newApp.name.toLowerCase().trim()),
+    ];
+    await this.saveEnterpriseApps(updatedEnt, email);
 
     // Save credentials to personal vault items if username or password provided
     if (input.username || input.password) {
@@ -347,13 +366,67 @@ export class AppsStorageService {
       }
     }
 
+    // Best-effort backend synchronization if online with active session token
+    if (token && userId) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        fetch(`${baseUrl}/apps?targetUserId=${encodeURIComponent(userId)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            appId: newApp.id,
+            name: newApp.name,
+            protocol: newApp.protocol,
+            launchUrl: newApp.launchUrl,
+            category: newApp.category,
+            icon: newApp.icon,
+            description: newApp.description,
+            assignedUsername: newApp.assignedUsername,
+            assignedPassword: newApp.assignedPassword,
+            targetUserEmail: newApp.targetUserEmail,
+          }),
+        }).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
+    }
+
     return newApp;
   }
 
-  static async deletePersonalApp(id: string, email?: string): Promise<void> {
+  static async deletePersonalApp(
+    id: string,
+    email?: string,
+    token?: string,
+    userId?: string
+  ): Promise<void> {
     const apps = await this.getPersonalApps(email);
     const updated = apps.filter((a) => a.id !== id);
     await this.savePersonalApps(updated, email);
+
+    const entApps = await this.getEnterpriseApps(email);
+    const updatedEnt = entApps.filter((a) => a.id !== id);
+    await this.saveEnterpriseApps(updatedEnt, email);
+
+    if (token && userId) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        fetch(
+          `${baseUrl}/apps?targetUserId=${encodeURIComponent(userId)}&appId=${encodeURIComponent(id)}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        ).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
+    }
   }
 
   /**
@@ -401,6 +474,7 @@ export class AppsStorageService {
     email?: string,
   ): Promise<SaaSApp[]> {
     const currentLocal = await this.getEnterpriseApps(email);
+    const currentPersonal = await this.getPersonalApps(email);
     if (!token) return currentLocal;
 
     try {
@@ -439,7 +513,8 @@ export class AppsStorageService {
           }));
 
           const mergedMap = new Map<string, SaaSApp>();
-          for (const app of [...mapped, ...currentLocal]) {
+          // Priority to backend assigned rows, while preserving local bookmarks
+          for (const app of [...mapped, ...currentLocal, ...currentPersonal]) {
             const key = (app.name || app.id).toLowerCase().trim();
             if (!mergedMap.has(key)) {
               mergedMap.set(key, app);

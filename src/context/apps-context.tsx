@@ -88,23 +88,22 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       setAccessRequests(requests);
       setVaultCredentials(vault);
 
-      // Attempt live sync from backend in the background for active user
+      // SCRUM-182: Await live synchronization from production backend when session token is present
       if (token) {
-        AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail)
-          .then((synced) => {
-            if (synced && synced.length > 0) {
-              setApps(synced);
-            }
-          })
-          .catch(() => {});
-
-        AppsStorageService.syncAccessRequestsWithBackend(token, userEmail)
-          .then((synced) => {
-            if (synced && synced.length > 0) {
-              setAccessRequests(synced);
-            }
-          })
-          .catch(() => {});
+        try {
+          const [syncedApps, syncedRequests] = await Promise.all([
+            AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail),
+            AppsStorageService.syncAccessRequestsWithBackend(token, userEmail),
+          ]);
+          if (syncedApps && syncedApps.length > 0) {
+            setApps(syncedApps);
+          }
+          if (syncedRequests && syncedRequests.length > 0) {
+            setAccessRequests(syncedRequests);
+          }
+        } catch {
+          // Graceful offline fallback
+        }
       }
 
       AppsStorageService.syncConnectedAppsWithBackend(userEmail)
@@ -151,13 +150,43 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     );
   }, [currentUser]);
 
-  // SCRUM-58: Strict deduplication ensuring no application ever appears twice
+  // SCRUM-58, SCRUM-159 & SCRUM-182: Strict deduplication ensuring all active applications & approved requests render
   const activeAppsList = useMemo<SaaSApp[]>(() => {
-    const source = isPersonalWorkspace ? personalApps : apps;
+    const email = currentUser?.email?.toLowerCase().trim();
+    const uid = currentUser?.id;
+
+    // In personal workspace, display personalApps.
+    // In company workspace, display personalApps (custom shortcuts) AND enterprise tenant apps.
+    const rawSource = isPersonalWorkspace ? personalApps : [...personalApps, ...apps];
+
+    // Filter approved access requests in company workspace (SCRUM-159 parity with frontend)
+    const approvedRequests: SaaSApp[] = !isPersonalWorkspace
+      ? accessRequests
+          .filter((r) => {
+            if (r.status !== 'Approved') return false;
+            return (
+              (email && r.userEmail?.toLowerCase().trim() === email) ||
+              (uid && r.userId === uid) ||
+              (!email && !uid && r.userEmail?.includes('@vanguard.security'))
+            );
+          })
+          .map((r) => ({
+            id: r.id,
+            name: r.appName,
+            category: (r.category as SaaSApp['category']) || 'cloud',
+            description: r.justification ? `${r.appName} (${r.justification})` : `${r.appName} (Approved access)`,
+            icon: r.icon || '🚀',
+            protocol: (r.protocol as SaaSApp['protocol']) || 'SAML 2.0',
+            launchUrl: r.launchUrl || 'https://vanguard.security',
+            assigned: true,
+            status: 'Approved',
+          }))
+      : [];
+
     const seen = new Set<string>();
     const deduped: SaaSApp[] = [];
 
-    for (const app of source) {
+    for (const app of [...rawSource, ...approvedRequests]) {
       const key = (app.name || app.id || app.launchUrl).toLowerCase().trim();
       if (!seen.has(key)) {
         seen.add(key);
@@ -165,7 +194,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       }
     }
     return deduped;
-  }, [isPersonalWorkspace, personalApps, apps]);
+  }, [isPersonalWorkspace, personalApps, apps, accessRequests, currentUser]);
 
   // Category Filtering
   const filteredApps = useMemo<SaaSApp[]>(() => {
@@ -257,19 +286,36 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [vaultCredentials]
   );
 
-  // Add Personal Application
-  const addPersonalApp = useCallback(async (input: PersonalAppInput): Promise<SaaSApp> => {
-    const created = await AppsStorageService.addPersonalApp(input, userEmail);
-    setPersonalApps((prev) => [created, ...prev]);
-    return created;
-  }, [userEmail]);
+  // Add Personal Application (SCRUM-182: updates both stores and syncs)
+  const addPersonalApp = useCallback(
+    async (input: PersonalAppInput): Promise<SaaSApp> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const uid = currentUser?.id;
+      const created = await AppsStorageService.addPersonalApp(input, userEmail, token, uid);
+      setPersonalApps((prev) => [
+        created,
+        ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
+      ]);
+      setApps((prev) => [
+        created,
+        ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
+      ]);
+      return created;
+    },
+    [currentUser, userEmail]
+  );
 
-  // Delete Personal Application
-  const deletePersonalApp = useCallback(async (id: string): Promise<void> => {
-    await AppsStorageService.deletePersonalApp(id, userEmail);
-    setPersonalApps((prev) => prev.filter((a) => a.id !== id));
-    setApps((prev) => prev.filter((a) => a.id !== id));
-  }, [userEmail]);
+  // Delete Personal Application (SCRUM-182: updates both stores and syncs)
+  const deletePersonalApp = useCallback(
+    async (id: string): Promise<void> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const uid = currentUser?.id;
+      await AppsStorageService.deletePersonalApp(id, userEmail, token, uid);
+      setPersonalApps((prev) => prev.filter((a) => a.id !== id));
+      setApps((prev) => prev.filter((a) => a.id !== id));
+    },
+    [currentUser, userEmail]
+  );
 
   // Submit Enterprise App Access Request (dynamic active user info)
   const submitAppRequest = useCallback(

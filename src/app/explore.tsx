@@ -52,7 +52,11 @@ export default function SecurityScreen() {
 
           {/* User Session Card */}
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>ACTIVE CORPORATE IDENTITY</Text>
+            <Text style={styles.cardLabel}>
+              {currentUser?.accountType === 'individual'
+                ? 'ACTIVE PERSONAL IDENTITY'
+                : 'ACTIVE CORPORATE IDENTITY'}
+            </Text>
             <View style={styles.userRow}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
@@ -109,7 +113,9 @@ export default function SecurityScreen() {
                 <View style={styles.metricDetails}>
                   <Text style={styles.metricTitle}>SSO Integrations Active</Text>
                   <Text style={styles.metricDesc}>
-                    Weyland-Yutani Corp / Acme Corp OIDC Connected
+                    {currentUser?.companyName
+                      ? `${currentUser.companyName} OIDC Connected`
+                      : 'Zero-Trust OIDC Connected'}
                   </Text>
                 </View>
               </View>

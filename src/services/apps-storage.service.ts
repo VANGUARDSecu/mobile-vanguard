@@ -381,7 +381,8 @@ export class AppsStorageService {
     } catch {
       // Non-native / headless fallback
     }
-    return 'http://localhost:3000';
+    // Production Render backend as authoritative default for standalone APK
+    return 'https://backend-vanguard.onrender.com';
   }
 
   static async getConnectedApps(): Promise<UserConnectedApp[]> {

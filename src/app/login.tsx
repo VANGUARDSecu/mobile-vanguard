@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
@@ -18,22 +19,67 @@ import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import type { MfaChallengeResponse } from '@/models/auth.models';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
+const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
+const REMEMBERED_ACCOUNT_TYPE_KEY = 'vanguard_selected_account_type';
+
 export default function LoginScreen() {
   const { login } = useAuth();
 
+  const [accountType, setAccountType] = useState<'company' | 'individual'>('company');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberEmail, setRememberEmail] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState<MfaChallengeResponse | null>(null);
 
+  // Load remembered credentials preference on mount
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const [savedEmail, savedType] = await Promise.all([
+          AsyncStorage.getItem(REMEMBERED_EMAIL_KEY),
+          AsyncStorage.getItem(REMEMBERED_ACCOUNT_TYPE_KEY),
+        ]);
+        if (isMounted) {
+          if (savedEmail) {
+            setEmail(savedEmail);
+            setRememberEmail(true);
+          }
+          if (savedType === 'company' || savedType === 'individual') {
+            setAccountType(savedType);
+          }
+        }
+      } catch {
+        // Non-blocking preference retrieval
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSelectAccountType = (type: 'company' | 'individual') => {
+    setAccountType(type);
+    AsyncStorage.setItem(REMEMBERED_ACCOUNT_TYPE_KEY, type).catch(() => {});
+    if (errorMessage) setErrorMessage(null);
+  };
+
   const handleSignIn = async () => {
-    if (!email.trim()) {
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail) {
       setErrorMessage('Please enter your email address.');
       return;
     }
-    if (!password.trim()) {
+    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (!cleanPassword) {
       setErrorMessage('Please enter your password.');
       return;
     }
@@ -41,15 +87,26 @@ export default function LoginScreen() {
     setSubmitting(true);
     setErrorMessage(null);
 
+    // Persist or clear remembered email preference
     try {
-      const result = await login({ email: email.trim(), password: password.trim() });
+      if (rememberEmail) {
+        await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, cleanEmail);
+      } else {
+        await AsyncStorage.removeItem(REMEMBERED_EMAIL_KEY);
+      }
+    } catch {
+      // Non-blocking
+    }
+
+    try {
+      const result = await login({ email: cleanEmail, password: cleanPassword });
       if (result.requireMfa) {
         setMfaChallenge(result.mfaChallenge);
       } else {
         router.replace('/');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Login failed. Please try again.';
+      const msg = err instanceof Error ? err.message : 'Login failed. Please check your credentials.';
       setErrorMessage(msg);
     } finally {
       setSubmitting(false);
@@ -95,10 +152,60 @@ export default function LoginScreen() {
 
             {/* Login Card */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Sign In to Your Account</Text>
-              <Text style={styles.cardSubtitle}>
-                Access your zero-trust SaaS apps and active SSO integrations
-              </Text>
+              {/* Account Type Segmented Selector */}
+              <View style={styles.segmentContainer}>
+                <Pressable
+                  style={[
+                    styles.segmentButton,
+                    accountType === 'company' && styles.segmentButtonActive,
+                  ]}
+                  onPress={() => handleSelectAccountType('company')}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: accountType === 'company' }}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      accountType === 'company' && styles.segmentTextActive,
+                    ]}
+                  >
+                    🏢 Company Account
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.segmentButton,
+                    accountType === 'individual' && styles.segmentButtonActive,
+                  ]}
+                  onPress={() => handleSelectAccountType('individual')}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: accountType === 'individual' }}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      accountType === 'individual' && styles.segmentTextActive,
+                    ]}
+                  >
+                    👤 Individual Vault
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Mode Context Description */}
+              <View style={styles.modeDescriptionWrap}>
+                <Text style={styles.cardTitle}>
+                  {accountType === 'company'
+                    ? 'Sign In to Workplace Portal'
+                    : 'Unlock Personal Encrypted Vault'}
+                </Text>
+                <Text style={styles.cardSubtitle}>
+                  {accountType === 'company'
+                    ? 'Access corporate Single Sign-On, workplace applications & corporate directory.'
+                    : 'Access your encrypted credentials, personal 2FA authenticators & secure notes.'}
+                </Text>
+              </View>
 
               {/* Error Alert */}
               {errorMessage ? (
@@ -109,7 +216,9 @@ export default function LoginScreen() {
 
               {/* Email Input */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Email Address</Text>
+                <Text style={styles.fieldLabel}>
+                  {accountType === 'company' ? 'Work Email Address' : 'Personal Email Address'}
+                </Text>
                 <TextInput
                   style={styles.input}
                   value={email}
@@ -117,7 +226,9 @@ export default function LoginScreen() {
                     setEmail(text);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  placeholder="name@company.com"
+                  placeholder={
+                    accountType === 'company' ? 'name@company.com' : 'personal@domain.com'
+                  }
                   placeholderTextColor={CyberColors.textMuted}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -127,7 +238,9 @@ export default function LoginScreen() {
 
               {/* Password Input */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Master Password</Text>
+                <Text style={styles.fieldLabel}>
+                  {accountType === 'company' ? 'Account Password' : 'Vault Master Password'}
+                </Text>
                 <View style={styles.passwordWrap}>
                   <TextInput
                     style={[styles.input, styles.passwordInput]}
@@ -136,7 +249,7 @@ export default function LoginScreen() {
                       setPassword(text);
                       if (errorMessage) setErrorMessage(null);
                     }}
-                    placeholder="Enter password"
+                    placeholder="Enter your password"
                     placeholderTextColor={CyberColors.textMuted}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
@@ -152,6 +265,19 @@ export default function LoginScreen() {
                 </View>
               </View>
 
+              {/* Remember Email Option */}
+              <Pressable
+                style={styles.rememberRow}
+                onPress={() => setRememberEmail(!rememberEmail)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rememberEmail }}
+              >
+                <View style={[styles.checkbox, rememberEmail && styles.checkboxChecked]}>
+                  {rememberEmail && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.rememberText}>Remember my email address</Text>
+              </Pressable>
+
               {/* Sign In Button */}
               <Pressable
                 style={({ pressed }) => [
@@ -165,15 +291,20 @@ export default function LoginScreen() {
                 accessibilityLabel="Sign In"
               >
                 {submitting ? (
-                  <ActivityIndicator size="small" color={CyberColors.textDark} />
+                  <View style={styles.submittingRow}>
+                    <ActivityIndicator size="small" color={CyberColors.textDark} />
+                    <Text style={[styles.signInBtnText, { marginLeft: 8 }]}>Authenticating...</Text>
+                  </View>
                 ) : (
-                  <Text style={styles.signInBtnText}>Sign In</Text>
+                  <Text style={styles.signInBtnText}>
+                    {accountType === 'company' ? 'Sign In with SSO' : 'Unlock Vault'}
+                  </Text>
                 )}
               </Pressable>
 
               {/* Create Account Prompt */}
               <View style={styles.signUpPromptWrap}>
-                <Text style={styles.signUpPromptText}>Don't have an account?</Text>
+                <Text style={styles.signUpPromptText}>{"Don't have an account?"}</Text>
                 <Pressable
                   onPress={() => router.push('/register')}
                   accessibilityRole="link"
@@ -182,7 +313,6 @@ export default function LoginScreen() {
                   <Text style={styles.signUpLinkText}> Create Account</Text>
                 </Pressable>
               </View>
-
             </View>
 
             {/* Zero-Trust Security Footer */}
@@ -218,7 +348,7 @@ const styles = StyleSheet.create({
   },
   brandContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   shieldBadge: {
     width: 60,
@@ -255,7 +385,7 @@ const styles = StyleSheet.create({
   heroText: {
     color: CyberColors.textSecondary,
     fontSize: 12.5,
-    marginTop: 8,
+    marginTop: 6,
     textAlign: 'center',
   },
   card: {
@@ -271,8 +401,41 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 5,
   },
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    padding: 4,
+    marginBottom: 18,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: CyberRadius.sm,
+  },
+  segmentButtonActive: {
+    backgroundColor: 'rgba(0, 229, 255, 0.18)',
+    borderColor: CyberColors.cyan,
+    borderWidth: 1,
+  },
+  segmentText: {
+    color: CyberColors.textMuted,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  segmentTextActive: {
+    color: CyberColors.cyan,
+    fontWeight: '800',
+  },
+  modeDescriptionWrap: {
+    marginBottom: 16,
+  },
   cardTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '800',
     color: CyberColors.textPrimary,
     marginBottom: 4,
@@ -281,7 +444,6 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     color: CyberColors.textSecondary,
     lineHeight: 17,
-    marginBottom: 18,
   },
   errorBanner: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
@@ -328,11 +490,43 @@ const styles = StyleSheet.create({
   eyeBtn: {
     position: 'absolute',
     right: 12,
-    padding: 4,
+    padding: 6,
     cursor: 'pointer' as any,
   },
   eyeIcon: {
     fontSize: 16,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 2,
+    cursor: 'pointer' as any,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  checkboxChecked: {
+    backgroundColor: CyberColors.cyan,
+    borderColor: CyberColors.cyan,
+  },
+  checkmark: {
+    color: CyberColors.textDark,
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 14,
+  },
+  rememberText: {
+    color: CyberColors.textSecondary,
+    fontSize: 12.5,
   },
   signInBtn: {
     backgroundColor: CyberColors.cyan,
@@ -340,7 +534,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
+    marginTop: 4,
     shadowColor: CyberColors.cyan,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,
@@ -360,11 +554,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  submittingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   signUpPromptWrap: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 18,
   },
   signUpPromptText: {
     color: CyberColors.textSecondary,
@@ -375,7 +574,6 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '800',
   },
-
   footer: {
     flexDirection: 'row',
     alignItems: 'center',

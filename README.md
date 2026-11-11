@@ -24,13 +24,36 @@ Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, 
 
 ## ⚙️ Environment Configuration
 
-The application works out-of-the-box with offline local storage and pre-seeded enterprise/connected SSO applications. To connect to a live Vanguard backend server (for live SSO session synchronization and OAuth connected app inspection):
+The application is configured to connect directly to the live deployed Vanguard backend API on Render, with dynamic fallbacks for local Metro LAN development:
 
-| Variable | Description | Default |
+| Variable | Description | Production Default |
 | :--- | :--- | :--- |
-| `EXPO_PUBLIC_API_URL` | Vanguard Identity Provider backend URL | `http://localhost:3000` |
+| `EXPO_PUBLIC_API_URL` | Vanguard Identity Provider backend URL | `https://backend-vanguard.onrender.com` |
 
-*Note for physical devices or Android emulators: Set `EXPO_PUBLIC_API_URL=http://<YOUR_LAN_IP>:3000` (or `http://10.0.2.2:3000` on Android emulator).*
+*Note: In local development, the app dynamically detects your workstation's LAN IP from the Metro bundler. When compiled into a standalone Android APK, it authoritatively defaults to `https://backend-vanguard.onrender.com`.*
+
+---
+
+## 📱 Mobile & Devices Hub & Ecosystem SSO Verification (SCRUM-182)
+
+### 1. Production Authentication & Zero-Hardcoded Policy
+- **Authoritative Backend Authentication**: Eliminated all mock persona drawers, hardcoded test accounts, and fake auto-fill buttons from the UI. Users authenticate with real credentials against `https://backend-vanguard.onrender.com/auth/login`.
+- **Account Type Segregation**:
+  - 🏢 **Company Account**: Enterprise Single Sign-On, workplace applications catalog, employee corporate directory, and device compliance tracking.
+  - 👤 **Individual Vault**: Zero-knowledge encrypted personal vault, private 2FA authenticators, personal notes, and bookmarks.
+- **Remember Email & Password Security**: Remembers user email securely across launches via `@react-native-async-storage/async-storage` (`vanguard_remembered_email`) with password visibility toggle.
+
+### 2. Mobile & Devices Hub (`src/screens/devices-screen.tsx`, `/devices`)
+- **Zero-Trust Hardware Attestation**: Evaluates device platform (`Android` / `iOS`), real biometric sensor availability (`Face ID`, `Touch ID`, `Fingerprint`) via `expo-local-authentication`, and hardware-backed AES-256-GCM Secure Enclave / Keystore integrity.
+- **Web Dashboard Pairing**:
+  - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
+  - Enter the generated Pairing Key (`VG-XXXX-XXXX` or 10-char token) into the mobile app's Devices screen.
+  - Automatically registers device trust and enables push MFA on the authoritative backend (`POST /oauth/mfa/push/preference`).
+- **Real-Time Out-of-Band Push MFA**:
+  - Background polling listener (`GET /oauth/mfa/push/pending?email=...`) captures out-of-band SSO verification requests dispatched when signing in from **Acme Dummy Web** (`https://vanguard-dummy-web.pages.dev`).
+  - Interactive **2-digit number matching challenge** modal prevents MFA fatigue attacks.
+  - Requires biometric approval (Face ID / Fingerprint) before signing and submitting approval (`POST /oauth/mfa/push/respond`).
+- **Device Management**: 1-tap "Unlink Companion Device" action safely deregisters the device and clears local session tokens.
 
 ---
 
@@ -115,6 +138,24 @@ To test on real iOS/Android devices connected to the live Render backend:
 EXPO_PUBLIC_API_URL=https://backend-vanguard.onrender.com npx expo start --tunnel --port 8082
 ```
 
+#### 3. Standalone Android APK Build (`eas build` / `npx expo run:android`)
+The application is pre-configured with Android package identifier `com.vanguard.security.mobile`, required permissions (`INTERNET`, `USE_BIOMETRIC`, `USE_FINGERPRINT`), and URI schemes (`vanguard-auth`, `vanguard-enroll`, `mobilevanguard`):
+
+```bash
+# 1. Install EAS CLI globally if not already present
+npm install -g eas-cli
+
+# 2. Log in to your Expo account
+eas login
+
+# 3. Configure and build production Android APK
+eas build -p android --profile preview
+# Generates a standalone installable .apk file connected to https://backend-vanguard.onrender.com
+
+# Alternatively, for local Android Studio native build:
+npx expo run:android --variant release
+```
+
 ### Platform-Specific Launch Targets
 - **Web Preview (Port 8082)**:
   ```bash
@@ -135,7 +176,7 @@ EXPO_PUBLIC_API_URL=https://backend-vanguard.onrender.com npx expo start --tunne
 ## 🧪 Testing & Code Quality
 
 ### Automated Test Suites
-Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, registration architecture, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (163 automated tests):
+Run the full automated test suite verifying authentication, OTP/TOTP two-step verification, registration architecture, sign out workflow, data models, UI components, SSO integrations, personal apps, enterprise requests, browser launchers, Authenticator Vault, AES-GCM encryption, hardware keychain storage, offline RFC 6238 TOTP calculation, countdown warning shifts, native biometric authentication, out-of-band push MFA approval with number matching, AppState auto-locking, zero-hardcoded dashboard state, and end-to-end workflows (176 automated tests passing with 0 failures):
 ```bash
 npm test
 ```

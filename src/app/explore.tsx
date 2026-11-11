@@ -64,8 +64,8 @@ export default function SecurityScreen() {
                 </Text>
               </View>
               <View style={styles.userInfo}>
-                <Text style={styles.userName}>{currentUser?.name || 'Authenticated User'}</Text>
-                <Text style={styles.userEmail}>{currentUser?.email || 'N/A'}</Text>
+                <Text style={styles.userName} numberOfLines={1}>{currentUser?.name || 'Authenticated User'}</Text>
+                <Text style={styles.userEmail} numberOfLines={1}>{currentUser?.email || 'N/A'}</Text>
               </View>
               <View style={styles.activeBadge}>
                 <View style={styles.greenDot} />
@@ -233,6 +233,8 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+    flexShrink: 1,
+    marginRight: 8,
   },
   userName: {
     color: CyberColors.textPrimary,
@@ -254,6 +256,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: CyberRadius.full,
     gap: 5,
+    flexShrink: 0,
   },
   greenDot: {
     width: 6,

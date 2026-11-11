@@ -341,15 +341,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    marginRight: 8,
   },
   adminBadgeIcon: {
     fontSize: 16,
   },
   adminBadgeText: {
     color: '#fbbf24',
-    fontSize: 12.5,
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    flexShrink: 1,
   },
   expandToggle: {
     paddingHorizontal: 8,
@@ -358,6 +361,7 @@ const styles = StyleSheet.create({
     borderRadius: CyberRadius.sm,
     borderColor: 'rgba(245, 158, 11, 0.3)',
     borderWidth: 1,
+    flexShrink: 0,
   },
   expandTogglePressed: {
     opacity: 0.7,
@@ -378,22 +382,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     flex: 1,
+    flexShrink: 1,
   },
   orgTagLabel: {
     color: CyberColors.textMuted,
     fontSize: 11,
     fontWeight: '800',
+    flexShrink: 0,
   },
   orgTagName: {
     color: CyberColors.cyan,
     fontSize: 12,
     fontWeight: '700',
+    flexShrink: 1,
   },
   countPill: {
     paddingHorizontal: 10,
     paddingVertical: 3.5,
     borderRadius: CyberRadius.full,
     borderWidth: 1,
+    flexShrink: 0,
   },
   countPillPending: {
     backgroundColor: 'rgba(245, 158, 11, 0.18)',

@@ -606,6 +606,7 @@ const styles = StyleSheet.create({
   },
   attestationDetails: {
     flex: 1,
+    marginRight: 8,
   },
   attestationTitle: {
     color: CyberColors.textPrimary,
@@ -616,6 +617,7 @@ const styles = StyleSheet.create({
     color: CyberColors.textSecondary,
     fontSize: 11.5,
     marginTop: 2,
+    lineHeight: 16,
   },
   statusPill: {
     backgroundColor: 'rgba(0, 229, 255, 0.15)',
@@ -624,6 +626,8 @@ const styles = StyleSheet.create({
     borderRadius: CyberRadius.full,
     paddingHorizontal: 8,
     paddingVertical: 3,
+    flexShrink: 0,
+    alignSelf: 'center',
   },
   statusPillCompliant: {
     backgroundColor: 'rgba(0, 255, 136, 0.15)',
@@ -635,9 +639,9 @@ const styles = StyleSheet.create({
   },
   statusPillText: {
     color: CyberColors.textPrimary,
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   timestampRow: {
     marginTop: 4,
@@ -854,16 +858,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+    gap: 8,
   },
   historyApp: {
     color: CyberColors.textPrimary,
     fontSize: 13,
     fontWeight: '700',
+    flex: 1,
+    flexShrink: 1,
   },
   historyBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: CyberRadius.sm,
+    flexShrink: 0,
   },
   badgeApproved: {
     backgroundColor: 'rgba(0, 255, 136, 0.15)',

@@ -217,11 +217,14 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   badgesWrap: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
+    flexShrink: 1,
+    marginLeft: 8,
   },
   statusLivePill: {
     flexDirection: 'row',
@@ -324,6 +327,7 @@ const styles = StyleSheet.create({
     color: CyberColors.textSecondary,
     fontSize: 11.5,
     fontWeight: '600',
+    flexShrink: 0,
   },
   metaValueWrap: {
     flexDirection: 'row',
@@ -336,7 +340,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    maxWidth: 150,
+    flexShrink: 1,
   },
   codeText: {
     color: '#e2e8f0',

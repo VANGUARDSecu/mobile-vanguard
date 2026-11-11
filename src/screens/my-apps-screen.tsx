@@ -226,11 +226,11 @@ export default function MyAppsScreen() {
 
               {/* Immutable Workspace Mode Badge (SCRUM-84: Non-switchable) */}
               <View style={styles.workspaceBadge}>
-                <Text style={styles.workspaceBadgeText}>
+                <Text style={styles.workspaceBadgeText} numberOfLines={1}>
                   {isPersonalWorkspace ? '👤 Personal Mode' : '🏢 Company Org'}
                 </Text>
                 <View style={styles.workspaceBadgeDot} />
-                <Text style={styles.workspaceBadgeOrg}>
+                <Text style={styles.workspaceBadgeOrg} numberOfLines={1}>
                   {isPersonalWorkspace
                     ? 'INDIVIDUAL'
                     : (currentUser?.companyName ? currentUser.companyName.toUpperCase() : 'ENTERPRISE')}
@@ -373,6 +373,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
   },
   brandShield: {
     fontSize: 20,
@@ -389,27 +390,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderColor: 'rgba(59, 130, 246, 0.35)',
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: CyberRadius.full,
-    gap: 7,
+    gap: 6,
+    flexShrink: 1,
+    maxWidth: '65%',
   },
   workspaceBadgeText: {
     color: CyberColors.cyan,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
+    flexShrink: 0,
   },
   workspaceBadgeDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
     backgroundColor: CyberColors.textMuted,
+    flexShrink: 0,
   },
   workspaceBadgeOrg: {
     color: CyberColors.textSecondary,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
   titleWrap: {
     marginBottom: 16,

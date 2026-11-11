@@ -38,10 +38,24 @@ export class AppLauncherService {
    * Opens a URL in the secure in-app browser or native external handler
    */
   static async openUrl(url: string): Promise<boolean> {
-    const targetUrl = this.normalizeUrl(url);
+    let targetUrl = this.normalizeUrl(url);
     if (!targetUrl) {
       await this.showAlert('Unable to Launch', 'No valid target URL was provided.');
       return false;
+    }
+
+    try {
+      const { Platform } = await import('react-native');
+      if (
+        Platform?.OS === 'android' &&
+        (targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1'))
+      ) {
+        const { AppsStorageService } = await import('./apps-storage.service.ts');
+        const hostIp = AppsStorageService.getLocalhostIp();
+        targetUrl = targetUrl.replace(/localhost|127\.0\.0\.1/g, hostIp);
+      }
+    } catch {
+      // Non-blocking URL adaptation fallback
     }
 
     try {

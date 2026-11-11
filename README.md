@@ -46,14 +46,19 @@ The application is configured to connect directly to the live deployed Vanguard 
 ### 2. Mobile & Devices Hub (`src/screens/devices-screen.tsx`, `/devices`)
 - **Zero-Trust Hardware Attestation**: Evaluates device platform (`Android` / `iOS`), real biometric sensor availability (`Face ID`, `Touch ID`, `Fingerprint`) via `expo-local-authentication`, and hardware-backed AES-256-GCM Secure Enclave / Keystore integrity.
 - **Web Dashboard Pairing**:
-  - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
+  - Open Vanguard Web Dashboard (`http://localhost:4200` or `https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
   - Enter the generated Pairing Key (`VG-XXXX-XXXX` or 10-char token) into the mobile app's Devices screen.
   - Automatically registers device trust and enables push MFA on the authoritative backend (`POST /oauth/mfa/push/preference`).
 - **Real-Time Out-of-Band Push MFA**:
-  - Background polling listener (`GET /oauth/mfa/push/pending?email=...`) captures out-of-band SSO verification requests dispatched when signing in from **Acme Dummy Web** (`https://vanguard-dummy-web.pages.dev`).
+  - Background polling listener (`GET /oauth/mfa/push/pending?email=...`) captures out-of-band SSO verification requests dispatched when signing in from **Acme Dummy Web** (`http://localhost:4201` or `https://vanguard-dummy-web.pages.dev`).
   - Interactive **2-digit number matching challenge** modal prevents MFA fatigue attacks.
   - Requires biometric approval (Face ID / Fingerprint) before signing and submitting approval (`POST /oauth/mfa/push/respond`).
 - **Device Management**: 1-tap "Unlink Companion Device" action safely deregisters the device and clears local session tokens.
+
+### 3. Dual Localhost & Cloud Access Architecture
+- **In-App Server Target Switcher**: Toggle seamlessly between **💻 Localhost (`http://localhost:3000` / `http://10.0.2.2:3000`)** and **🌐 Production Cloud (`https://backend-vanguard.onrender.com`)** directly on the Login screen and Mobile & Devices Hub.
+- **Android Cleartext Traffic Permitted**: Enabled `android.usesCleartextTraffic: true` in `app.json` so Android APKs and emulators can reach local HTTP development servers (`localhost:3000`, `10.0.2.2:3000`, and LAN IPs) without network security policy exceptions.
+- **Dynamic Host IP Mapping for Android**: When launching local applications (e.g., Acme Dummy Web on port `4201` or Dashboard on port `4200`), Android automatically maps `localhost` to the host machine alias `10.0.2.2` (or Metro host LAN IP) so services remain fully accessible during local testing.
 
 ---
 

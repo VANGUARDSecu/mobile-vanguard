@@ -359,13 +359,29 @@ export class AppsStorageService {
     return Array.from(dedupMap.values());
   }
 
-  static getBackendApiUrl(): string {
-    if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
-      return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
+  private static activeApiUrlOverride: string | null = null;
+
+  static setBackendApiUrlOverride(url: string | null): void {
+    this.activeApiUrlOverride = url ? url.trim().replace(/\/$/, '') : null;
+    if (this.activeApiUrlOverride) {
+      setStoredItem('vanguard_api_url_override', this.activeApiUrlOverride).catch(() => {});
+    } else {
+      removeStoredItems(['vanguard_api_url_override']).catch(() => {});
     }
+  }
+
+  static async loadBackendApiUrlOverride(): Promise<string> {
     try {
-      // Dynamic resolution for physical mobile devices running in Expo Go:
-      // Extracts the Metro bundler's host machine IP so mobile connects to dev backend on LAN
+      const saved = await getStoredItem('vanguard_api_url_override');
+      if (saved) {
+        this.activeApiUrlOverride = saved.trim().replace(/\/$/, '');
+      }
+    } catch {}
+    return this.getBackendApiUrl();
+  }
+
+  static getLocalhostIp(): string {
+    try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const Constants = require('expo-constants');
       const hostUri =
@@ -375,13 +391,49 @@ export class AppsStorageService {
       if (hostUri && typeof hostUri === 'string') {
         const host = hostUri.split(':')[0];
         if (host && host !== 'localhost' && host !== '127.0.0.1') {
-          return `http://${host}:3000`;
+          return host;
         }
+      }
+    } catch {}
+    const isAndroid = typeof process === 'undefined' && typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '');
+    return isAndroid ? '10.0.2.2' : 'localhost';
+  }
+
+  static getLocalhostUrl(port: number = 3000): string {
+    const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+    if (isWeb) {
+      return `http://localhost:${port}`;
+    }
+    const host = this.getLocalhostIp();
+    return `http://${host}:${port}`;
+  }
+
+  static getBackendApiUrl(): string {
+    // 1. Manual user override (e.g. toggled to localhost or custom address)
+    if (this.activeApiUrlOverride) {
+      return this.activeApiUrlOverride;
+    }
+
+    // 2. Explicit environment variable if provided
+    if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
+      return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
+    }
+
+    // 3. Dynamic resolution for local Metro LAN / emulator
+    try {
+      const host = this.getLocalhostIp();
+      if (host && host !== 'localhost' && host !== '127.0.0.1') {
+        return `http://${host}:3000`;
       }
     } catch {
       // Non-native / headless fallback
     }
-    // Production Render backend as authoritative default for standalone APK
+
+    // 4. Default to localhost for local web development, production Render for native builds
+    const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+    if (isWeb) {
+      return 'http://localhost:3000';
+    }
     return 'https://backend-vanguard.onrender.com';
   }
 

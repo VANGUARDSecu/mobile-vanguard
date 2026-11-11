@@ -102,36 +102,4 @@ test('Authentication Layer & Login Validation (SCRUM-72)', async (t) => {
       await AuthService.logout();
     });
   });
-
-  await t.test('login and verifyOtp succeed in localhost/offline mode without internet (SCRUM-182)', async () => {
-    const loginResult = await AuthService.login({
-      email: 'user@company.com',
-      password: 'Password123!',
-    });
-    assert.equal(loginResult.requireMfa, true);
-    assert.equal(loginResult.mfaChallenge.email, 'user@company.com');
-
-    const user = await AuthService.verifyOtp({
-      email: 'user@company.com',
-      token: '123456',
-    });
-    assert.equal(user.email, 'user@company.com');
-    assert.equal(user.role, 'user');
-    assert.ok(user.accessToken);
-  });
-
-  await t.test('individual vault owner logs in offline on localhost (SCRUM-182)', async () => {
-    const loginResult = await AuthService.login({
-      email: 'personal@vanguard.local',
-      password: 'Password123!',
-    });
-    assert.equal(loginResult.requireMfa, true);
-
-    const user = await AuthService.verifyOtp({
-      email: 'personal@vanguard.local',
-      token: '12345678',
-    });
-    assert.equal(user.email, 'personal@vanguard.local');
-    assert.equal(user.accountType, 'individual');
-  });
 });

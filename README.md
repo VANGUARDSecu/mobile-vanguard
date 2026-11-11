@@ -24,20 +24,20 @@ Vanguard Security Mobile Application — Built with React Native & Expo SDK 57, 
 
 ## ⚙️ Environment Configuration
 
-The application is configured to connect to the Vanguard backend API, supporting seamless localhost development without requiring internet access, as well as live production cloud deployment:
+The application is configured to connect directly to the live deployed Vanguard backend API on Render:
 
-| Variable | Description | Localhost Default | Production Cloud |
-| :--- | :--- | :--- | :--- |
-| `EXPO_PUBLIC_API_URL` | Vanguard Identity Provider backend URL | `http://localhost:3000` | `https://backend-vanguard.onrender.com` |
+| Variable | Description | Production Default |
+| :--- | :--- | :--- |
+| `EXPO_PUBLIC_API_URL` | Vanguard Identity Provider backend URL | `https://backend-vanguard.onrender.com` |
 
-*Note: In local development, the app dynamically detects your workstation's LAN IP from the Metro bundler or browser `localhost`. Standalone production APK builds can be pointed to `https://backend-vanguard.onrender.com` via environment variable or in-app toggle.*
+*Note: The mobile application authoritatively connects to `https://backend-vanguard.onrender.com`. All authentication, pairing, and out-of-band push MFA challenges synchronize with this authoritative cloud service.*
 
 ---
 
 ## 📱 Mobile & Devices Hub & Ecosystem SSO Verification (SCRUM-182)
 
 ### 1. Production Authentication & Zero-Hardcoded Policy
-- **Authoritative Backend Authentication**: Connects with real credentials against the backend API with seamless offline/localhost simulation fallback when running locally without an internet connection.
+- **Authoritative Backend Authentication**: Users authenticate with real credentials against the deployed Vanguard backend (`https://backend-vanguard.onrender.com/auth/login`).
 - **Account Type Segregation**:
   - 🏢 **Company Account**: Enterprise Single Sign-On, workplace applications catalog, employee corporate directory, and device compliance tracking.
   - 👤 **Individual Vault**: Zero-knowledge encrypted personal vault, private 2FA authenticators, personal notes, and bookmarks.
@@ -46,28 +46,18 @@ The application is configured to connect to the Vanguard backend API, supporting
 ### 2. Mobile & Devices Hub (`src/screens/devices-screen.tsx`, `/devices`)
 - **Zero-Trust Hardware Attestation**: Evaluates device platform (`Android` / `iOS`), real biometric sensor availability (`Face ID`, `Touch ID`, `Fingerprint`) via `expo-local-authentication`, and hardware-backed AES-256-GCM Secure Enclave / Keystore integrity.
 - **Web Dashboard Pairing**:
-  - Open Vanguard Web Dashboard (`http://localhost:4200` or `https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
+  - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
   - Enter the generated Pairing Key (`VG-XXXX-XXXX` or 10-char token) into the mobile app's Devices screen.
   - Automatically registers device trust and enables push MFA on the authoritative backend (`POST /oauth/mfa/push/preference`).
 - **Real-Time Out-of-Band Push MFA**:
-  - Background polling listener (`GET /oauth/mfa/push/pending?email=...`) captures out-of-band SSO verification requests dispatched when signing in from **Acme Dummy Web** (`http://localhost:4201` or `https://vanguard-dummy-web.pages.dev`).
+  - Background polling listener (`GET /oauth/mfa/push/pending?email=...`) captures out-of-band SSO verification requests dispatched when signing in from **Acme Dummy Web** (`https://vanguard-dummy-web.pages.dev`).
   - Interactive **2-digit number matching challenge** modal prevents MFA fatigue attacks.
   - Requires biometric approval (Face ID / Fingerprint) before signing and submitting approval (`POST /oauth/mfa/push/respond`).
 - **Device Management**: 1-tap "Unlink Companion Device" action safely deregisters the device and clears local session tokens.
 
-### 3. Dual Localhost & Cloud Access Architecture (Zero-Internet Localhost Testing)
-- **Localhost Testing Without Internet**: You can run and test `mobile-vanguard` entirely on `localhost` (in web browser or simulator) with zero internet connection required.
-- **Graceful Localhost & Offline Fallback**: If `backend-vanguard` is not actively running on `http://localhost:3000` (or if your machine is offline), `mobile-vanguard` automatically falls back to local simulated authentication rather than blocking with internet connection errors.
-- **In-App Server Target Switcher**: Toggle seamlessly between **💻 Localhost (`http://localhost:3000` / `http://10.0.2.2:3000`)** and **🌐 Production Cloud (`https://backend-vanguard.onrender.com`)** directly on the Login screen and Mobile & Devices Hub.
-- **Quick Test Presets (Localhost Mode)**: When pointing to localhost, the Login screen displays 1-tap quick fill presets:
-  - 🏢 **Company User**: `user@company.com` / `Password123!`
-  - 👤 **Personal Vault**: `personal@vanguard.local` / `Password123!`
-  - 🛡️ **Security Admin**: `admin@vanguard.security` / `Password123!`
-- **Localhost / Offline Verification Codes**:
-  - **Email OTP**: Enter `123456` (or `12345678` / `000000`).
-  - **TOTP / Authenticator App**: Enter `654321` (or `123456`).
-- **Android Cleartext Traffic Permitted**: Enabled `android.usesCleartextTraffic: true` in `app.json` so Android APKs and emulators can reach local HTTP development servers (`localhost:3000`, `10.0.2.2:3000`, and LAN IPs) without network security policy exceptions.
-- **Dynamic Host IP Mapping for Android**: When launching local applications (e.g., Acme Dummy Web on port `4201` or Dashboard on port `4200`), Android automatically maps `localhost` to the host machine alias `10.0.2.2` (or Metro host LAN IP) so services remain fully accessible during local testing.
+### 3. Production Cloud Connectivity
+- **Deployed Backend Integration**: Every authentication challenge, device pairing verification, and push MFA response is securely submitted to `https://backend-vanguard.onrender.com`.
+- **Extended Warm-Up Tolerance**: Network timeout handlers allocate 30 seconds to gracefully accommodate cloud spin-up latency on server cold starts without aborting verification requests prematurely.
 
 ---
 

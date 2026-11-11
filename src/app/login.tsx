@@ -17,7 +17,6 @@ import { router } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import type { MfaChallengeResponse } from '@/models/auth.models';
-import { AppsStorageService } from '@/services/apps-storage.service';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
@@ -34,14 +33,10 @@ export default function LoginScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState<MfaChallengeResponse | null>(null);
-  const [activeServerUrl, setActiveServerUrl] = useState<string>(AppsStorageService.getBackendApiUrl());
 
   // Load remembered credentials preference on mount
   useEffect(() => {
     let isMounted = true;
-    AppsStorageService.loadBackendApiUrlOverride().then((url) => {
-      if (isMounted) setActiveServerUrl(url);
-    });
     (async () => {
       try {
         const [savedEmail, savedType] = await Promise.all([
@@ -65,24 +60,6 @@ export default function LoginScreen() {
       isMounted = false;
     };
   }, []);
-
-  const isLocalServer =
-    activeServerUrl.includes('localhost') ||
-    activeServerUrl.includes('127.0.0.1') ||
-    activeServerUrl.includes('10.0.2.2') ||
-    activeServerUrl.includes(':3000');
-
-  const handleToggleServerTarget = () => {
-    if (isLocalServer) {
-      const prodUrl = 'https://backend-vanguard.onrender.com';
-      AppsStorageService.setBackendApiUrlOverride(prodUrl);
-      setActiveServerUrl(prodUrl);
-    } else {
-      const localUrl = AppsStorageService.getLocalhostUrl(3000);
-      AppsStorageService.setBackendApiUrlOverride(localUrl);
-      setActiveServerUrl(localUrl);
-    }
-  };
 
   const handleSelectAccountType = (type: 'company' | 'individual') => {
     setAccountType(type);
@@ -173,31 +150,6 @@ export default function LoginScreen() {
               </Text>
             </View>
 
-            {/* Active Server Environment Bar */}
-            <View style={styles.serverBar}>
-              <View style={styles.serverInfoWrap}>
-                <Text style={styles.serverIcon}>{isLocalServer ? '💻' : '🌐'}</Text>
-                <View style={styles.serverDetailsWrap}>
-                  <Text style={styles.serverLabel}>
-                    {isLocalServer ? 'LOCAL BACKEND' : 'CLOUD BACKEND'}
-                  </Text>
-                  <Text style={styles.serverUrlText} numberOfLines={1}>
-                    {activeServerUrl}
-                  </Text>
-                </View>
-              </View>
-              <Pressable
-                style={styles.serverToggleBtn}
-                onPress={handleToggleServerTarget}
-                accessibilityRole="button"
-                accessibilityLabel="Switch Server Environment"
-              >
-                <Text style={styles.serverToggleBtnText}>
-                  {isLocalServer ? 'Use Cloud' : 'Use Localhost'}
-                </Text>
-              </Pressable>
-            </View>
-
             {/* Login Card */}
             <View style={styles.card}>
               {/* Account Type Segmented Selector */}
@@ -254,59 +206,6 @@ export default function LoginScreen() {
                     : 'Access your encrypted credentials, personal 2FA authenticators & secure notes.'}
                 </Text>
               </View>
-
-              {/* Localhost / Offline Quick Test Bar */}
-              {isLocalServer ? (
-                <View style={styles.quickTestBox}>
-                  <Text style={styles.quickTestTitle}>⚡ Localhost Quick Fill</Text>
-                  <View style={styles.quickTestChipsRow}>
-                    <Pressable
-                      style={styles.quickTestChip}
-                      onPress={() => {
-                        handleSelectAccountType('company');
-                        setEmail('user@company.com');
-                        setPassword('Password123!');
-                        setErrorMessage(null);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Fill Company Demo Account"
-                    >
-                      <Text style={styles.quickTestChipText}>🏢 Company</Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.quickTestChip}
-                      onPress={() => {
-                        handleSelectAccountType('individual');
-                        setEmail('personal@vanguard.local');
-                        setPassword('Password123!');
-                        setErrorMessage(null);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Fill Personal Vault Demo Account"
-                    >
-                      <Text style={styles.quickTestChipText}>👤 Personal</Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.quickTestChip}
-                      onPress={() => {
-                        handleSelectAccountType('company');
-                        setEmail('admin@vanguard.security');
-                        setPassword('Password123!');
-                        setErrorMessage(null);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Fill Admin Demo Account"
-                    >
-                      <Text style={styles.quickTestChipText}>🛡️ Admin</Text>
-                    </Pressable>
-                  </View>
-                  <Text style={styles.quickTestHint}>
-                    Local test OTP code: <Text style={{ color: CyberColors.cyan, fontWeight: '800' }}>123456</Text> (works offline & localhost)
-                  </Text>
-                </View>
-              ) : null}
 
               {/* Error Alert */}
               {errorMessage ? (
@@ -488,57 +387,7 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     marginTop: 6,
     textAlign: 'center',
-  },
-  serverBar: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    borderColor: 'rgba(0, 229, 255, 0.2)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 14,
-  },
-  serverInfoWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 8,
-  },
-  serverIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  serverDetailsWrap: {
-    flex: 1,
-  },
-  serverLabel: {
-    color: CyberColors.cyan,
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  serverUrlText: {
-    color: CyberColors.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  serverToggleBtn: {
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
-    borderColor: CyberColors.cyan,
-    borderWidth: 1,
-    borderRadius: CyberRadius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    cursor: 'pointer' as any,
-  },
-  serverToggleBtnText: {
-    color: CyberColors.cyan,
-    fontSize: 11,
-    fontWeight: '800',
+    marginBottom: 16,
   },
   card: {
     width: '100%',
@@ -596,45 +445,7 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     color: CyberColors.textSecondary,
     lineHeight: 17,
-  },
-  quickTestBox: {
-    backgroundColor: 'rgba(0, 229, 255, 0.06)',
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    padding: 10,
-    marginBottom: 14,
-  },
-  quickTestTitle: {
-    color: CyberColors.cyan,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  quickTestChipsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 6,
-  },
-  quickTestChip: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    borderColor: 'rgba(0, 229, 255, 0.3)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.sm,
-    paddingVertical: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickTestChipText: {
-    color: CyberColors.textPrimary,
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  quickTestHint: {
-    color: CyberColors.textMuted,
-    fontSize: 10.5,
+    marginBottom: 16,
   },
   errorBanner: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',

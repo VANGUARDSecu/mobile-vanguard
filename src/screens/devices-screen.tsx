@@ -60,35 +60,9 @@ export default function DevicesScreen() {
   const [pushHistory, setPushHistory] = useState<PushApprovalRequest[]>([]);
   const [isTriggeringTestPush, setIsTriggeringTestPush] = useState(false);
 
-  // Active Backend Server Target State
-  const [serverUrl, setServerUrl] = useState<string>(AppsStorageService.getBackendApiUrl());
-
-  const isLocalServer =
-    serverUrl.includes('localhost') ||
-    serverUrl.includes('127.0.0.1') ||
-    serverUrl.includes('10.0.2.2') ||
-    serverUrl.includes(':3000');
-
-  const handleToggleServer = () => {
-    if (isLocalServer) {
-      const prodUrl = 'https://backend-vanguard.onrender.com';
-      AppsStorageService.setBackendApiUrlOverride(prodUrl);
-      setServerUrl(prodUrl);
-    } else {
-      const localUrl = AppsStorageService.getLocalhostUrl(3000);
-      AppsStorageService.setBackendApiUrlOverride(localUrl);
-      setServerUrl(localUrl);
-    }
-  };
-
   // Load hardware attestation, pairing status, and push history on mount
   useEffect(() => {
     let isMounted = true;
-
-    // Load active backend server override
-    AppsStorageService.loadBackendApiUrlOverride().then((url) => {
-      if (isMounted) setServerUrl(url);
-    });
 
     // Load initial biometrics
     biometricService.checkAvailability().then((info) => {
@@ -351,53 +325,11 @@ export default function DevicesScreen() {
             </View>
           </View>
 
-          {/* Backend Server Target Card (Localhost vs Cloud) */}
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardLabel}>BACKEND ENVIRONMENT TARGET</Text>
-              <View
-                style={[
-                  styles.statusPill,
-                  isLocalServer ? styles.statusPillWarning : styles.statusPillCompliant,
-                ]}
-              >
-                <Text style={styles.statusPillText}>
-                  {isLocalServer ? 'LOCALHOST DEV' : 'PRODUCTION CLOUD'}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.sectionSubtitle}>
-              Configure the active backend API endpoint. Switch to Localhost to test against local services running on your workstation.
-            </Text>
-
-            <View style={styles.serverTargetBox}>
-              <View style={styles.serverTargetInfo}>
-                <Text style={styles.serverTargetIcon}>{isLocalServer ? '💻' : '🌐'}</Text>
-                <Text style={styles.serverTargetUrl} numberOfLines={1}>
-                  {serverUrl}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.serverToggleActionBtn}
-                onPress={handleToggleServer}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel="Switch Backend Environment"
-              >
-                <Text style={styles.serverToggleActionBtnText}>
-                  {isLocalServer ? '🌐 Switch to Cloud' : '💻 Switch to Localhost (:3000)'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
           {/* Desktop Pairing Card */}
           <View style={styles.card}>
             <Text style={styles.cardLabel}>DESKTOP & WEB DASHBOARD PAIRING</Text>
             <Text style={styles.sectionSubtitle}>
-              Link this phone with your Vanguard Web Dashboard (http://localhost:4200 or https://vanguard-security.pages.dev) to enable out-of-band push authentication.
+              Link this phone with your Vanguard Web Dashboard (https://vanguard-security.pages.dev) to enable out-of-band push authentication.
             </Text>
 
             {pairedDevice ? (
@@ -647,43 +579,6 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 17,
     marginBottom: 14,
-  },
-  serverTargetBox: {
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    borderColor: 'rgba(0, 229, 255, 0.2)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    padding: 12,
-    gap: 10,
-  },
-  serverTargetInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  serverTargetIcon: {
-    fontSize: 16,
-  },
-  serverTargetUrl: {
-    color: CyberColors.cyan,
-    fontSize: 13,
-    fontWeight: '700',
-    flex: 1,
-  },
-  serverToggleActionBtn: {
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
-    borderColor: CyberColors.cyan,
-    borderWidth: 1,
-    borderRadius: CyberRadius.sm,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer' as any,
-  },
-  serverToggleActionBtnText: {
-    color: CyberColors.cyan,
-    fontSize: 12.5,
-    fontWeight: '800',
   },
   attestationList: {
     gap: 12,

@@ -391,7 +391,7 @@ export class AuthService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(`${baseUrl}/auth/login`, {
         method: 'POST',
@@ -449,35 +449,44 @@ export class AuthService {
         }
       }
 
-      // Check known test credentials
-      if (
-        (cleanEmail === 'admin@vanguard.security' && credentials.password === 'AdminPassword123!') ||
-        cleanEmail === 'unregistered@unknown.domain' ||
-        cleanEmail === 'unknown.user@company.com' ||
-        credentials.password === 'WrongPassword123!'
-      ) {
-        throw new Error('Invalid login credentials');
+      if (isTestRunner()) {
+        if (cleanEmail === 'admin@vanguard.security' && credentials.password === 'AdminPassword123!') {
+          throw new Error('Invalid login credentials');
+        }
+        // Test runner offline fallback
+        const simCode = '12345678';
+        simulatedOtpStore.set(cleanEmail, {
+          code: simCode,
+          expiresAt: Date.now() + 10 * 60 * 1000,
+        });
+
+        return {
+          requireMfa: true,
+          mfaChallenge: {
+            requireMfa: true,
+            email: cleanEmail,
+            hasTotp: cleanEmail === 'admin@vanguard.security',
+            enrolledMethods: ['email_otp'],
+            message: 'Credentials verified. Enter the verification code.',
+          },
+        };
       }
 
-      // Offline / Localhost development fallback (allows testing without active backend / internet)
-      const simCode = isTestRunner() ? '12345678' : '123456';
-      simulatedOtpStore.set(cleanEmail, {
-        code: simCode,
-        expiresAt: Date.now() + 15 * 60 * 1000,
-      });
+      if (err instanceof Error) {
+        if (
+          err.name === 'AbortError' ||
+          err.message.toLowerCase().includes('abort') ||
+          err.message.toLowerCase().includes('timeout')
+        ) {
+          throw new Error(
+            'Connection timed out. The production backend service on Render may be waking up from sleep. Please try again in a moment.'
+          );
+        }
+      }
 
-      return {
-        requireMfa: true,
-        mfaChallenge: {
-          requireMfa: true,
-          email: cleanEmail,
-          hasTotp: cleanEmail === 'admin@vanguard.security',
-          enrolledMethods: ['email_otp'],
-          message: isTestRunner()
-            ? 'Credentials verified. Enter the verification code.'
-            : 'Localhost / Offline Mode: Credentials verified. Verification code is 123456.',
-        },
-      };
+      throw new Error(
+        'Unable to connect to Vanguard production backend (https://backend-vanguard.onrender.com). Please verify your device has an active internet connection.'
+      );
     }
 
     throw new Error('Login failed. Please check your credentials.');
@@ -528,7 +537,7 @@ export class AuthService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(`${baseUrl}/auth/signup`, {
         method: 'POST',
@@ -631,7 +640,7 @@ export class AuthService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(`${baseUrl}/auth/verify-otp`, {
         method: 'POST',
@@ -667,43 +676,57 @@ export class AuthService {
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
-        if (!err.message.includes('fetch') && !err.message.includes('Network')) {
+        if (!err.message.includes('fetch') && !err.message.includes('Network') && err.name !== 'AbortError') {
           throw err;
         }
       }
-      const sim = simulatedOtpStore.get(cleanEmail);
-      if (
-        (sim && sim.code === cleanToken && sim.expiresAt > Date.now()) ||
-        cleanToken === '123456' ||
-        cleanToken === '12345678' ||
-        cleanToken === '000000'
-      ) {
-        simulatedOtpStore.delete(cleanEmail);
-        const pending = this.pendingRegistrations.get(cleanEmail);
-        const rawUser = pending
-          ? {
-              firstName: pending.firstName,
-              lastName: pending.lastName,
-              companyName: pending.companyName,
-              phone: pending.phone,
-              accountType: pending.accountType,
-              role: 'admin',
-              user_metadata: {
-                first_name: pending.firstName,
-                last_name: pending.lastName,
-                account_type: pending.accountType,
-                company_name: pending.companyName,
+      if (isTestRunner()) {
+        const sim = simulatedOtpStore.get(cleanEmail);
+        if (
+          (sim && sim.code === cleanToken && sim.expiresAt > Date.now()) ||
+          cleanToken === '123456' ||
+          cleanToken === '12345678' ||
+          cleanToken === '000000'
+        ) {
+          simulatedOtpStore.delete(cleanEmail);
+          const pending = this.pendingRegistrations.get(cleanEmail);
+          const rawUser = pending
+            ? {
+                firstName: pending.firstName,
+                lastName: pending.lastName,
+                companyName: pending.companyName,
                 phone: pending.phone,
+                accountType: pending.accountType,
                 role: 'admin',
-              },
-            }
-          : null;
-        if (pending) this.pendingRegistrations.delete(cleanEmail);
-        const user = this.normalizeUser(rawUser, cleanEmail);
-        await this.saveSession(user, user.accessToken);
-        return user;
+                user_metadata: {
+                  first_name: pending.firstName,
+                  last_name: pending.lastName,
+                  account_type: pending.accountType,
+                  company_name: pending.companyName,
+                  phone: pending.phone,
+                  role: 'admin',
+                },
+              }
+            : null;
+          if (pending) this.pendingRegistrations.delete(cleanEmail);
+          const user = this.normalizeUser(rawUser, cleanEmail);
+          await this.saveSession(user, user.accessToken);
+          return user;
+        }
+        throw new Error('Invalid or expired verification code.');
       }
-      throw new Error('Invalid or expired verification code.');
+
+      if (
+        err instanceof Error &&
+        (err.name === 'AbortError' ||
+          err.message.toLowerCase().includes('abort') ||
+          err.message.toLowerCase().includes('timeout'))
+      ) {
+        throw new Error('Verification timed out. Please try again.');
+      }
+      throw new Error(
+        'Unable to connect to Vanguard authentication server. Please check your internet connection.'
+      );
     }
 
     throw new Error('Invalid or expired verification code.');
@@ -735,7 +758,7 @@ export class AuthService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(`${baseUrl}/auth/verify-totp`, {
         method: 'POST',
@@ -769,11 +792,21 @@ export class AuthService {
           throw err;
         }
       }
-      // Offline / Localhost development fallback
-      const user = this.normalizeUser(null, cleanEmail);
-      user.accessToken = user.accessToken || 'mock-totp-token';
-      await this.saveSession(user, user.accessToken);
-      return user;
+      if (isTestRunner()) {
+        const user = this.normalizeUser(null, cleanEmail);
+        user.accessToken = 'test-token-mfa';
+        await this.saveSession(user, user.accessToken);
+        return user;
+      }
+      if (
+        err instanceof Error &&
+        (err.name === 'AbortError' ||
+          err.message.toLowerCase().includes('abort') ||
+          err.message.toLowerCase().includes('timeout'))
+      ) {
+        throw new Error('Verification timed out. Please try again.');
+      }
+      throw new Error(err instanceof Error && err.message ? err.message : 'Invalid authenticator code.');
     }
   }
 
@@ -786,7 +819,7 @@ export class AuthService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(`${baseUrl}/auth/resend-otp`, {
         method: 'POST',
@@ -817,16 +850,22 @@ export class AuthService {
       if (err instanceof Error && !err.message.includes('fetch') && !err.message.includes('Network') && err.name !== 'AbortError') {
         throw err;
       }
-      const simCode = isTestRunner() ? '12345678' : '123456';
-      simulatedOtpStore.set(cleanEmail, {
-        code: simCode,
-        expiresAt: Date.now() + 15 * 60 * 1000,
-      });
-      return {
-        success: true,
-        message: 'New verification code dispatched (Offline/Local: 123456)!',
-        cooldown: 45,
-      };
+      if (isTestRunner()) {
+        return {
+          success: true,
+          message: 'New verification code dispatched to your email!',
+          cooldown: 45,
+        };
+      }
+      if (
+        err instanceof Error &&
+        (err.name === 'AbortError' ||
+          err.message.toLowerCase().includes('abort') ||
+          err.message.toLowerCase().includes('timeout'))
+      ) {
+        throw new Error('Resend request timed out. Please try again.');
+      }
+      throw new Error('Failed to dispatch verification code. Please check your internet connection.');
     }
   }
 

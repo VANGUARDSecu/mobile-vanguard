@@ -38,6 +38,8 @@ export function AddPersonalAppModal({
   const [appCategory, setAppCategory] = useState<'collaboration' | 'developer' | 'cloud'>('collaboration');
   const [appIcon, setAppIcon] = useState('🌐');
   const [appDescription, setAppDescription] = useState('');
+  const [appUsername, setAppUsername] = useState('');
+  const [appPassword, setAppPassword] = useState('');
   const [activePreset, setActivePreset] = useState<PersonalAppPreset | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -48,6 +50,8 @@ export function AddPersonalAppModal({
     setAppCategory('collaboration');
     setAppIcon('🌐');
     setAppDescription('');
+    setAppUsername('');
+    setAppPassword('');
     setActivePreset(null);
     setErrorMessage(null);
     setIsSubmitting(false);
@@ -136,6 +140,8 @@ export function AddPersonalAppModal({
         category: appCategory,
         icon: appIcon.trim() || '🌐',
         description: appDescription.trim() || `${trimmedName} web application`,
+        username: appUsername.trim() || undefined,
+        password: appPassword || undefined,
       });
       handleClose();
     } catch {
@@ -379,6 +385,38 @@ export function AddPersonalAppModal({
                   placeholder="Personal workspace, project notes, etc."
                   placeholderTextColor={CyberColors.textMuted}
                 />
+              </View>
+
+              {/* Auto-Fill Username / Email */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Auto-Fill Username / Email (Optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={appUsername}
+                  onChangeText={setAppUsername}
+                  placeholder="e.g. you@example.com"
+                  placeholderTextColor={CyberColors.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Auto-Fill Password */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Auto-Fill Password (Optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={appPassword}
+                  onChangeText={setAppPassword}
+                  placeholder="Enter application password"
+                  placeholderTextColor={CyberColors.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text style={styles.helperText}>
+                  Stored securely and available for extension auto-fill and zero-trust launch.
+                </Text>
               </View>
 
               {/* Error Alert */}

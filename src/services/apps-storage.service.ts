@@ -235,6 +235,26 @@ export const MOCK_VAULT_FIXTURES: PersonalVaultItem[] = [
 ];
 
 export class AppsStorageService {
+  static getPersonalAppsKey(email?: string): string {
+    const clean = email?.trim().toLowerCase();
+    return clean ? `${STORAGE_KEYS.PERSONAL_APPS}_${clean}` : STORAGE_KEYS.PERSONAL_APPS;
+  }
+
+  static getEnterpriseAppsKey(email?: string): string {
+    const clean = email?.trim().toLowerCase();
+    return clean ? `${STORAGE_KEYS.ENTERPRISE_APPS}_${clean}` : STORAGE_KEYS.ENTERPRISE_APPS;
+  }
+
+  static getAccessRequestsKey(email?: string): string {
+    const clean = email?.trim().toLowerCase();
+    return clean ? `${STORAGE_KEYS.ACCESS_REQUESTS}_${clean}` : STORAGE_KEYS.ACCESS_REQUESTS;
+  }
+
+  static getVaultItemsKey(email?: string): string {
+    const clean = email?.trim().toLowerCase();
+    return clean ? `${STORAGE_KEYS.VAULT_ITEMS}_${clean}` : STORAGE_KEYS.VAULT_ITEMS;
+  }
+
   /**
    * Workspace Mode: true = Personal Workspace, false = Enterprise / Company Workspace
    */
@@ -258,29 +278,43 @@ export class AppsStorageService {
   /**
    * Personal Applications (SCRUM-52: starts empty unless added)
    */
-  static async getPersonalApps(): Promise<SaaSApp[]> {
+  static async getPersonalApps(email?: string): Promise<SaaSApp[]> {
     try {
-      const data = await getStoredItem(STORAGE_KEYS.PERSONAL_APPS);
+      const userKey = this.getPersonalAppsKey(email);
+      let data = await getStoredItem(userKey);
+      if (!data && email) {
+        data = await getStoredItem(STORAGE_KEYS.PERSONAL_APPS);
+      }
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
     }
   }
 
-  static async savePersonalApps(apps: SaaSApp[]): Promise<void> {
+  static async savePersonalApps(apps: SaaSApp[], email?: string): Promise<void> {
     try {
-      await setStoredItem(STORAGE_KEYS.PERSONAL_APPS, JSON.stringify(apps));
+      const json = JSON.stringify(apps);
+      const userKey = this.getPersonalAppsKey(email);
+      await setStoredItem(userKey, json);
+      await setStoredItem(STORAGE_KEYS.PERSONAL_APPS, json);
     } catch {
       // Ignored
     }
   }
 
-  static async addPersonalApp(input: PersonalAppInput): Promise<SaaSApp> {
-    const apps = await this.getPersonalApps();
+  static async addPersonalApp(
+    input: PersonalAppInput,
+    email?: string,
+    token?: string,
+    userId?: string
+  ): Promise<SaaSApp> {
+    const apps = await this.getPersonalApps(email);
     let formattedUrl = input.launchUrl.trim();
     if (!/^https?:\/\//i.test(formattedUrl)) {
       formattedUrl = 'https://' + formattedUrl;
     }
+
+    const cleanEmail = email?.trim().toLowerCase() || undefined;
 
     const newApp: SaaSApp = {
       id: 'papp-' + Date.now(),
@@ -289,33 +323,128 @@ export class AppsStorageService {
       launchUrl: formattedUrl,
       description: input.description?.trim() || `${input.name.trim()} web application`,
       icon: input.icon?.trim() || '🌐',
-      protocol: 'Web Auth',
+      protocol: 'Extension Autofill',
       assigned: true,
-      status: 'Active',
+      status: 'Approved',
+      assignedUsername: input.username?.trim() || undefined,
+      assignedPassword: input.password || undefined,
+      targetUserEmail: cleanEmail,
+      targetUserId: userId || undefined,
     };
 
-    const updated = [newApp, ...apps];
-    await this.savePersonalApps(updated);
+    const updatedPersonal = [
+      newApp,
+      ...apps.filter((a) => a.name.toLowerCase().trim() !== newApp.name.toLowerCase().trim()),
+    ];
+    await this.savePersonalApps(updatedPersonal, email);
+
+    // SCRUM-182: Also update enterprise apps store so newly added apps display in all views
+    const entApps = await this.getEnterpriseApps(email);
+    const updatedEnt = [
+      newApp,
+      ...entApps.filter((a) => a.name.toLowerCase().trim() !== newApp.name.toLowerCase().trim()),
+    ];
+    await this.saveEnterpriseApps(updatedEnt, email);
+
+    // Save credentials to personal vault items if username or password provided
+    if (input.username || input.password) {
+      try {
+        const vaults = await this.getVaultItems(email);
+        const newVault: PersonalVaultItem = {
+          id: 'vault-' + Date.now(),
+          title: input.name.trim(),
+          category: 'Login',
+          username: input.username?.trim() || '',
+          password: input.password || '',
+          url: formattedUrl,
+          notes: `Linked auto-fill credentials for ${input.name.trim()}`,
+          updatedAt: new Date().toISOString(),
+        };
+        await this.saveVaultItems([newVault, ...vaults], email);
+      } catch {
+        // Non-blocking
+      }
+    }
+
+    // Best-effort backend synchronization if online with active session token
+    if (token && userId) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        fetch(`${baseUrl}/apps?targetUserId=${encodeURIComponent(userId)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            appId: newApp.id,
+            name: newApp.name,
+            protocol: newApp.protocol,
+            launchUrl: newApp.launchUrl,
+            category: newApp.category,
+            icon: newApp.icon,
+            description: newApp.description,
+            assignedUsername: newApp.assignedUsername,
+            assignedPassword: newApp.assignedPassword,
+            targetUserEmail: newApp.targetUserEmail,
+          }),
+        }).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
+    }
+
     return newApp;
   }
 
-  static async deletePersonalApp(id: string): Promise<void> {
-    const apps = await this.getPersonalApps();
+  static async deletePersonalApp(
+    id: string,
+    email?: string,
+    token?: string,
+    userId?: string
+  ): Promise<void> {
+    const apps = await this.getPersonalApps(email);
     const updated = apps.filter((a) => a.id !== id);
-    await this.savePersonalApps(updated);
+    await this.savePersonalApps(updated, email);
+
+    const entApps = await this.getEnterpriseApps(email);
+    const updatedEnt = entApps.filter((a) => a.id !== id);
+    await this.saveEnterpriseApps(updatedEnt, email);
+
+    if (token && userId) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        fetch(
+          `${baseUrl}/apps?targetUserId=${encodeURIComponent(userId)}&appId=${encodeURIComponent(id)}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        ).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
+    }
   }
 
   /**
    * Enterprise Applications (SCRUM-83: starts empty unless dynamically assigned)
    */
-  static async getEnterpriseApps(): Promise<SaaSApp[]> {
+  static async getEnterpriseApps(email?: string): Promise<SaaSApp[]> {
     try {
-      const data = await getStoredItem(STORAGE_KEYS.ENTERPRISE_APPS);
+      const userKey = this.getEnterpriseAppsKey(email);
+      let data = await getStoredItem(userKey);
+      if (!data && email) {
+        data = await getStoredItem(STORAGE_KEYS.ENTERPRISE_APPS);
+      }
       if (data) {
         const parsed: SaaSApp[] = JSON.parse(data);
         const legacyIds = new Set(['app-aws', 'app-slack', 'app-github', 'app-google', 'app-figma']);
         const cleaned = parsed.filter((a) => !legacyIds.has(a.id));
         if (cleaned.length !== parsed.length) {
+          await setStoredItem(userKey, JSON.stringify(cleaned));
           await setStoredItem(STORAGE_KEYS.ENTERPRISE_APPS, JSON.stringify(cleaned));
         }
         return cleaned;
@@ -326,12 +455,80 @@ export class AppsStorageService {
     }
   }
 
-  static async saveEnterpriseApps(apps: SaaSApp[]): Promise<void> {
+  static async saveEnterpriseApps(apps: SaaSApp[], email?: string): Promise<void> {
     try {
-      await setStoredItem(STORAGE_KEYS.ENTERPRISE_APPS, JSON.stringify(apps));
+      const json = JSON.stringify(apps);
+      const userKey = this.getEnterpriseAppsKey(email);
+      await setStoredItem(userKey, json);
+      await setStoredItem(STORAGE_KEYS.ENTERPRISE_APPS, json);
     } catch {
       // Ignored
     }
+  }
+
+  /**
+   * Synchronize tenant/enterprise apps with the live production backend (GET /apps/my)
+   */
+  static async syncEnterpriseAppsWithBackend(
+    token?: string,
+    email?: string,
+  ): Promise<SaaSApp[]> {
+    const currentLocal = await this.getEnterpriseApps(email);
+    const currentPersonal = await this.getPersonalApps(email);
+    if (!token) return currentLocal;
+
+    try {
+      const baseUrl = this.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const response = await fetch(`${baseUrl}/apps/my`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const rows = await response.json();
+        if (Array.isArray(rows)) {
+          const mapped: SaaSApp[] = rows.map((r: any) => ({
+            id: r.app_id || r.id,
+            name: r.name,
+            category: (r.category as SaaSApp['category']) || 'cloud',
+            description: r.description || `${r.name} enterprise application`,
+            icon: r.icon || '🌐',
+            protocol: r.protocol || 'SAML 2.0',
+            launchUrl: r.launch_url || r.launchUrl || '',
+            assigned: r.assigned !== false,
+            inheritedViaGroup: r.inherited_via_group || undefined,
+            status: 'Approved',
+            assignedUsername: r.assigned_username || r.assignedUsername,
+            assignedPassword: r.assigned_password || r.assignedPassword,
+            targetUserId: r.user_id || r.targetUserId,
+            targetUserEmail: r.target_user_email || r.targetUserEmail,
+          }));
+
+          const mergedMap = new Map<string, SaaSApp>();
+          // Priority to backend assigned rows, while preserving local bookmarks
+          for (const app of [...mapped, ...currentLocal, ...currentPersonal]) {
+            const key = (app.name || app.id).toLowerCase().trim();
+            if (!mergedMap.has(key)) {
+              mergedMap.set(key, app);
+            }
+          }
+          const merged = Array.from(mergedMap.values());
+          await this.saveEnterpriseApps(merged, email);
+          return merged;
+        }
+      }
+    } catch {
+      // Offline fallback
+    }
+    return currentLocal;
   }
 
   /**
@@ -360,28 +557,11 @@ export class AppsStorageService {
   }
 
   static getBackendApiUrl(): string {
-    if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
-      return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
+    const configured = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : undefined;
+    if (configured && typeof configured === 'string' && configured.trim().length > 0) {
+      return configured.trim().replace(/\/$/, '');
     }
-    try {
-      // Dynamic resolution for physical mobile devices running in Expo Go:
-      // Extracts the Metro bundler's host machine IP so mobile connects to dev backend on LAN
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const Constants = require('expo-constants');
-      const hostUri =
-        Constants?.default?.expoConfig?.hostUri ||
-        Constants?.expoConfig?.hostUri ||
-        Constants?.default?.manifest2?.extra?.expoClient?.hostUri;
-      if (hostUri && typeof hostUri === 'string') {
-        const host = hostUri.split(':')[0];
-        if (host && host !== 'localhost' && host !== '127.0.0.1') {
-          return `http://${host}:3000`;
-        }
-      }
-    } catch {
-      // Non-native / headless fallback
-    }
-    return 'http://localhost:3000';
+    return 'https://backend-vanguard.onrender.com';
   }
 
   static async getConnectedApps(): Promise<UserConnectedApp[]> {
@@ -475,9 +655,13 @@ export class AppsStorageService {
   /**
    * Access Requests (SCRUM-42 & SCRUM-83: starts empty, dynamic user requests)
    */
-  static async getAccessRequests(): Promise<AppAccessRequest[]> {
+  static async getAccessRequests(email?: string): Promise<AppAccessRequest[]> {
     try {
-      const data = await getStoredItem(STORAGE_KEYS.ACCESS_REQUESTS);
+      const userKey = this.getAccessRequestsKey(email);
+      let data = await getStoredItem(userKey);
+      if (!data && email) {
+        data = await getStoredItem(STORAGE_KEYS.ACCESS_REQUESTS);
+      }
       if (data) {
         const parsed: AppAccessRequest[] = JSON.parse(data);
         const cleaned = parsed.filter(
@@ -489,6 +673,7 @@ export class AppsStorageService {
             !r.id?.startsWith('req-salesforce')
         );
         if (cleaned.length !== parsed.length) {
+          await setStoredItem(userKey, JSON.stringify(cleaned));
           await setStoredItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(cleaned));
         }
         return cleaned;
@@ -499,25 +684,96 @@ export class AppsStorageService {
     }
   }
 
-  static async saveAccessRequests(requests: AppAccessRequest[]): Promise<void> {
+  static async saveAccessRequests(requests: AppAccessRequest[], email?: string): Promise<void> {
     try {
-      await setStoredItem(STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(requests));
+      const json = JSON.stringify(requests);
+      const userKey = this.getAccessRequestsKey(email);
+      await setStoredItem(userKey, json);
+      await setStoredItem(STORAGE_KEYS.ACCESS_REQUESTS, json);
     } catch {
       // Ignored
     }
   }
 
-  static async submitAccessRequest(input: {
-    appName: string;
-    justification: string;
-    category?: AppItemCategory;
-    icon?: string;
-    userName?: string;
-    userEmail?: string;
-    department?: string;
-    role?: string;
-  }): Promise<AppAccessRequest> {
-    const requests = await this.getAccessRequests();
+  /**
+   * Synchronize access requests with backend (GET /apps/access-requests)
+   */
+  static async syncAccessRequestsWithBackend(
+    token?: string,
+    email?: string,
+  ): Promise<AppAccessRequest[]> {
+    const currentLocal = await this.getAccessRequests(email);
+    if (!token) return currentLocal;
+
+    try {
+      const baseUrl = this.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const response = await fetch(`${baseUrl}/apps/access-requests`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const rows = await response.json();
+        if (Array.isArray(rows)) {
+          const mapped: AppAccessRequest[] = rows.map((r: any) => ({
+            id: r.id,
+            userId: r.user_id || r.userId,
+            userName: r.user_name || r.userName || 'Authenticated User',
+            userEmail: r.user_email || r.userEmail || '',
+            department: r.department || 'Engineering',
+            role: r.role || 'user',
+            appName: r.app_name || r.appName,
+            protocol: r.protocol || 'SAML 2.0',
+            category: r.category || 'collaboration',
+            icon: r.icon || '🚀',
+            launchUrl: r.launch_url || r.launchUrl,
+            justification: r.justification || '',
+            status: r.status,
+            submittedAt: r.created_at || r.submittedAt || new Date().toISOString(),
+            reviewedAt: r.reviewed_at || r.reviewedAt,
+            reviewedBy: r.reviewed_by || r.reviewedBy,
+            adminNotes: r.admin_notes || r.adminNotes,
+          }));
+
+          const mergedMap = new Map<string, AppAccessRequest>();
+          for (const req of [...mapped, ...currentLocal]) {
+            if (!mergedMap.has(req.id)) {
+              mergedMap.set(req.id, req);
+            }
+          }
+          const merged = Array.from(mergedMap.values());
+          await this.saveAccessRequests(merged, email);
+          return merged;
+        }
+      }
+    } catch {
+      // Offline fallback
+    }
+    return currentLocal;
+  }
+
+  static async submitAccessRequest(
+    input: {
+      appName: string;
+      justification: string;
+      category?: AppItemCategory;
+      icon?: string;
+      userName?: string;
+      userEmail?: string;
+      department?: string;
+      role?: string;
+    },
+    token?: string,
+  ): Promise<AppAccessRequest> {
+    const requests = await this.getAccessRequests(input.userEmail);
     const newReq: AppAccessRequest = {
       id: 'req-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       userId: 'usr-' + Date.now(),
@@ -535,15 +791,42 @@ export class AppsStorageService {
     };
 
     const updated = [newReq, ...requests];
-    await this.saveAccessRequests(updated);
+    await this.saveAccessRequests(updated, input.userEmail);
+
+    if (token) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        fetch(`${baseUrl}/apps/access-requests`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            appName: input.appName,
+            justification: input.justification,
+            category: input.category || 'collaboration',
+            icon: input.icon || '🚀',
+            protocol: 'SAML 2.0',
+            deliveryMode: 'sso',
+          }),
+        }).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
+    }
+
     return newReq;
   }
 
   static async approveAccessRequest(
     id: string,
-    reviewedBy: string = 'Company Admin'
+    reviewedBy: string = 'Company Admin',
+    token?: string,
+    notes?: string,
+    email?: string,
   ): Promise<AppAccessRequest | null> {
-    const requests = await this.getAccessRequests();
+    const requests = await this.getAccessRequests(email);
     let updatedTarget: AppAccessRequest | null = null;
     const updated = requests.map((r) => {
       if (r.id === id) {
@@ -552,23 +835,43 @@ export class AppsStorageService {
           status: 'Approved' as const,
           reviewedAt: new Date().toISOString(),
           reviewedBy,
+          adminNotes: notes,
         };
         return updatedTarget;
       }
       return r;
     });
     if (updatedTarget) {
-      await this.saveAccessRequests(updated);
+      await this.saveAccessRequests(updated, email);
     }
+
+    if (token) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        fetch(`${baseUrl}/apps/access-requests/${encodeURIComponent(id)}/approve`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ adminNotes: notes }),
+        }).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
+    }
+
     return updatedTarget;
   }
 
   static async rejectAccessRequest(
     id: string,
     reviewedBy: string = 'Company Admin',
-    adminNotes?: string
+    adminNotes?: string,
+    token?: string,
+    email?: string,
   ): Promise<AppAccessRequest | null> {
-    const requests = await this.getAccessRequests();
+    const requests = await this.getAccessRequests(email);
     let updatedTarget: AppAccessRequest | null = null;
     const updated = requests.map((r) => {
       if (r.id === id) {
@@ -584,17 +887,38 @@ export class AppsStorageService {
       return r;
     });
     if (updatedTarget) {
-      await this.saveAccessRequests(updated);
+      await this.saveAccessRequests(updated, email);
     }
+
+    if (token) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        fetch(`${baseUrl}/apps/access-requests/${encodeURIComponent(id)}/reject`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ adminNotes }),
+        }).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
+    }
+
     return updatedTarget;
   }
 
   /**
    * Personal Vault Credentials (SCRUM-83: starts empty, dynamic detection)
    */
-  static async getVaultItems(): Promise<PersonalVaultItem[]> {
+  static async getVaultItems(email?: string): Promise<PersonalVaultItem[]> {
     try {
-      const data = await getStoredItem(STORAGE_KEYS.VAULT_ITEMS);
+      const userKey = this.getVaultItemsKey(email);
+      let data = await getStoredItem(userKey);
+      if (!data && email) {
+        data = await getStoredItem(STORAGE_KEYS.VAULT_ITEMS);
+      }
       if (data) {
         const parsed: PersonalVaultItem[] = JSON.parse(data);
         const legacyIds = new Set(['vault-1', 'vault-2']);
@@ -605,6 +929,7 @@ export class AppsStorageService {
             !v.username?.includes('john.design')
         );
         if (cleaned.length !== parsed.length) {
+          await setStoredItem(userKey, JSON.stringify(cleaned));
           await setStoredItem(STORAGE_KEYS.VAULT_ITEMS, JSON.stringify(cleaned));
         }
         return cleaned;
@@ -612,6 +937,17 @@ export class AppsStorageService {
       return [];
     } catch {
       return [];
+    }
+  }
+
+  static async saveVaultItems(items: PersonalVaultItem[], email?: string): Promise<void> {
+    try {
+      const json = JSON.stringify(items);
+      const userKey = this.getVaultItemsKey(email);
+      await setStoredItem(userKey, json);
+      await setStoredItem(STORAGE_KEYS.VAULT_ITEMS, json);
+    } catch {
+      // Ignored
     }
   }
 

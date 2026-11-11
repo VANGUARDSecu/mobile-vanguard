@@ -52,7 +52,11 @@ export default function SecurityScreen() {
 
           {/* User Session Card */}
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>ACTIVE CORPORATE IDENTITY</Text>
+            <Text style={styles.cardLabel}>
+              {currentUser?.accountType === 'individual'
+                ? 'ACTIVE PERSONAL IDENTITY'
+                : 'ACTIVE CORPORATE IDENTITY'}
+            </Text>
             <View style={styles.userRow}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
@@ -60,8 +64,8 @@ export default function SecurityScreen() {
                 </Text>
               </View>
               <View style={styles.userInfo}>
-                <Text style={styles.userName}>{currentUser?.name || 'Authenticated User'}</Text>
-                <Text style={styles.userEmail}>{currentUser?.email || 'N/A'}</Text>
+                <Text style={styles.userName} numberOfLines={1}>{currentUser?.name || 'Authenticated User'}</Text>
+                <Text style={styles.userEmail} numberOfLines={1}>{currentUser?.email || 'N/A'}</Text>
               </View>
               <View style={styles.activeBadge}>
                 <View style={styles.greenDot} />
@@ -109,7 +113,9 @@ export default function SecurityScreen() {
                 <View style={styles.metricDetails}>
                   <Text style={styles.metricTitle}>SSO Integrations Active</Text>
                   <Text style={styles.metricDesc}>
-                    Weyland-Yutani Corp / Acme Corp OIDC Connected
+                    {currentUser?.companyName
+                      ? `${currentUser.companyName} OIDC Connected`
+                      : 'Zero-Trust OIDC Connected'}
                   </Text>
                 </View>
               </View>
@@ -227,6 +233,8 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+    flexShrink: 1,
+    marginRight: 8,
   },
   userName: {
     color: CyberColors.textPrimary,
@@ -248,6 +256,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: CyberRadius.full,
     gap: 5,
+    flexShrink: 0,
   },
   greenDot: {
     width: 6,

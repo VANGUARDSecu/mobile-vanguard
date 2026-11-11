@@ -18,6 +18,7 @@ import {
 } from '@/models/apps.models';
 import { AppsStorageService } from '@/services/apps-storage.service';
 import { AppLauncherService } from '@/services/app-launcher.service';
+import { AuthService } from '@/services/auth.service';
 import { AuthContext } from './auth-context';
 
 interface AppsContextType {
@@ -71,12 +72,14 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+
       const [entApps, pApps, cApps, requests, vault] = await Promise.all([
-        AppsStorageService.getEnterpriseApps(),
-        AppsStorageService.getPersonalApps(),
+        AppsStorageService.getEnterpriseApps(userEmail),
+        AppsStorageService.getPersonalApps(userEmail),
         AppsStorageService.getConnectedApps(),
-        AppsStorageService.getAccessRequests(),
-        AppsStorageService.getVaultItems(),
+        AppsStorageService.getAccessRequests(userEmail),
+        AppsStorageService.getVaultItems(userEmail),
       ]);
 
       setApps(entApps);
@@ -85,7 +88,24 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       setAccessRequests(requests);
       setVaultCredentials(vault);
 
-      // Attempt live SSO connected apps sync from backend in the background for active user
+      // SCRUM-182: Await live synchronization from production backend when session token is present
+      if (token) {
+        try {
+          const [syncedApps, syncedRequests] = await Promise.all([
+            AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail),
+            AppsStorageService.syncAccessRequestsWithBackend(token, userEmail),
+          ]);
+          if (syncedApps && syncedApps.length > 0) {
+            setApps(syncedApps);
+          }
+          if (syncedRequests && syncedRequests.length > 0) {
+            setAccessRequests(syncedRequests);
+          }
+        } catch {
+          // Graceful offline fallback
+        }
+      }
+
       AppsStorageService.syncConnectedAppsWithBackend(userEmail)
         .then((synced) => {
           setConnectedApps(synced);
@@ -96,7 +116,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [userEmail]);
+  }, [currentUser, userEmail]);
 
   const syncConnectedApps = useCallback(async () => {
     try {
@@ -130,13 +150,43 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     );
   }, [currentUser]);
 
-  // SCRUM-58: Strict deduplication ensuring no application ever appears twice
+  // SCRUM-58, SCRUM-159 & SCRUM-182: Strict deduplication ensuring all active applications & approved requests render
   const activeAppsList = useMemo<SaaSApp[]>(() => {
-    const source = isPersonalWorkspace ? personalApps : apps;
+    const email = currentUser?.email?.toLowerCase().trim();
+    const uid = currentUser?.id;
+
+    // In personal workspace, display personalApps.
+    // In company workspace, display personalApps (custom shortcuts) AND enterprise tenant apps.
+    const rawSource = isPersonalWorkspace ? personalApps : [...personalApps, ...apps];
+
+    // Filter approved access requests in company workspace (SCRUM-159 parity with frontend)
+    const approvedRequests: SaaSApp[] = !isPersonalWorkspace
+      ? accessRequests
+          .filter((r) => {
+            if (r.status !== 'Approved') return false;
+            return (
+              (email && r.userEmail?.toLowerCase().trim() === email) ||
+              (uid && r.userId === uid) ||
+              (!email && !uid && r.userEmail?.includes('@vanguard.security'))
+            );
+          })
+          .map((r) => ({
+            id: r.id,
+            name: r.appName,
+            category: (r.category as SaaSApp['category']) || 'cloud',
+            description: r.justification ? `${r.appName} (${r.justification})` : `${r.appName} (Approved access)`,
+            icon: r.icon || '🚀',
+            protocol: (r.protocol as SaaSApp['protocol']) || 'SAML 2.0',
+            launchUrl: r.launchUrl || 'https://vanguard.security',
+            assigned: true,
+            status: 'Approved',
+          }))
+      : [];
+
     const seen = new Set<string>();
     const deduped: SaaSApp[] = [];
 
-    for (const app of source) {
+    for (const app of [...rawSource, ...approvedRequests]) {
       const key = (app.name || app.id || app.launchUrl).toLowerCase().trim();
       if (!seen.has(key)) {
         seen.add(key);
@@ -144,7 +194,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       }
     }
     return deduped;
-  }, [isPersonalWorkspace, personalApps, apps]);
+  }, [isPersonalWorkspace, personalApps, apps, accessRequests, currentUser]);
 
   // Category Filtering
   const filteredApps = useMemo<SaaSApp[]>(() => {
@@ -195,30 +245,37 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   }, [isCompanyAdmin, pendingAdminRequests, visibleAccessRequests]);
 
   const approveAccessRequest = useCallback(
-    async (id: string) => {
+    async (id: string, notes?: string) => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
       const updated = await AppsStorageService.approveAccessRequest(
         id,
-        currentUser?.name || 'Company Admin'
+        currentUser?.name || 'Company Admin',
+        token,
+        notes,
+        userEmail
       );
       if (updated) {
         setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
       }
     },
-    [currentUser]
+    [currentUser, userEmail]
   );
 
   const rejectAccessRequest = useCallback(
     async (id: string, notes?: string) => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
       const updated = await AppsStorageService.rejectAccessRequest(
         id,
         currentUser?.name || 'Company Admin',
-        notes
+        notes,
+        token,
+        userEmail
       );
       if (updated) {
         setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
       }
     },
-    [currentUser]
+    [currentUser, userEmail]
   );
 
   // Matching Vault Credential Detection (for Auto-Fill Ready badge)
@@ -229,18 +286,36 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [vaultCredentials]
   );
 
-  // Add Personal Application
-  const addPersonalApp = useCallback(async (input: PersonalAppInput): Promise<SaaSApp> => {
-    const created = await AppsStorageService.addPersonalApp(input);
-    setPersonalApps((prev) => [created, ...prev]);
-    return created;
-  }, []);
+  // Add Personal Application (SCRUM-182: updates both stores and syncs)
+  const addPersonalApp = useCallback(
+    async (input: PersonalAppInput): Promise<SaaSApp> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const uid = currentUser?.id;
+      const created = await AppsStorageService.addPersonalApp(input, userEmail, token, uid);
+      setPersonalApps((prev) => [
+        created,
+        ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
+      ]);
+      setApps((prev) => [
+        created,
+        ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
+      ]);
+      return created;
+    },
+    [currentUser, userEmail]
+  );
 
-  // Delete Personal Application
-  const deletePersonalApp = useCallback(async (id: string): Promise<void> => {
-    await AppsStorageService.deletePersonalApp(id);
-    setPersonalApps((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  // Delete Personal Application (SCRUM-182: updates both stores and syncs)
+  const deletePersonalApp = useCallback(
+    async (id: string): Promise<void> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const uid = currentUser?.id;
+      await AppsStorageService.deletePersonalApp(id, userEmail, token, uid);
+      setPersonalApps((prev) => prev.filter((a) => a.id !== id));
+      setApps((prev) => prev.filter((a) => a.id !== id));
+    },
+    [currentUser, userEmail]
+  );
 
   // Submit Enterprise App Access Request (dynamic active user info)
   const submitAppRequest = useCallback(
@@ -250,18 +325,22 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       category?: AppItemCategory;
       icon?: string;
     }): Promise<AppAccessRequest> => {
-      const created = await AppsStorageService.submitAccessRequest({
-        ...input,
-        userName:
-          currentUser?.name ||
-          (currentUser?.email ? currentUser.email.split('@')[0] : 'Authenticated User'),
-        userEmail: currentUser?.email || '',
-        department:
-          currentUser?.department ||
-          (currentUser?.user_metadata as any)?.['department'] ||
-          'Engineering',
-        role: currentUser?.role || 'user',
-      });
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const created = await AppsStorageService.submitAccessRequest(
+        {
+          ...input,
+          userName:
+            currentUser?.name ||
+            (currentUser?.email ? currentUser.email.split('@')[0] : 'Authenticated User'),
+          userEmail: currentUser?.email || '',
+          department:
+            currentUser?.department ||
+            (currentUser?.user_metadata as any)?.['department'] ||
+            'Engineering',
+          role: currentUser?.role || 'user',
+        },
+        token
+      );
       setAccessRequests((prev) => [created, ...prev]);
       return created;
     },

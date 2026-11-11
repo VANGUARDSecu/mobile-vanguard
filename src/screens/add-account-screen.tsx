@@ -400,18 +400,20 @@ export function AddAccountScreen({
               {/* Submit Buttons */}
               <View style={styles.submitActions}>
                 <CyberButton
-                  title="Cancel"
-                  variant="ghost"
-                  size="md"
-                  onPress={onClose}
-                />
-                <CyberButton
                   title="Save Authenticator Token ✓"
                   variant="primary"
                   size="md"
                   loading={isSubmitting}
                   onPress={handleSave}
+                  style={styles.actionBtnFull}
                   testID="submit-add-account"
+                />
+                <CyberButton
+                  title="Cancel"
+                  variant="ghost"
+                  size="md"
+                  onPress={onClose}
+                  style={styles.actionBtnFull}
                 />
               </View>
             </CyberCard>
@@ -569,11 +571,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   submitActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    flexDirection: 'column',
+    width: '100%',
     gap: 10,
-    marginTop: 10,
+    marginTop: 16,
+  },
+  actionBtnFull: {
+    width: '100%',
   },
   qrCard: {
     alignItems: 'center',

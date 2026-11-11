@@ -12,6 +12,7 @@ import { PushTestHarnessScreen } from './push-test-harness-screen';
 import pushMfaService from '@/services/push-mfa.service';
 import { PushApprovalRequest } from '@/models/push-mfa.models';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
+import vaultService from '@/services/vault.service';
 import { AuthService } from '@/services/auth.service';
 import { CyberColors } from '@/constants/cyber-theme';
 

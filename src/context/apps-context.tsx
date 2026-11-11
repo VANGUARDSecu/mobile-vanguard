@@ -300,11 +300,6 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     },
     [currentUser]
   );
-      setAccessRequests((prev) => [created, ...prev]);
-      return created;
-    },
-    [currentUser]
-  );
 
   // Disconnect Connected SSO Application
   const disconnectConnectedApp = useCallback(async (clientId: string): Promise<void> => {

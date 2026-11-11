@@ -252,20 +252,37 @@ export default function MyAppsScreen() {
               </Text>
             </View>
 
-            {/* Quick Action Button */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.primaryActionBtn,
-                pressed && styles.primaryActionBtnPressed,
-              ]}
-              onPress={handleActionPress}
-              accessibilityRole="button"
-            >
-              <Text style={styles.primaryActionBtnPlus}>+</Text>
-              <Text style={styles.primaryActionBtnText}>
-                {isPersonalWorkspace ? 'Add Application' : 'Request Application'}
-              </Text>
-            </Pressable>
+            {/* Action Buttons Row */}
+            <View style={styles.actionButtonsRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.primaryActionBtn,
+                  pressed && styles.primaryActionBtnPressed,
+                ]}
+                onPress={() => setShowAddPersonalAppModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Add Application"
+                testID="action-add-app"
+              >
+                <Text style={styles.primaryActionBtnPlus}>+</Text>
+                <Text style={styles.primaryActionBtnText}>Add Application</Text>
+              </Pressable>
+
+              {!isPersonalWorkspace ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.secondaryActionBtn,
+                    pressed && styles.secondaryActionBtnPressed,
+                  ]}
+                  onPress={() => setShowRequestAppModal(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Request Enterprise Access"
+                  testID="action-request-enterprise-app"
+                >
+                  <Text style={styles.secondaryActionBtnText}>Request Enterprise Access</Text>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
 
           {/* Company Admin Governance Console & Review Banner (SCRUM-84) */}
@@ -432,6 +449,11 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: CyberColors.textSecondary,
   },
+  actionButtonsRow: {
+    flexDirection: 'column',
+    gap: 8,
+    width: '100%',
+  },
   primaryActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -441,6 +463,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     gap: 6,
+    width: '100%',
     shadowColor: CyberColors.cyan,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
@@ -460,6 +483,27 @@ const styles = StyleSheet.create({
     color: CyberColors.textDark,
     fontSize: 14,
     fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  secondaryActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    width: '100%',
+  },
+  secondaryActionBtnPressed: {
+    opacity: 0.8,
+  },
+  secondaryActionBtnText: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
   appsList: {

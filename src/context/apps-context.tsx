@@ -18,6 +18,7 @@ import {
 } from '@/models/apps.models';
 import { AppsStorageService } from '@/services/apps-storage.service';
 import { AppLauncherService } from '@/services/app-launcher.service';
+import { AuthService } from '@/services/auth.service';
 import { AuthContext } from './auth-context';
 
 interface AppsContextType {
@@ -71,12 +72,14 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+
       const [entApps, pApps, cApps, requests, vault] = await Promise.all([
-        AppsStorageService.getEnterpriseApps(),
-        AppsStorageService.getPersonalApps(),
+        AppsStorageService.getEnterpriseApps(userEmail),
+        AppsStorageService.getPersonalApps(userEmail),
         AppsStorageService.getConnectedApps(),
-        AppsStorageService.getAccessRequests(),
-        AppsStorageService.getVaultItems(),
+        AppsStorageService.getAccessRequests(userEmail),
+        AppsStorageService.getVaultItems(userEmail),
       ]);
 
       setApps(entApps);
@@ -85,7 +88,25 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       setAccessRequests(requests);
       setVaultCredentials(vault);
 
-      // Attempt live SSO connected apps sync from backend in the background for active user
+      // Attempt live sync from backend in the background for active user
+      if (token) {
+        AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail)
+          .then((synced) => {
+            if (synced && synced.length > 0) {
+              setApps(synced);
+            }
+          })
+          .catch(() => {});
+
+        AppsStorageService.syncAccessRequestsWithBackend(token, userEmail)
+          .then((synced) => {
+            if (synced && synced.length > 0) {
+              setAccessRequests(synced);
+            }
+          })
+          .catch(() => {});
+      }
+
       AppsStorageService.syncConnectedAppsWithBackend(userEmail)
         .then((synced) => {
           setConnectedApps(synced);
@@ -96,7 +117,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [userEmail]);
+  }, [currentUser, userEmail]);
 
   const syncConnectedApps = useCallback(async () => {
     try {
@@ -195,30 +216,37 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   }, [isCompanyAdmin, pendingAdminRequests, visibleAccessRequests]);
 
   const approveAccessRequest = useCallback(
-    async (id: string) => {
+    async (id: string, notes?: string) => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
       const updated = await AppsStorageService.approveAccessRequest(
         id,
-        currentUser?.name || 'Company Admin'
+        currentUser?.name || 'Company Admin',
+        token,
+        notes,
+        userEmail
       );
       if (updated) {
         setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
       }
     },
-    [currentUser]
+    [currentUser, userEmail]
   );
 
   const rejectAccessRequest = useCallback(
     async (id: string, notes?: string) => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
       const updated = await AppsStorageService.rejectAccessRequest(
         id,
         currentUser?.name || 'Company Admin',
-        notes
+        notes,
+        token,
+        userEmail
       );
       if (updated) {
         setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
       }
     },
-    [currentUser]
+    [currentUser, userEmail]
   );
 
   // Matching Vault Credential Detection (for Auto-Fill Ready badge)
@@ -231,16 +259,17 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   // Add Personal Application
   const addPersonalApp = useCallback(async (input: PersonalAppInput): Promise<SaaSApp> => {
-    const created = await AppsStorageService.addPersonalApp(input);
+    const created = await AppsStorageService.addPersonalApp(input, userEmail);
     setPersonalApps((prev) => [created, ...prev]);
     return created;
-  }, []);
+  }, [userEmail]);
 
   // Delete Personal Application
   const deletePersonalApp = useCallback(async (id: string): Promise<void> => {
-    await AppsStorageService.deletePersonalApp(id);
+    await AppsStorageService.deletePersonalApp(id, userEmail);
     setPersonalApps((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+    setApps((prev) => prev.filter((a) => a.id !== id));
+  }, [userEmail]);
 
   // Submit Enterprise App Access Request (dynamic active user info)
   const submitAppRequest = useCallback(
@@ -250,18 +279,27 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       category?: AppItemCategory;
       icon?: string;
     }): Promise<AppAccessRequest> => {
-      const created = await AppsStorageService.submitAccessRequest({
-        ...input,
-        userName:
-          currentUser?.name ||
-          (currentUser?.email ? currentUser.email.split('@')[0] : 'Authenticated User'),
-        userEmail: currentUser?.email || '',
-        department:
-          currentUser?.department ||
-          (currentUser?.user_metadata as any)?.['department'] ||
-          'Engineering',
-        role: currentUser?.role || 'user',
-      });
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const created = await AppsStorageService.submitAccessRequest(
+        {
+          ...input,
+          userName:
+            currentUser?.name ||
+            (currentUser?.email ? currentUser.email.split('@')[0] : 'Authenticated User'),
+          userEmail: currentUser?.email || '',
+          department:
+            currentUser?.department ||
+            (currentUser?.user_metadata as any)?.['department'] ||
+            'Engineering',
+          role: currentUser?.role || 'user',
+        },
+        token
+      );
+      setAccessRequests((prev) => [created, ...prev]);
+      return created;
+    },
+    [currentUser]
+  );
       setAccessRequests((prev) => [created, ...prev]);
       return created;
     },

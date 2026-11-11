@@ -26,8 +26,9 @@ export function AppCard({
   onDelete,
   style,
 }: AppCardProps) {
-  const isAutoFillReady = isPersonalWorkspace && matchingVaultCredentials.length > 0;
+  const isAutoFillReady = Boolean(app.assignedUsername) || (matchingVaultCredentials.length > 0);
   const isCurrentlyConnected = app.isIntegrated || app.connectionStatus === 'Currently Connected';
+  const linkedAccount = app.assignedUsername || matchingVaultCredentials[0]?.username || matchingVaultCredentials[0]?.title;
 
   return (
     <View style={[styles.card, style]}>
@@ -41,6 +42,12 @@ export function AppCard({
           {app.inheritedViaGroup && (
             <View style={styles.groupBadge}>
               <Text style={styles.groupBadgeText}>👥 {app.inheritedViaGroup}</Text>
+            </View>
+          )}
+
+          {app.status === 'Approved' && (
+            <View style={styles.approvedBadge}>
+              <Text style={styles.approvedBadgeText}>✓ Approved</Text>
             </View>
           )}
 
@@ -61,7 +68,7 @@ export function AppCard({
             <Text style={styles.protocolBadgeText}>{app.protocol || 'SAML 2.0'}</Text>
           </View>
 
-          {isPersonalWorkspace && onDelete && (
+          {onDelete && (
             <Pressable
               style={({ pressed }) => [styles.deleteBtn, pressed && styles.deleteBtnPressed]}
               onPress={() => onDelete(app.id)}
@@ -86,13 +93,13 @@ export function AppCard({
       </View>
 
       {/* Linked Vault Credential Preview */}
-      {isAutoFillReady && (
+      {linkedAccount ? (
         <View style={styles.vaultMetaRow}>
           <Text style={styles.vaultMetaText} numberOfLines={1}>
-            🔑 Linked: {matchingVaultCredentials[0].username || matchingVaultCredentials[0].title}
+            🔑 Account: {linkedAccount}
           </Text>
         </View>
-      )}
+      ) : null}
 
       {/* Launch Action Button */}
       <Pressable
@@ -162,6 +169,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#a5b4fc',
+  },
+  approvedBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: CyberRadius.full,
+  },
+  approvedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#34d399',
   },
   autofillBadge: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',

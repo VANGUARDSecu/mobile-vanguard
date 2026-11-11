@@ -124,9 +124,28 @@ export class VaultService {
   private isLockedState = false;
   private lockTimer: ReturnType<typeof setTimeout> | null = null;
   private storageError: string | null = null;
+  private currentUserEmail: string | null = null;
 
   constructor(customProvider?: ISecureStorageProvider) {
     this.secureStorage = customProvider || createDefaultSecureProvider();
+  }
+
+  /**
+   * Scopes the encrypted vault payload to the active user's identity
+   */
+  setCurrentUserEmail(email?: string | null): void {
+    const clean = email?.trim().toLowerCase() || null;
+    if (clean !== this.currentUserEmail) {
+      this.currentUserEmail = clean;
+      this.isInitialized = false;
+      this.memoryCache = [];
+    }
+  }
+
+  private getVaultPayloadKey(): string {
+    return this.currentUserEmail
+      ? `@vanguard:encrypted_totp_vault_${this.currentUserEmail}`
+      : SECURE_VAULT_PAYLOAD_KEY;
   }
 
   /**
@@ -228,7 +247,11 @@ export class VaultService {
       this.masterKey = key;
 
       // 2. Retrieve encrypted vault envelope
-      const rawEnvelope = await this.secureStorage.getItemAsync(SECURE_VAULT_PAYLOAD_KEY);
+      const payloadKey = this.getVaultPayloadKey();
+      let rawEnvelope = await this.secureStorage.getItemAsync(payloadKey);
+      if (!rawEnvelope && this.currentUserEmail) {
+        rawEnvelope = await this.secureStorage.getItemAsync(SECURE_VAULT_PAYLOAD_KEY);
+      }
 
       if (rawEnvelope) {
         const envelope: EncryptedVaultEnvelope = JSON.parse(rawEnvelope);
@@ -269,7 +292,10 @@ export class VaultService {
     const plaintext = JSON.stringify(accounts);
     const envelope = await AesGcmService.encrypt(plaintext, this.masterKey);
 
-    await this.secureStorage.setItemAsync(SECURE_VAULT_PAYLOAD_KEY, JSON.stringify(envelope));
+    const payloadKey = this.getVaultPayloadKey();
+    const jsonEnvelope = JSON.stringify(envelope);
+    await this.secureStorage.setItemAsync(payloadKey, jsonEnvelope);
+    await this.secureStorage.setItemAsync(SECURE_VAULT_PAYLOAD_KEY, jsonEnvelope);
   }
 
   /**

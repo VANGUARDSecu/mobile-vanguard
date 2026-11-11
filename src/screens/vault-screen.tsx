@@ -24,6 +24,7 @@ import {
 import { TotpAccount } from '@/models/vault.models';
 import vaultService from '@/services/vault.service';
 import { TotpEngine } from '@/services/totp-engine.service';
+import { AuthService } from '@/services/auth.service';
 
 export interface VaultScreenProps {
   onSelectAccount?: (account: TotpAccount) => void;
@@ -48,6 +49,10 @@ export function VaultScreen({
 
   const loadAccounts = useCallback(async () => {
     try {
+      const user = await AuthService.getCurrentUser();
+      if (user?.email) {
+        vaultService.setCurrentUserEmail(user.email);
+      }
       const data = await vaultService.getAccounts();
       setAccounts(data);
     } catch {
@@ -174,16 +179,6 @@ export function VaultScreen({
                     <Text style={styles.iconBtnText}>⚙️</Text>
                   </TouchableOpacity>
                 ) : null}
-
-                {onAddAccount ? (
-                  <CyberButton
-                    title="+ Add Token"
-                    variant="primary"
-                    size="sm"
-                    onPress={onAddAccount}
-                    testID="vault-add-button"
-                  />
-                ) : null}
               </View>
             </View>
 
@@ -204,6 +199,19 @@ export function VaultScreen({
                 ]}
               />
             </View>
+
+            {/* Prominent Responsive Add Token Button */}
+            {onAddAccount ? (
+              <View style={styles.addTokenRow}>
+                <CyberButton
+                  title="+ Add Authenticator Token"
+                  variant="primary"
+                  size="md"
+                  onPress={onAddAccount}
+                  testID="vault-add-button"
+                />
+              </View>
+            ) : null}
           </CyberCard>
 
           {/* Search Input */}
@@ -252,15 +260,16 @@ export function VaultScreen({
                   variant="outline"
                   size="md"
                   onPress={() => setShowManualModal(true)}
+                  style={styles.emptyActionBtn}
                   testID="vault-empty-manual-entry-button"
                 />
                 {onAddAccount ? (
                   <CyberButton
-                    title="+ Add Token"
+                    title="+ Add Authenticator Token"
                     variant="primary"
                     size="md"
                     onPress={onAddAccount}
-                    style={styles.emptyAddBtn}
+                    style={styles.emptyActionBtn}
                     testID="vault-empty-add-button"
                   />
                 ) : null}
@@ -489,6 +498,10 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 2,
   },
+  addTokenRow: {
+    marginTop: 12,
+    width: '100%',
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -644,9 +657,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   emptyActionsRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
+    width: '100%',
     gap: 10,
-    marginTop: 12,
+    marginTop: 14,
+  },
+  emptyActionBtn: {
+    width: '100%',
   },
   toastContainer: {
     position: 'absolute',

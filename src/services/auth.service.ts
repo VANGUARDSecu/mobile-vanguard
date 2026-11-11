@@ -881,6 +881,18 @@ export class AuthService {
     );
   }
 
+  static async getAccessToken(): Promise<string | null> {
+    try {
+      if (AsyncStorage && typeof AsyncStorage.getItem === 'function') {
+        const token = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+        if (token) return token;
+      }
+    } catch {
+      // In-memory fallback
+    }
+    return memoryAuthStore.get(AUTH_STORAGE_KEYS.ACCESS_TOKEN) ?? null;
+  }
+
   /**
    * Saves the user session to local storage
    */

@@ -55,6 +55,7 @@ export function AuthenticatorNavigator({
     // Auto-discover user session and start polling backend for pending SSO pushes (SCRUM-85)
     AuthService.getCurrentUser().then((user) => {
       if (isMounted && user?.email) {
+        vaultService.setCurrentUserEmail(user.email);
         pushMfaService.startPolling(user.email);
       }
     }).catch(() => {});

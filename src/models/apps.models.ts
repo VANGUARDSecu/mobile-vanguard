@@ -17,6 +17,10 @@ export interface SaaSApp {
   isIntegrated?: boolean;
   connectedUrl?: string;
   connectionStatus?: string;
+  assignedUsername?: string;
+  assignedPassword?: string;
+  targetUserId?: string;
+  targetUserEmail?: string;
 }
 
 export interface UserConnectedApp {
@@ -77,6 +81,8 @@ export interface PersonalAppInput {
   launchUrl: string;
   description?: string;
   icon?: string;
+  username?: string;
+  password?: string;
 }
 
 export const ENTERPRISE_APP_SUGGESTIONS = [

@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   PushApprovalRequest,
   PushApprovalResult,
@@ -170,6 +171,22 @@ export class PushMfaService {
     }
   }
 
+  private async buildAuthHeaders(includeJson = false): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {};
+    if (includeJson) {
+      headers['Content-Type'] = 'application/json';
+    }
+    try {
+      const token = await AsyncStorage?.getItem?.('@vanguard_auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    } catch {
+      // Ignore storage lookup failures in headless test contexts
+    }
+    return headers;
+  }
+
   /**
    * Fetches active pending push challenges from backend-vanguard (SCRUM-85)
    */
@@ -181,7 +198,8 @@ export class PushMfaService {
     }
     try {
       const url = `${getApiBaseUrl()}/oauth/mfa/push/pending?email=${encodeURIComponent(targetEmail)}`;
-      const response = await fetch(url);
+      const headers = await this.buildAuthHeaders();
+      const response = await fetch(url, { headers });
       if (!response.ok) return null;
       const data = await response.json();
       if (data && data.activeRequest) {
@@ -233,9 +251,10 @@ export class PushMfaService {
   public async syncPreference(email: string, enabled: boolean): Promise<boolean> {
     try {
       const url = `${getApiBaseUrl()}/oauth/mfa/push/preference`;
+      const headers = await this.buildAuthHeaders(true);
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ email, enabled }),
       });
       return res.ok;
@@ -402,9 +421,10 @@ export class PushMfaService {
     biometricVerified: boolean;
   }): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
+      const headers = await this.buildAuthHeaders(true);
       const res = await fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
       });
       if (res.ok) {
@@ -454,14 +474,16 @@ export class PushMfaService {
 
     // Dispatch rejection to backend-vanguard if live challenge
     if (id.startsWith('push_mfa_')) {
-      fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challengeId: id,
-          action: isFraud ? 'fraud_reported' : 'denied',
+      void this.buildAuthHeaders(true).then((headers) =>
+        fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            challengeId: id,
+            action: isFraud ? 'fraud_reported' : 'denied',
+          }),
         }),
-      }).catch(() => {});
+      ).catch(() => {});
     }
 
     return {

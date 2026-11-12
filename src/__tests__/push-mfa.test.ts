@@ -475,4 +475,74 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
       }
     }
   );
+
+  await t.test(
+    '14. pairDevice, listPairedDevices, triggerDeviceTestPush, and unlinkPairedDevice call real backend endpoints (SCRUM-183)',
+    async () => {
+      initService();
+      const originalFetch = globalThis.fetch;
+      const calls: { url: string; method: string; body?: any }[] = [];
+
+      globalThis.fetch = (async (url: string | URL | Request, options?: RequestInit) => {
+        const urlStr = url.toString();
+        const method = options?.method || 'GET';
+        const body = options?.body ? JSON.parse(options.body as string) : undefined;
+        calls.push({ url: urlStr, method, body });
+
+        if (urlStr.includes('/oauth/devices/pair')) {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              pairedEmail: 'emp@company.com',
+              device: { id: 'dev-mob-1', name: 'Pixel 9', pairingKey: body.pairingKey },
+            }),
+          } as any;
+        }
+        if (urlStr.endsWith('/oauth/mfa/push/test')) {
+          return {
+            ok: true,
+            json: async () => ({ success: true, challengeId: 'push_test_99' }),
+          } as any;
+        }
+        if (urlStr.includes('/oauth/devices/dev-mob-1')) {
+          return { ok: true, json: async () => ({ success: true }) } as any;
+        }
+        if (urlStr.includes('/oauth/devices?')) {
+          return {
+            ok: true,
+            json: async () => ({ success: true, devices: [{ id: 'dev-mob-1', name: 'Pixel 9' }] }),
+          } as any;
+        }
+        return { ok: false, json: async () => ({}) } as any;
+      }) as any;
+
+      try {
+        const pairRes = await service.pairDevice({
+          pairingKey: 'VG-1111-2222',
+          deviceName: 'Pixel 9',
+          email: 'emp@company.com',
+        });
+        assert.equal(pairRes.success, true);
+        assert.equal(pairRes.device?.id, 'dev-mob-1');
+
+        const listRes = await service.listPairedDevices('emp@company.com');
+        assert.equal(listRes.ok, true);
+        assert.equal(listRes.devices.length, 1);
+
+        const pushRes = await service.triggerDeviceTestPush({
+          email: 'emp@company.com',
+          deviceId: 'dev-mob-1',
+        });
+        assert.equal(pushRes.success, true);
+        assert.equal(pushRes.challengeId, 'push_test_99');
+
+        const unlinkRes = await service.unlinkPairedDevice('dev-mob-1', 'emp@company.com');
+        assert.equal(unlinkRes, true);
+        assert.equal(calls.length, 4);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
 });

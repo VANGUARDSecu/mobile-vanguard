@@ -22,9 +22,13 @@ import pushMfaService from '@/services/push-mfa.service';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
 import { AppsStorageService } from '@/services/apps-storage.service';
 
-const PAIRED_DEVICE_STORAGE_KEY = 'vanguard_paired_device_info';
+const getPairedDeviceStorageKey = (email?: string | null): string => {
+  const clean = email?.trim().toLowerCase();
+  return clean ? `vanguard_paired_device_info_${clean}` : 'vanguard_paired_device_info';
+};
 
 export interface PairedDeviceMetadata {
+  id?: string;
   pairingKey: string;
   pairedAt: string;
   deviceName: string;
@@ -60,17 +64,19 @@ export default function DevicesScreen() {
   const [pushHistory, setPushHistory] = useState<PushApprovalRequest[]>([]);
   const [isTriggeringTestPush, setIsTriggeringTestPush] = useState(false);
 
-  // Load hardware attestation, pairing status, and push history on mount
+  // Load hardware attestation, pairing status, and push history on mount/account switch
   useEffect(() => {
     let isMounted = true;
+    const storageKey = getPairedDeviceStorageKey(currentUser?.email);
 
     // Load initial biometrics
     biometricService.checkAvailability().then((info) => {
       if (isMounted) setBiometricInfo(info);
     });
 
-    // Load paired device from local storage
-    AsyncStorage.getItem(PAIRED_DEVICE_STORAGE_KEY)
+    // Load paired device from user-scoped local storage first
+    setPairedDevice(null);
+    AsyncStorage.getItem(storageKey)
       .then((raw) => {
         if (isMounted && raw) {
           try {
@@ -79,6 +85,29 @@ export default function DevicesScreen() {
         }
       })
       .catch(() => {});
+
+    // Authoritative sync with backend paired devices
+    if (currentUser?.email) {
+      pushMfaService.listPairedDevices(currentUser.email).then((res) => {
+        if (!isMounted || !res.ok) return;
+        if (res.devices.length > 0) {
+          const d = res.devices[0];
+          const synced: PairedDeviceMetadata = {
+            id: d.id,
+            pairingKey: d.pairingKey || 'PAIRED',
+            pairedAt: d.enrolledAt || new Date().toISOString(),
+            deviceName: d.name || 'Vanguard Companion',
+            platform: d.osVersion || `${Platform.OS.toUpperCase()}`,
+            biometricType: d.biometricType || biometricInfo.biometricType,
+          };
+          setPairedDevice(synced);
+          void AsyncStorage.setItem(storageKey, JSON.stringify(synced));
+        } else {
+          setPairedDevice(null);
+          void AsyncStorage.removeItem(storageKey);
+        }
+      });
+    }
 
     // Subscribe to Push MFA service
     const unsubscribe = pushMfaService.subscribe((req) => {
@@ -93,6 +122,14 @@ export default function DevicesScreen() {
     // Start background push polling for active user
     if (currentUser?.email) {
       pushMfaService.startPolling(currentUser.email);
+    }
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+      pushMfaService.stopPolling();
+    };
+  }, [currentUser?.email]);
     }
 
     return () => {
@@ -119,7 +156,6 @@ export default function DevicesScreen() {
       return;
     }
 
-    // Accept standard Vanguard pairing keys (e.g. VG-XXXX-XXXX or alphanumeric tokens)
     if (rawKey.length < 6) {
       setPairingError('Invalid key length. Keys follow the format VG-XXXX-XXXX or token.');
       return;
@@ -130,28 +166,48 @@ export default function DevicesScreen() {
     setPairingSuccess(null);
 
     try {
-      // Sync push MFA enrollment preference to backend
+      const defaultName =
+        Platform.OS === 'android'
+          ? 'Android Companion Device'
+          : Platform.OS === 'ios'
+          ? 'Apple iOS Companion'
+          : 'Web Mobile Companion';
+      const defaultType =
+        Platform.OS === 'android' ? 'Mobile Android' : 'Mobile iOS';
+      const osVersion = `${Platform.OS.toUpperCase()} (SDK ${Platform.Version || '22'})`;
+
+      const res = await pushMfaService.pairDevice({
+        pairingKey: rawKey,
+        deviceName: defaultName,
+        deviceType: defaultType,
+        model: 'Vanguard Mobile Authenticator',
+        osVersion,
+        biometricType: biometricInfo.biometricType,
+        email: currentUser?.email,
+      });
+
+      if (!res.success || !res.device) {
+        setPairingError(res.error || 'Failed to complete device pairing. Verify pairing key and retry.');
+        return;
+      }
+
       if (currentUser?.email) {
-        await pushMfaService.syncPreference(currentUser.email, true);
+        await pushMfaService.syncPreference(currentUser.email, true).catch(() => {});
       }
 
       const deviceMeta: PairedDeviceMetadata = {
+        id: res.device.id,
         pairingKey: rawKey,
-        pairedAt: new Date().toISOString(),
-        deviceName:
-          Platform.OS === 'android'
-            ? 'Android Companion Device'
-            : Platform.OS === 'ios'
-            ? 'Apple iOS Companion'
-            : 'Web Mobile Companion',
-        platform: `${Platform.OS.toUpperCase()} (SDK ${Platform.Version || '22'})`,
-        biometricType: biometricInfo.biometricType,
+        pairedAt: res.device.enrolledAt || new Date().toISOString(),
+        deviceName: res.device.name || defaultName,
+        platform: res.device.osVersion || osVersion,
+        biometricType: res.device.biometricType || biometricInfo.biometricType,
       };
 
-      await AsyncStorage.setItem(PAIRED_DEVICE_STORAGE_KEY, JSON.stringify(deviceMeta));
+      await AsyncStorage.setItem(getPairedDeviceStorageKey(currentUser?.email), JSON.stringify(deviceMeta));
       setPairedDevice(deviceMeta);
       setPairingKeyInput('');
-      setPairingSuccess('Mobile device successfully enrolled and linked to Vanguard Dashboard!');
+      setPairingSuccess('Mobile device successfully paired with Vanguard Dashboard!');
     } catch {
       setPairingError('Failed to complete device pairing. Please check your connection.');
     } finally {
@@ -163,7 +219,10 @@ export default function DevicesScreen() {
     const confirmAction = () => {
       (async () => {
         try {
-          await AsyncStorage.removeItem(PAIRED_DEVICE_STORAGE_KEY);
+          if (pairedDevice?.id) {
+            await pushMfaService.unlinkPairedDevice(pairedDevice.id, currentUser?.email);
+          }
+          await AsyncStorage.removeItem(getPairedDeviceStorageKey(currentUser?.email));
           setPairedDevice(null);
           setPairingSuccess(null);
           if (currentUser?.email) {
@@ -191,13 +250,27 @@ export default function DevicesScreen() {
     }
   };
 
-  const handleTriggerTestPush = () => {
+  const handleTriggerTestPush = async () => {
+    if (!pairedDevice || !currentUser?.email) {
+      setPairingError('Pair your mobile device with your Vanguard web dashboard before triggering a test push.');
+      return;
+    }
+
     setIsTriggeringTestPush(true);
-    // Triggers local number-matching verification modal
-    pushMfaService.triggerPreset('preset-vpn-gateway');
-    setTimeout(() => {
+    try {
+      const res = await pushMfaService.triggerDeviceTestPush({
+        email: currentUser.email,
+        deviceId: pairedDevice.id,
+        deviceName: pairedDevice.deviceName,
+      });
+      if (!res.success) {
+        setPairingError(res.error || 'Failed to dispatch test push notification.');
+        return;
+      }
+      await pushMfaService.fetchPendingPush(currentUser.email);
+    } finally {
       setIsTriggeringTestPush(false);
-    }, 400);
+    }
   };
 
   const handleApprovePush = async (options: { biometricVerified: boolean; selectedCode?: number }) => {

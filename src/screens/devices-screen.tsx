@@ -130,13 +130,6 @@ export default function DevicesScreen() {
       pushMfaService.stopPolling();
     };
   }, [currentUser?.email]);
-    }
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, [currentUser?.email]);
 
   const handleRefreshAttestation = async () => {
     setIsRefreshingAttestation(true);

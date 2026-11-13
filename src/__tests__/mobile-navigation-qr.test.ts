@@ -291,3 +291,51 @@ test('AppsStorageService.getBackendApiUrl avoids dead Render placeholder and res
     }
   }
 });
+
+test('AppsStorageService resolves primary and secondary Supabase keys from .env and builds Google OAuth URL', async () => {
+  const prevUrl = process.env.SUPABASE_URL;
+  const prevKey = process.env.SUPABASE_KEY;
+  const prevSecUrl = process.env.SUPABASE_URL_SECOND;
+  const prevSecKey = process.env.SUPABASE_KEY_SECOND;
+
+  try {
+    process.env.SUPABASE_URL = 'https://jvvidkrwrqhlshnpufdd.supabase.co/';
+    process.env.SUPABASE_KEY = 'sb_publishable_M44OcaVK3zxBqdy1Sj4SzQ_0FHQCzU5';
+    process.env.SUPABASE_URL_SECOND = 'https://pqerfqomwujdyrfbnmer.supabase.co/';
+    process.env.SUPABASE_KEY_SECOND = 'sb_publishable_Q70rh6zz4fgr81rguy-dvw_q5iZFnxU';
+
+    assert.equal(
+      AppsStorageService.getSupabaseUrl(),
+      'https://jvvidkrwrqhlshnpufdd.supabase.co'
+    );
+    assert.equal(
+      AppsStorageService.getSupabasePublishableKey(),
+      'sb_publishable_M44OcaVK3zxBqdy1Sj4SzQ_0FHQCzU5'
+    );
+    assert.equal(
+      AppsStorageService.getSecondarySupabaseUrl(),
+      'https://pqerfqomwujdyrfbnmer.supabase.co'
+    );
+    assert.equal(
+      AppsStorageService.getSecondarySupabasePublishableKey(),
+      'sb_publishable_Q70rh6zz4fgr81rguy-dvw_q5iZFnxU'
+    );
+
+    const oauthUrl = await AuthService.getGoogleOAuthUrl('mobilevanguard://login');
+    assert.ok(
+      oauthUrl.startsWith('https://jvvidkrwrqhlshnpufdd.supabase.co/auth/v1/authorize')
+    );
+    assert.ok(oauthUrl.includes('provider=google'));
+    assert.ok(oauthUrl.includes('redirect_to=mobilevanguard%3A%2F%2Flogin'));
+    assert.ok(oauthUrl.includes('prompt=select_account'));
+  } finally {
+    if (prevUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.SUPABASE_KEY;
+    else process.env.SUPABASE_KEY = prevKey;
+    if (prevSecUrl === undefined) delete process.env.SUPABASE_URL_SECOND;
+    else process.env.SUPABASE_URL_SECOND = prevSecUrl;
+    if (prevSecKey === undefined) delete process.env.SUPABASE_KEY_SECOND;
+    else process.env.SUPABASE_KEY_SECOND = prevSecKey;
+  }
+});

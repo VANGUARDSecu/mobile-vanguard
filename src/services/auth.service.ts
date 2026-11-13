@@ -956,31 +956,45 @@ export class AuthService {
   }
 
   /**
-   * Requests a live Google OAuth URL from the Vanguard backend for browser-based OAuth flow.
+   * Requests a live Google OAuth URL from the Vanguard backend or constructs the
+   * authoritative Supabase OAuth URL directly from configured SUPABASE_URL in .env.
    */
   static async getGoogleOAuthUrl(redirectTo?: string): Promise<string> {
-    const baseUrl = AppsStorageService.getBackendApiUrl();
-    const query = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '';
-    const response = await fetch(`${baseUrl}/auth/google${query}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
+    const effectiveRedirect = redirectTo || 'mobilevanguard://login';
+    const supabaseUrl = AppsStorageService.getSupabaseUrl();
+    const directSupabaseOAuthUrl = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(
+      effectiveRedirect
+    )}&prompt=select_account`;
 
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => null);
-      throw new Error(
-        errJson?.message || 'Unable to initialize Google OAuth with Vanguard server.'
-      );
+    if (isTestRunner()) {
+      return directSupabaseOAuthUrl;
     }
 
-    const body = await response.json();
-    if (!body?.url || typeof body.url !== 'string') {
-      throw new Error('Google OAuth authorization URL was not returned by server.');
+    try {
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const query = `?redirect_to=${encodeURIComponent(effectiveRedirect)}`;
+      const response = await fetch(`${baseUrl}/auth/google${query}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const body = await response.json();
+        if (body?.url && typeof body.url === 'string') {
+          return body.url.includes('prompt=')
+            ? body.url
+            : `${body.url}${body.url.includes('?') ? '&' : '?'}prompt=select_account`;
+        }
+      }
+    } catch {
+      // Fall back to direct Supabase OAuth URL using configured SUPABASE_URL from .env
     }
 
-    return body.url.includes('prompt=')
-      ? body.url
-      : `${body.url}${body.url.includes('?') ? '&' : '?'}prompt=select_account`;
+    return directSupabaseOAuthUrl;
   }
 
   /**

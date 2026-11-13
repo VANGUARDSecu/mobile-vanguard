@@ -568,6 +568,50 @@ export class AppsStorageService {
     return 'http://127.0.0.1:3000';
   }
 
+  static getSupabaseUrl(): string {
+    const configured =
+      typeof process !== 'undefined'
+        ? process.env?.EXPO_PUBLIC_SUPABASE_URL || process.env?.SUPABASE_URL
+        : undefined;
+    if (configured && typeof configured === 'string' && configured.trim().length > 0) {
+      return configured.trim().replace(/\/$/, '');
+    }
+    return 'https://jvvidkrwrqhlshnpufdd.supabase.co';
+  }
+
+  static getSupabasePublishableKey(): string {
+    const configured =
+      typeof process !== 'undefined'
+        ? process.env?.EXPO_PUBLIC_SUPABASE_KEY || process.env?.SUPABASE_KEY
+        : undefined;
+    if (configured && typeof configured === 'string' && configured.trim().length > 0) {
+      return configured.trim();
+    }
+    return 'sb_publishable_M44OcaVK3zxBqdy1Sj4SzQ_0FHQCzU5';
+  }
+
+  static getSecondarySupabaseUrl(): string {
+    const configured =
+      typeof process !== 'undefined'
+        ? process.env?.EXPO_PUBLIC_SUPABASE_URL_SECOND || process.env?.SUPABASE_URL_SECOND
+        : undefined;
+    if (configured && typeof configured === 'string' && configured.trim().length > 0) {
+      return configured.trim().replace(/\/$/, '');
+    }
+    return 'https://pqerfqomwujdyrfbnmer.supabase.co';
+  }
+
+  static getSecondarySupabasePublishableKey(): string {
+    const configured =
+      typeof process !== 'undefined'
+        ? process.env?.EXPO_PUBLIC_SUPABASE_KEY_SECOND || process.env?.SUPABASE_KEY_SECOND
+        : undefined;
+    if (configured && typeof configured === 'string' && configured.trim().length > 0) {
+      return configured.trim();
+    }
+    return 'sb_publishable_Q70rh6zz4fgr81rguy-dvw_q5iZFnxU';
+  }
+
   static async getConnectedApps(): Promise<UserConnectedApp[]> {
     try {
       const data = await getStoredItem(STORAGE_KEYS.CONNECTED_APPS);

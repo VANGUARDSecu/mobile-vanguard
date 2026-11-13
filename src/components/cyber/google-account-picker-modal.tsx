@@ -18,6 +18,7 @@ import {
   type GoogleAccountProfile,
 } from '@/services/auth.service';
 import { parseGoogleOAuthCallbackUrl } from '@/utils/registration-wizard';
+import { GoogleLogo } from './google-logo';
 
 export interface GoogleAccountPickerModalProps {
   visible: boolean;
@@ -27,9 +28,9 @@ export interface GoogleAccountPickerModalProps {
 }
 
 /**
- * Interactive Google Account Chooser popup modal for mobile authentication.
- * Displays saved Google accounts on the device, supports adding another Google account,
- * and supports launching live Google Browser OAuth via expo-web-browser.
+ * Google Account Chooser popup modal for mobile authentication.
+ * Contains zero hardcoded accounts: lists only the user's own previously used Gmail accounts
+ * on this device, lets the user enter their Gmail account, or launches Google Browser OAuth.
  */
 export function GoogleAccountPickerModal({
   visible,
@@ -54,7 +55,7 @@ export function GoogleAccountPickerModal({
         if (isMounted) {
           setAccounts(list);
           setErrorText(null);
-          setShowAddAccount(false);
+          setShowAddAccount(list.length === 0);
         }
       })
       .catch(() => {});
@@ -78,10 +79,22 @@ export function GoogleAccountPickerModal({
     }
   };
 
+  const handleRemoveSavedAccount = async (emailToRemove: string) => {
+    await AuthService.removeSavedGoogleAccount(emailToRemove);
+    const updated = await AuthService.getSavedGoogleAccounts();
+    setAccounts(updated);
+    if (updated.length === 0) {
+      setShowAddAccount(true);
+    }
+  };
+
   const handleSubmitCustomAccount = async () => {
     const cleanEmail = customEmail.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
-      setErrorText('Please enter a valid Google email address (e.g. you@gmail.com).');
+    const isGmail =
+      cleanEmail.endsWith('@gmail.com') || cleanEmail.endsWith('@googlemail.com');
+
+    if (!cleanEmail || !isGmail) {
+      setErrorText('Please enter your valid Gmail address (@gmail.com).');
       return;
     }
 
@@ -92,14 +105,13 @@ export function GoogleAccountPickerModal({
         .split(/[._-]/)
         .filter(Boolean)
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ') ||
-      'Google User';
+        .join(' ');
 
     const parts = resolvedName.split(' ');
     await handleChooseAccount({
       email: cleanEmail,
       name: resolvedName,
-      firstName: parts[0] || 'Google',
+      firstName: parts[0] || cleanEmail.split('@')[0],
       lastName: parts.slice(1).join(' '),
       accountType: customAccountType,
     });
@@ -113,8 +125,9 @@ export function GoogleAccountPickerModal({
       const oauthUrl = await AuthService.getGoogleOAuthUrl(redirectUri);
       if (!oauthUrl) {
         setErrorText(
-          'Live Google OAuth redirect is offline. Select one of the Google accounts above or tap "Use another account".'
+          'Browser OAuth redirect is unavailable. Enter your Gmail address below to continue.'
         );
+        setShowAddAccount(true);
         return;
       }
 
@@ -127,12 +140,14 @@ export function GoogleAccountPickerModal({
         }
       }
       setErrorText(
-        'Browser OAuth did not return a session token. Select a Google account from the list above to continue.'
+        'Browser OAuth did not complete. Enter your Gmail address below to continue.'
       );
+      setShowAddAccount(true);
     } catch {
       setErrorText(
-        'Could not complete browser OAuth. Select a Google account from the list above to continue.'
+        'Could not complete browser OAuth. Enter your Gmail address below to continue.'
       );
+      setShowAddAccount(true);
     } finally {
       setIsBusy(false);
     }
@@ -155,13 +170,17 @@ export function GoogleAccountPickerModal({
     >
       <View style={styles.backdrop}>
         <View style={styles.sheet} testID="google-account-picker-modal">
-          {/* Google Header */}
+          {/* Official 4-Color Google Header */}
           <View style={styles.header}>
             <View style={styles.googleLogoBadge}>
-              <Text style={styles.googleG}>G</Text>
+              <GoogleLogo size={24} />
             </View>
             <Text style={styles.headerBrand}>Sign in with Google</Text>
-            <Text style={styles.headerTitle}>{title}</Text>
+            <Text style={styles.headerTitle}>
+              {showAddAccount && accounts.length === 0
+                ? 'Use your Google Account'
+                : title}
+            </Text>
             <Text style={styles.headerSubtitle}>
               to continue to <Text style={styles.brandHighlight}>Vanguard Security</Text>
             </Text>
@@ -177,38 +196,48 @@ export function GoogleAccountPickerModal({
             style={styles.accountsScroll}
             keyboardShouldPersistTaps="handled"
           >
-            {!showAddAccount ? (
+            {!showAddAccount && accounts.length > 0 ? (
               <>
                 {accounts.map((acc) => (
-                  <Pressable
-                    key={acc.email}
-                    style={({ pressed }) => [
-                      styles.accountRow,
-                      pressed && styles.accountRowPressed,
-                    ]}
-                    disabled={isBusy}
-                    onPress={() => handleChooseAccount(acc)}
-                    testID={`google-account-${acc.email}`}
-                  >
-                    <View style={styles.avatarCircle}>
-                      <Text style={styles.avatarInitials}>{getInitials(acc)}</Text>
-                    </View>
-                    <View style={styles.accountDetails}>
-                      <View style={styles.accountNameRow}>
-                        <Text style={styles.accountName}>{acc.name}</Text>
-                        <View style={styles.typePill}>
-                          <Text style={styles.typePillText}>
-                            {acc.accountType === 'company' ? 'ORG' : 'PERSONAL'}
-                          </Text>
-                        </View>
+                  <View key={acc.email} style={styles.accountRowContainer}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.accountRow,
+                        pressed && styles.accountRowPressed,
+                      ]}
+                      disabled={isBusy}
+                      onPress={() => handleChooseAccount(acc)}
+                      testID={`google-account-${acc.email}`}
+                    >
+                      <View style={styles.avatarCircle}>
+                        <Text style={styles.avatarInitials}>
+                          {getInitials(acc)}
+                        </Text>
                       </View>
-                      <Text style={styles.accountEmail}>{acc.email}</Text>
-                    </View>
-                    <Text style={styles.chevron}>›</Text>
-                  </Pressable>
+                      <View style={styles.accountDetails}>
+                        <View style={styles.accountNameRow}>
+                          <Text style={styles.accountName}>{acc.name}</Text>
+                          <View style={styles.typePill}>
+                            <Text style={styles.typePillText}>
+                              {acc.accountType === 'company' ? 'ORG' : 'PERSONAL'}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.accountEmail}>{acc.email}</Text>
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      style={styles.removeAccountBtn}
+                      onPress={() => handleRemoveSavedAccount(acc.email)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${acc.email}`}
+                    >
+                      <Text style={styles.removeAccountText}>✕</Text>
+                    </Pressable>
+                  </View>
                 ))}
 
-                {/* Use Another Account */}
+                {/* Use Another Gmail Account */}
                 <Pressable
                   style={({ pressed }) => [
                     styles.accountRow,
@@ -225,36 +254,17 @@ export function GoogleAccountPickerModal({
                     <Text style={styles.addAvatarIcon}>👤+</Text>
                   </View>
                   <View style={styles.accountDetails}>
-                    <Text style={styles.accountName}>Use another Google account</Text>
+                    <Text style={styles.accountName}>Use another Gmail account</Text>
                     <Text style={styles.accountEmail}>
-                      Sign in with any @gmail.com or Google Workspace email
+                      Sign in with your @gmail.com address
                     </Text>
                   </View>
-                </Pressable>
-
-                {/* Optional Browser OAuth */}
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.browserOAuthBtn,
-                    pressed && styles.accountRowPressed,
-                  ]}
-                  disabled={isBusy}
-                  onPress={handleLaunchBrowserOAuth}
-                  testID="google-browser-oauth-button"
-                >
-                  <Text style={styles.browserOAuthText}>
-                    🌐 Open Google OAuth in System Browser ↗
-                  </Text>
                 </Pressable>
               </>
             ) : (
               <View style={styles.addAccountForm}>
-                <Text style={styles.formSectionTitle}>
-                  ENTER GOOGLE ACCOUNT DETAILS
-                </Text>
-
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Google Email Address *</Text>
+                  <Text style={styles.fieldLabel}>Your Gmail Address *</Text>
                   <TextInput
                     style={styles.input}
                     value={customEmail}
@@ -262,7 +272,7 @@ export function GoogleAccountPickerModal({
                       setCustomEmail(val);
                       if (errorText) setErrorText(null);
                     }}
-                    placeholder="your.name@gmail.com"
+                    placeholder="email@gmail.com"
                     placeholderTextColor={CyberColors.textMuted}
                     keyboardType="email-address"
                     autoCapitalize="none"
@@ -272,12 +282,12 @@ export function GoogleAccountPickerModal({
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Full Name (Optional)</Text>
+                  <Text style={styles.fieldLabel}>Display Name (Optional)</Text>
                   <TextInput
                     style={styles.input}
                     value={customName}
                     onChangeText={setCustomName}
-                    placeholder="e.g. Jane Doe"
+                    placeholder="Your name"
                     placeholderTextColor={CyberColors.textMuted}
                     autoCapitalize="words"
                     testID="google-custom-name-input"
@@ -325,16 +335,18 @@ export function GoogleAccountPickerModal({
                 </View>
 
                 <View style={styles.formButtonsRow}>
-                  <Pressable
-                    style={styles.backToListBtn}
-                    onPress={() => {
-                      setErrorText(null);
-                      setShowAddAccount(false);
-                    }}
-                    disabled={isBusy}
-                  >
-                    <Text style={styles.backToListBtnText}>← Accounts</Text>
-                  </Pressable>
+                  {accounts.length > 0 ? (
+                    <Pressable
+                      style={styles.backToListBtn}
+                      onPress={() => {
+                        setErrorText(null);
+                        setShowAddAccount(false);
+                      }}
+                      disabled={isBusy}
+                    >
+                      <Text style={styles.backToListBtnText}>← Saved</Text>
+                    </Pressable>
+                  ) : null}
 
                   <Pressable
                     style={styles.continueCustomBtn}
@@ -343,12 +355,28 @@ export function GoogleAccountPickerModal({
                     testID="google-custom-submit-button"
                   >
                     <Text style={styles.continueCustomBtnText}>
-                      Continue with Google
+                      Continue with Gmail
                     </Text>
                   </Pressable>
                 </View>
               </View>
             )}
+
+            {/* System Browser Google OAuth */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.browserOAuthBtn,
+                pressed && styles.accountRowPressed,
+              ]}
+              disabled={isBusy}
+              onPress={handleLaunchBrowserOAuth}
+              testID="google-browser-oauth-button"
+            >
+              <GoogleLogo size={15} />
+              <Text style={styles.browserOAuthText}>
+                Continue via Google Browser OAuth ↗
+              </Text>
+            </Pressable>
           </ScrollView>
 
           {isBusy ? (
@@ -404,18 +432,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   googleLogoBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
-  },
-  googleG: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#4285F4',
   },
   headerBrand: {
     color: CyberColors.textSecondary,
@@ -452,20 +475,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   accountsScroll: {
-    maxHeight: 330,
+    maxHeight: 340,
+  },
+  accountRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(59, 130, 246, 0.15)',
   },
   accountRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 10,
     borderRadius: CyberRadius.md,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(59, 130, 246, 0.15)',
     gap: 12,
   },
   accountRowPressed: {
     backgroundColor: 'rgba(0, 229, 255, 0.08)',
+  },
+  removeAccountBtn: {
+    padding: 10,
+  },
+  removeAccountText: {
+    color: CyberColors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
   },
   avatarCircle: {
     width: 40,
@@ -518,20 +554,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  chevron: {
-    color: CyberColors.textMuted,
-    fontSize: 20,
-    fontWeight: '700',
-  },
   browserOAuthBtn: {
-    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: CyberRadius.md,
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.3)',
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    alignItems: 'center',
   },
   browserOAuthText: {
     color: CyberColors.textSecondary,
@@ -539,14 +573,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   addAccountForm: {
-    paddingVertical: 6,
+    paddingVertical: 4,
     gap: 12,
-  },
-  formSectionTitle: {
-    color: CyberColors.cyan,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
   },
   fieldGroup: {
     gap: 5,

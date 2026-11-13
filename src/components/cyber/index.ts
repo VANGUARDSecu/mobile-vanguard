@@ -8,4 +8,5 @@ export * from './manual-entry-modal';
 export * from './vault-lock-screen';
 export * from './push-approval-modal';
 export * from './qr-camera-scanner';
+export * from './google-logo';
 export * from './google-account-picker-modal';

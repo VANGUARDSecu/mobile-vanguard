@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { GoogleAccountPickerModal } from '@/components/cyber/google-account-picker-modal';
+import { GoogleLogo } from '@/components/cyber/google-logo';
 import type { GoogleAccountProfile } from '@/services/auth.service';
 import {
   REGISTRATION_PAGES,
@@ -307,7 +308,7 @@ export default function RegisterScreen() {
                     testID="google-sign-up-button"
                   >
                     <View style={styles.googleIconCircle}>
-                      <Text style={styles.googleIconG}>G</Text>
+                      <GoogleLogo size={16} />
                     </View>
                     <Text style={styles.googleBtnText}>
                       Sign up with Google

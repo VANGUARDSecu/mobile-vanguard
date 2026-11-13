@@ -31,25 +31,6 @@ export interface GoogleAccountProfile {
   refreshToken?: string;
 }
 
-const DEFAULT_GOOGLE_ACCOUNTS: GoogleAccountProfile[] = [
-  {
-    email: 'johnroben.manayon21@gmail.com',
-    name: 'John Roben Manayon',
-    firstName: 'John Roben',
-    lastName: 'Manayon',
-    accountType: 'company',
-    companyName: 'Vanguard Security Inc.',
-  },
-  {
-    email: 'personal.vault@gmail.com',
-    name: 'Personal Vault User',
-    firstName: 'Personal',
-    lastName: 'User',
-    accountType: 'individual',
-    companyName: "Personal's Vault",
-  },
-];
-
 export const DEMO_USERS: Record<string, AuthUser> = {
   'ellen.ripley@weyland.corp': {
     id: 'usr_sec_1001',
@@ -914,7 +895,8 @@ export class AuthService {
   }
 
   /**
-   * Returns saved Google accounts available on this device for the Google Account Chooser popup.
+   * Returns only the user's own previously used Gmail accounts stored on this device.
+   * Never returns hardcoded accounts.
    */
   static async getSavedGoogleAccounts(): Promise<GoogleAccountProfile[]> {
     let customAccounts: GoogleAccountProfile[] = [];
@@ -924,6 +906,10 @@ export class AuthService {
         customAccounts = JSON.parse(raw);
       }
     } catch {
+      // Fallback to in-memory store for headless test runner
+    }
+
+    if (customAccounts.length === 0) {
       const mem = memoryAuthStore.get(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS);
       if (mem) {
         try {
@@ -932,14 +918,41 @@ export class AuthService {
       }
     }
 
-    const merged = [...customAccounts, ...DEFAULT_GOOGLE_ACCOUNTS];
     const seen = new Set<string>();
-    return merged.filter((acc) => {
-      const key = (acc.email || '').trim().toLowerCase();
+    return customAccounts.filter((acc) => {
+      const key = (acc?.email || '').trim().toLowerCase();
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+  }
+
+  /**
+   * Removes a single saved Gmail account from the device chooser list.
+   */
+  static async removeSavedGoogleAccount(email: string): Promise<void> {
+    const target = (email || '').trim().toLowerCase();
+    const existing = await this.getSavedGoogleAccounts();
+    const filtered = existing.filter((a) => a.email.toLowerCase() !== target);
+    const serialized = JSON.stringify(filtered);
+    memoryAuthStore.set(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS, serialized);
+    try {
+      await AsyncStorage.setItem(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS, serialized);
+    } catch {
+      // Non-blocking
+    }
+  }
+
+  /**
+   * Clears all saved Gmail accounts from local device storage.
+   */
+  static async clearSavedGoogleAccounts(): Promise<void> {
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS);
+    try {
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS);
+    } catch {
+      // Non-blocking
+    }
   }
 
   /**
@@ -962,19 +975,21 @@ export class AuthService {
         }
       }
     } catch {
-      // Non-blocking fallback to in-app Google Account Chooser
+      // Non-blocking fallback
     }
     return null;
   }
 
   /**
-   * Authenticates the user with a selected Google account from the Google Account Chooser
-   * or Google OAuth callback and persists the session.
+   * Authenticates the user with their Gmail account or Google OAuth callback and persists the session.
    */
   static async signInWithGoogle(account: GoogleAccountProfile): Promise<AuthUser> {
     const cleanEmail = (account.email || '').trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
-      throw new Error('Please select or enter a valid Google email address.');
+    const isGmailDomain =
+      cleanEmail.endsWith('@gmail.com') || cleanEmail.endsWith('@googlemail.com');
+
+    if (!cleanEmail || (!isGmailDomain && !account.accessToken)) {
+      throw new Error('Please enter a valid Gmail address (@gmail.com).');
     }
 
     const firstName =
@@ -986,16 +1001,12 @@ export class AuthService {
       (account.name?.trim().split(' ').slice(1).join(' ') || '');
     const fullName =
       account.name?.trim() || `${firstName} ${lastName}`.trim() || cleanEmail;
-    const accountType =
-      account.accountType ||
-      DEMO_USERS[cleanEmail]?.accountType ||
-      'individual';
+    const accountType = account.accountType || 'individual';
     const companyName =
       account.companyName ||
-      DEMO_USERS[cleanEmail]?.companyName ||
       (accountType === 'company' ? 'Vanguard Security Inc.' : `${firstName}'s Personal Vault`);
 
-    // Save selected account to top of Google Accounts list
+    // Save the user's own Gmail account to local device history for quick re-selection
     try {
       const existing = await this.getSavedGoogleAccounts();
       const updated = [
@@ -1039,6 +1050,10 @@ export class AuthService {
       cleanEmail
     );
 
+    user.name = fullName;
+    if (user.user_metadata) {
+      user.user_metadata.name = fullName;
+    }
     user.accessToken = account.accessToken || user.accessToken || `google_jwt_${Date.now()}`;
     await this.saveSession(user, user.accessToken);
     return user;

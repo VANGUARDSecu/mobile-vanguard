@@ -210,25 +210,45 @@ test('multi-page registration wizard validates each page and navigates determini
   );
 });
 
-test('AuthService.signInWithGoogle and getSavedGoogleAccounts authenticate Google account selection', async () => {
-  const accounts = await AuthService.getSavedGoogleAccounts();
-  assert.ok(accounts.length >= 2);
-  assert.ok(accounts.some((a) => a.email.includes('@gmail.com')));
+test('AuthService.getSavedGoogleAccounts has zero hardcoded accounts and only stores user Gmail', async () => {
+  await AuthService.clearSavedGoogleAccounts();
+  const initialAccounts = await AuthService.getSavedGoogleAccounts();
+  assert.deepEqual(
+    initialAccounts,
+    [],
+    'Must NEVER include any hardcoded Google accounts'
+  );
+
+  // Rejects non-Gmail manual entry
+  await assert.rejects(
+    async () => {
+      await AuthService.signInWithGoogle({
+        email: 'user@yahoo.com',
+        name: 'Non Gmail User',
+      });
+    },
+    /gmail/i
+  );
 
   const user = await AuthService.signInWithGoogle({
-    email: 'google.tester@gmail.com',
-    name: 'Google Tester',
-    firstName: 'Google',
-    lastName: 'Tester',
+    email: 'my.own.account@gmail.com',
+    name: 'My Own Account',
+    firstName: 'My',
+    lastName: 'Account',
     accountType: 'individual',
   });
 
-  assert.equal(user.email, 'google.tester@gmail.com');
-  assert.equal(user.name, 'Google Tester');
+  assert.equal(user.email, 'my.own.account@gmail.com');
+  assert.equal(user.name, 'My Own Account');
   assert.equal(user.user_metadata?.provider, 'google');
 
   const updatedAccounts = await AuthService.getSavedGoogleAccounts();
-  assert.ok(updatedAccounts.some((a) => a.email === 'google.tester@gmail.com'));
+  assert.equal(updatedAccounts.length, 1);
+  assert.equal(updatedAccounts[0].email, 'my.own.account@gmail.com');
+
+  await AuthService.removeSavedGoogleAccount('my.own.account@gmail.com');
+  const afterRemove = await AuthService.getSavedGoogleAccounts();
+  assert.deepEqual(afterRemove, []);
   await AuthService.logout();
 });
 

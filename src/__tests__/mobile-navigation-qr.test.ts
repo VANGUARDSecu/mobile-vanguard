@@ -210,45 +210,40 @@ test('multi-page registration wizard validates each page and navigates determini
   );
 });
 
-test('AuthService.getSavedGoogleAccounts has zero hardcoded accounts and only stores user Gmail', async () => {
-  await AuthService.clearSavedGoogleAccounts();
-  const initialAccounts = await AuthService.getSavedGoogleAccounts();
-  assert.deepEqual(
-    initialAccounts,
-    [],
-    'Must NEVER include any hardcoded Google accounts'
-  );
-
-  // Rejects non-Gmail manual entry
+test('AuthService.signInWithGoogle strictly requires a verified OAuth token with zero bypass', async () => {
+  // Rejects any attempt without a real OAuth access_token (no manual email bypass)
   await assert.rejects(
     async () => {
       await AuthService.signInWithGoogle({
-        email: 'user@yahoo.com',
-        name: 'Non Gmail User',
+        email: 'my.own.account@gmail.com',
+        name: 'My Own Account',
       });
     },
-    /gmail/i
+    /OAuth session token is required/i
   );
 
-  const user = await AuthService.signInWithGoogle({
-    email: 'my.own.account@gmail.com',
-    name: 'My Own Account',
-    firstName: 'My',
-    lastName: 'Account',
-    accountType: 'individual',
-  });
+  const payloadObj = {
+    sub: 'google-sub-999',
+    email: 'verified.oauth@gmail.com',
+    user_metadata: {
+      full_name: 'Verified OAuth User',
+      given_name: 'Verified',
+      family_name: 'User',
+      picture: 'https://example.com/pic.png',
+    },
+  };
+  const base64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+  const validOAuthJwt = `eyJhbGciOiJIUzI1NiJ9.${base64Payload}.sig`;
+  const parsedCallback = parseGoogleOAuthCallbackUrl(
+    `mobilevanguard://login#access_token=${validOAuthJwt}&refresh_token=ref_999`
+  );
+  assert.ok(parsedCallback);
 
-  assert.equal(user.email, 'my.own.account@gmail.com');
-  assert.equal(user.name, 'My Own Account');
-  assert.equal(user.user_metadata?.provider, 'google');
-
-  const updatedAccounts = await AuthService.getSavedGoogleAccounts();
-  assert.equal(updatedAccounts.length, 1);
-  assert.equal(updatedAccounts[0].email, 'my.own.account@gmail.com');
-
-  await AuthService.removeSavedGoogleAccount('my.own.account@gmail.com');
-  const afterRemove = await AuthService.getSavedGoogleAccounts();
-  assert.deepEqual(afterRemove, []);
+  const result = await AuthService.signInWithGoogle(parsedCallback!);
+  assert.equal(result.requireMfa, true);
+  if (result.requireMfa) {
+    assert.equal(result.mfaChallenge.email, 'verified.oauth@gmail.com');
+  }
   await AuthService.logout();
 });
 

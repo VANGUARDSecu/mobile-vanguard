@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,13 +13,15 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
-import { GoogleAccountPickerModal } from '@/components/cyber/google-account-picker-modal';
+import { launchGoogleBrowserOAuthSession } from '@/components/cyber/google-account-picker-modal';
 import { GoogleLogo } from '@/components/cyber/google-logo';
 import type { MfaChallengeResponse } from '@/models/auth.models';
 import type { GoogleAccountProfile } from '@/services/auth.service';
+import { parseGoogleOAuthCallbackUrl } from '@/utils/registration-wizard';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
@@ -33,7 +35,6 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState<MfaChallengeResponse | null>(null);
 
   // Load remembered credentials preference on mount
@@ -101,12 +102,74 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleAccountSelected = async (account: GoogleAccountProfile) => {
+  const handleGoogleOAuthVerified = useCallback(
+    async (account: GoogleAccountProfile) => {
+      setSubmitting(true);
+      setErrorMessage(null);
+      try {
+        const result = await loginWithGoogle(account);
+        if (result.requireMfa) {
+          setMfaChallenge(result.mfaChallenge);
+        } else {
+          router.replace('/');
+        }
+      } catch (err: unknown) {
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Google OAuth sign-in failed. Please try again.'
+        );
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [loginWithGoogle]
+  );
+
+  const handleGoogleBrowserSignIn = async () => {
+    setSubmitting(true);
     setErrorMessage(null);
-    await loginWithGoogle(account);
-    setShowGoogleModal(false);
-    router.replace('/');
+    try {
+      const oauthAccount = await launchGoogleBrowserOAuthSession();
+      if (oauthAccount) {
+        await handleGoogleOAuthVerified(oauthAccount);
+      }
+    } catch (err: unknown) {
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : 'Could not complete Google Browser OAuth.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  // Listen for OAuth deep-link callback URLs (#access_token=...) returning from system browser
+  useEffect(() => {
+    let isMounted = true;
+
+    const handleIncomingUrl = (url: string | null) => {
+      if (!isMounted || !url || !url.includes('access_token=')) return;
+      const parsed = parseGoogleOAuthCallbackUrl(url);
+      if (parsed) {
+        void handleGoogleOAuthVerified(parsed);
+      }
+    };
+
+    Linking.getInitialURL()
+      .then((initialUrl) => handleIncomingUrl(initialUrl))
+      .catch(() => {});
+
+    const sub = Linking.addEventListener('url', (event) => {
+      handleIncomingUrl(event.url);
+    });
+
+    return () => {
+      isMounted = false;
+      sub.remove();
+    };
+  }, [handleGoogleOAuthVerified]);
 
   if (mfaChallenge) {
     return (
@@ -248,17 +311,14 @@ export default function LoginScreen() {
                 <View style={styles.dividerLine} />
               </View>
 
-              {/* Sign In with Google Button */}
+              {/* Sign In with Google Browser OAuth Button */}
               <Pressable
                 style={({ pressed }) => [
                   styles.googleBtn,
                   pressed && styles.googleBtnPressed,
                   submitting && styles.signInBtnDisabled,
                 ]}
-                onPress={() => {
-                  setErrorMessage(null);
-                  setShowGoogleModal(true);
-                }}
+                onPress={handleGoogleBrowserSignIn}
                 disabled={submitting}
                 accessibilityRole="button"
                 accessibilityLabel="Sign in with Google"
@@ -293,12 +353,6 @@ export default function LoginScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-
-      <GoogleAccountPickerModal
-        visible={showGoogleModal}
-        onClose={() => setShowGoogleModal(false)}
-        onSelectAccount={handleGoogleAccountSelected}
-      />
     </View>
   );
 }

@@ -16,9 +16,8 @@ import { router } from 'expo-router';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
-import { GoogleAccountPickerModal } from '@/components/cyber/google-account-picker-modal';
+import { launchGoogleBrowserOAuthSession } from '@/components/cyber/google-account-picker-modal';
 import { GoogleLogo } from '@/components/cyber/google-logo';
-import type { GoogleAccountProfile } from '@/services/auth.service';
 import {
   REGISTRATION_PAGES,
   type RegistrationPageKey,
@@ -47,7 +46,6 @@ export default function RegisterScreen() {
   const [agreeTerms, setAgreeTerms] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -132,18 +130,43 @@ export default function RegisterScreen() {
     setCurrentPage(targetKey);
   };
 
-  const handleGoogleAccountSelected = async (account: GoogleAccountProfile) => {
+  const handleGoogleBrowserSignUp = async () => {
+    setSubmitting(true);
     setErrorMessage(null);
-    await loginWithGoogle({
-      ...account,
-      accountType: account.accountType || accountType,
-      companyName:
-        accountType === 'company'
-          ? companyName.trim() || account.companyName
-          : account.companyName,
-    });
-    setShowGoogleModal(false);
-    router.replace('/');
+    try {
+      const oauthAccount = await launchGoogleBrowserOAuthSession();
+      if (!oauthAccount) return;
+
+      const result = await loginWithGoogle({
+        ...oauthAccount,
+        accountType,
+        companyName:
+          accountType === 'company'
+            ? companyName.trim() || oauthAccount.companyName
+            : oauthAccount.companyName,
+      });
+
+      if (result.requireMfa) {
+        router.push({
+          pathname: '/verify-otp',
+          params: {
+            email: result.mfaChallenge.email,
+            hasTotp: result.mfaChallenge.hasTotp ? 'true' : 'false',
+            mode: 'signin',
+          },
+        });
+      } else {
+        router.replace('/');
+      }
+    } catch (err: unknown) {
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : 'Could not complete Google Browser OAuth.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleRegister = async () => {
@@ -293,16 +316,15 @@ export default function RegisterScreen() {
               {/* PAGE 1: ACCOUNT TYPE & IDENTITY */}
               {currentPage === 'identity' ? (
                 <View testID="register-page-identity">
-                  {/* Quick Sign Up with Google */}
+                  {/* Sign Up with Google Browser OAuth */}
                   <Pressable
                     style={({ pressed }) => [
                       styles.googleBtn,
                       pressed && styles.googleBtnPressed,
+                      submitting && styles.submitBtnDisabled,
                     ]}
-                    onPress={() => {
-                      setErrorMessage(null);
-                      setShowGoogleModal(true);
-                    }}
+                    onPress={handleGoogleBrowserSignUp}
+                    disabled={submitting}
                     accessibilityRole="button"
                     accessibilityLabel="Sign up with Google"
                     testID="google-sign-up-button"
@@ -756,13 +778,6 @@ export default function RegisterScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-
-      <GoogleAccountPickerModal
-        visible={showGoogleModal}
-        onClose={() => setShowGoogleModal(false)}
-        onSelectAccount={handleGoogleAccountSelected}
-        title="Sign up with Google"
-      />
     </View>
   );
 }

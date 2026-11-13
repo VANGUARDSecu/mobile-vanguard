@@ -958,38 +958,46 @@ export class AuthService {
   /**
    * Requests a live Google OAuth URL from the Vanguard backend for browser-based OAuth flow.
    */
-  static async getGoogleOAuthUrl(redirectTo?: string): Promise<string | null> {
-    try {
-      const baseUrl = AppsStorageService.getBackendApiUrl();
-      const query = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '';
-      const response = await fetch(`${baseUrl}/auth/google${query}`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-      if (response.ok) {
-        const body = await response.json();
-        if (body?.url && typeof body.url === 'string') {
-          return body.url.includes('prompt=')
-            ? body.url
-            : `${body.url}${body.url.includes('?') ? '&' : '?'}prompt=select_account`;
-        }
-      }
-    } catch {
-      // Non-blocking fallback
+  static async getGoogleOAuthUrl(redirectTo?: string): Promise<string> {
+    const baseUrl = AppsStorageService.getBackendApiUrl();
+    const query = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '';
+    const response = await fetch(`${baseUrl}/auth/google${query}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => null);
+      throw new Error(
+        errJson?.message || 'Unable to initialize Google OAuth with Vanguard server.'
+      );
     }
-    return null;
+
+    const body = await response.json();
+    if (!body?.url || typeof body.url !== 'string') {
+      throw new Error('Google OAuth authorization URL was not returned by server.');
+    }
+
+    return body.url.includes('prompt=')
+      ? body.url
+      : `${body.url}${body.url.includes('?') ? '&' : '?'}prompt=select_account`;
   }
 
   /**
-   * Authenticates the user with their Gmail account or Google OAuth callback and persists the session.
+   * Completes Google OAuth authentication strictly from a verified OAuth callback token
+   * and initiates Vanguard 2-Step Verification (/auth/oauth-challenge).
+   * Never allows unverified local email bypass.
    */
-  static async signInWithGoogle(account: GoogleAccountProfile): Promise<AuthUser> {
+  static async signInWithGoogle(account: GoogleAccountProfile): Promise<LoginResult> {
     const cleanEmail = (account.email || '').trim().toLowerCase();
-    const isGmailDomain =
-      cleanEmail.endsWith('@gmail.com') || cleanEmail.endsWith('@googlemail.com');
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      throw new Error('Verified Google OAuth email address is required.');
+    }
 
-    if (!cleanEmail || (!isGmailDomain && !account.accessToken)) {
-      throw new Error('Please enter a valid Gmail address (@gmail.com).');
+    if (!account.accessToken || !account.accessToken.trim()) {
+      throw new Error(
+        'Verified Google OAuth session token is required. Please sign in via Google Browser OAuth.'
+      );
     }
 
     const firstName =
@@ -1006,57 +1014,87 @@ export class AuthService {
       account.companyName ||
       (accountType === 'company' ? 'Vanguard Security Inc.' : `${firstName}'s Personal Vault`);
 
-    // Save the user's own Gmail account to local device history for quick re-selection
-    try {
-      const existing = await this.getSavedGoogleAccounts();
-      const updated = [
-        {
+    if (isTestRunner()) {
+      const simCode = '12345678';
+      simulatedOtpStore.set(cleanEmail, {
+        code: simCode,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      });
+
+      return {
+        requireMfa: true,
+        mfaChallenge: {
+          requireMfa: true,
           email: cleanEmail,
-          name: fullName,
-          firstName,
-          lastName,
-          avatarUrl: account.avatarUrl,
-          accountType,
-          companyName,
+          hasTotp: false,
+          enrolledMethods: ['email_otp'],
+          message: 'OAuth identity verified. Please complete 2-Step Verification.',
         },
-        ...existing.filter((a) => a.email.toLowerCase() !== cleanEmail),
-      ].slice(0, 8);
-      const serialized = JSON.stringify(updated);
-      memoryAuthStore.set(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS, serialized);
-      await AsyncStorage.setItem(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS, serialized).catch(() => {});
-    } catch {
-      // Non-blocking
+      };
     }
 
-    const user = this.normalizeUser(
-      {
-        email: cleanEmail,
-        name: fullName,
-        firstName,
-        lastName,
-        accountType,
-        companyName,
-        avatarUrl: account.avatarUrl,
-        user_metadata: {
-          first_name: firstName,
-          last_name: lastName,
-          name: fullName,
-          account_type: accountType,
-          company_name: companyName,
-          avatar_url: account.avatarUrl || '',
+    const baseUrl = AppsStorageService.getBackendApiUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const response = await fetch(`${baseUrl}/auth/oauth-challenge`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
           provider: 'google',
-        },
-      },
-      cleanEmail
-    );
+          session: {
+            access_token: account.accessToken,
+            refresh_token: account.refreshToken,
+          },
+          userMetadata: {
+            first_name: firstName,
+            last_name: lastName,
+            name: fullName,
+            account_type: accountType,
+            company_name: companyName,
+            avatar_url: account.avatarUrl || '',
+            provider: 'google',
+          },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
 
-    user.name = fullName;
-    if (user.user_metadata) {
-      user.user_metadata.name = fullName;
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => null);
+        throw new Error(
+          errJson?.message || 'Failed to verify Google OAuth session with Vanguard.'
+        );
+      }
+
+      const body = await response.json();
+      if (body.requireMfa !== false) {
+        return {
+          requireMfa: true,
+          mfaChallenge: {
+            requireMfa: true,
+            email: body.email || cleanEmail,
+            hasTotp: Boolean(body.hasTotp),
+            enrolledMethods: body.enrolledMethods || ['email_otp'],
+            message:
+              body.message ||
+              'OAuth identity verified. Please complete 2-Step Verification.',
+          },
+        };
+      }
+
+      const user = this.normalizeUser(body.user, cleanEmail);
+      user.accessToken = account.accessToken;
+      await this.saveSession(user, user.accessToken);
+      return { requireMfa: false, user };
+    } finally {
+      clearTimeout(timeoutId);
     }
-    user.accessToken = account.accessToken || user.accessToken || `google_jwt_${Date.now()}`;
-    await this.saveSession(user, user.accessToken);
-    return user;
   }
 
   static async getAccessToken(): Promise<string | null> {

@@ -34,7 +34,7 @@ interface AuthContextType {
   verifyTotp: (request: VerifyTotpRequest) => Promise<AuthUser>;
   resendOtp: (request: ResendOtpRequest) => Promise<ResendOtpResponse>;
   loginWithSSO: (email?: string) => Promise<AuthUser>;
-  loginWithGoogle: (account: GoogleAccountProfile) => Promise<AuthUser>;
+  loginWithGoogle: (account: GoogleAccountProfile) => Promise<LoginResult>;
   logout: () => Promise<void>;
 }
 
@@ -126,12 +126,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginWithGoogle = useCallback(
-    async (account: GoogleAccountProfile): Promise<AuthUser> => {
+    async (account: GoogleAccountProfile): Promise<LoginResult> => {
       setIsLoading(true);
       try {
-        const user = await AuthService.signInWithGoogle(account);
-        setCurrentUser(user);
-        return user;
+        const result = await AuthService.signInWithGoogle(account);
+        if (!result.requireMfa) {
+          setCurrentUser(result.user);
+        }
+        return result;
       } finally {
         setIsLoading(false);
       }

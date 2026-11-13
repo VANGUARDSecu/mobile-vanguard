@@ -498,7 +498,7 @@ export class AuthService {
       }
 
       throw new Error(
-        'Unable to connect to Vanguard production backend (https://backend-vanguard.onrender.com). Please verify your device has an active internet connection.'
+        `Unable to connect to Vanguard backend (${AppsStorageService.getBackendApiUrl()}). Please verify the backend is running and your device is connected.`
       );
     }
 

@@ -15,6 +15,7 @@ import {
   parseGoogleOAuthCallbackUrl,
 } from '../utils/registration-wizard.ts';
 import { AuthService } from '../services/auth.service.ts';
+import { AppsStorageService } from '../services/apps-storage.service.ts';
 
 test('resolveAuthRedirectPath redirects unauthenticated users away from protected routes', () => {
   assert.equal(resolveAuthRedirectPath(false, '/'), '/login');
@@ -269,4 +270,24 @@ test('parseGoogleOAuthCallbackUrl extracts JWT user claims from OAuth redirect h
   assert.equal(extracted?.firstName, 'OAuth');
   assert.equal(extracted?.lastName, 'User');
   assert.equal(extracted?.accessToken, fakeJwt);
+});
+
+test('AppsStorageService.getBackendApiUrl avoids dead Render placeholder and resolves active backend', () => {
+  const prev = process.env.EXPO_PUBLIC_API_URL;
+  try {
+    delete process.env.EXPO_PUBLIC_API_URL;
+    assert.equal(AppsStorageService.getBackendApiUrl(), 'http://127.0.0.1:3000');
+
+    process.env.EXPO_PUBLIC_API_URL = 'https://backend-vanguard.onrender.com/';
+    assert.equal(AppsStorageService.getBackendApiUrl(), 'http://127.0.0.1:3000');
+
+    process.env.EXPO_PUBLIC_API_URL = 'http://localhost:3000/';
+    assert.equal(AppsStorageService.getBackendApiUrl(), 'http://localhost:3000');
+  } finally {
+    if (prev === undefined) {
+      delete process.env.EXPO_PUBLIC_API_URL;
+    } else {
+      process.env.EXPO_PUBLIC_API_URL = prev;
+    }
+  }
 });

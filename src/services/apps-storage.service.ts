@@ -557,11 +557,15 @@ export class AppsStorageService {
   }
 
   static getBackendApiUrl(): string {
-    const configured = typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : undefined;
+    const configured =
+      typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : undefined;
     if (configured && typeof configured === 'string' && configured.trim().length > 0) {
-      return configured.trim().replace(/\/$/, '');
+      const normalized = configured.trim().replace(/\/$/, '');
+      if (!normalized.includes('backend-vanguard.onrender.com')) {
+        return normalized;
+      }
     }
-    return 'https://backend-vanguard.onrender.com';
+    return 'http://127.0.0.1:3000';
   }
 
   static async getConnectedApps(): Promise<UserConnectedApp[]> {

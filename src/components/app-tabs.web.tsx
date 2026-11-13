@@ -6,17 +6,24 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
+import { usePathname } from 'expo-router';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 
+import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { MaxContentWidth } from '@/constants/theme';
+import { shouldHideAppTabBar } from '@/utils/navigation-guard';
 
 export default function AppTabs() {
+  const { isAuthenticated } = useAuth();
+  const pathname = usePathname();
+  const hideTabBar = shouldHideAppTabBar(isAuthenticated, pathname);
+
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
-        <CustomTabList>
+        <CustomTabList hidden={hideTabBar}>
           <TabTrigger name="home" href="/" asChild>
             <TabButton icon="📱">Apps</TabButton>
           </TabTrigger>
@@ -61,7 +68,13 @@ export function TabButton({
   );
 }
 
-export function CustomTabList(props: TabListProps) {
+export function CustomTabList({
+  hidden,
+  ...props
+}: TabListProps & { hidden?: boolean }) {
+  if (hidden) {
+    return <View {...props} style={{ display: 'none' }} />;
+  }
   return (
     <View {...props} style={styles.tabListContainer}>
       <View style={styles.innerContainer}>

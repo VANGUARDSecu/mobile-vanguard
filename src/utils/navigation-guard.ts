@@ -34,6 +34,22 @@ export function resolveAuthRedirectPath(
 }
 
 /**
+ * Determines whether the bottom tab bar should be hidden (e.g. while unauthenticated
+ * or while on /login, /register, or /verify-otp) so a single root <Tabs> navigator
+ * can stay mounted without ever swapping between StackRouter and TabRouter.
+ */
+export function shouldHideAppTabBar(
+  isAuthenticated: boolean,
+  pathname: string
+): boolean {
+  if (!isAuthenticated) {
+    return true;
+  }
+  const normalized = normalizePathname(pathname);
+  return AUTH_ROUTES.has(normalized);
+}
+
+/**
  * Maps nested screens inside AuthenticatorNavigator to their logical parent when
  * the hardware back button is pressed. Returns null at the root 'vault' screen.
  */

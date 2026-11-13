@@ -1,13 +1,18 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors } from '@/constants/cyber-theme';
+import { shouldHideAppTabBar } from '@/utils/navigation-guard';
+
+const HIDDEN_TAB_STYLE = { display: 'none' as const };
 
 export default function AppTabs() {
-  const { currentUser } = useAuth();
+  const { currentUser, isAuthenticated } = useAuth();
+  const pathname = usePathname();
   const isIndividual = currentUser?.accountType === 'individual';
+  const hideTabBar = shouldHideAppTabBar(isAuthenticated, pathname);
 
   return (
     <Tabs
@@ -15,14 +20,16 @@ export default function AppTabs() {
         headerShown: false,
         tabBarActiveTintColor: CyberColors.cyan,
         tabBarInactiveTintColor: CyberColors.textSecondary,
-        tabBarStyle: {
-          backgroundColor: CyberColors.cardBg,
-          borderTopColor: CyberColors.border,
-          borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
-          paddingTop: 6,
-        },
+        tabBarStyle: hideTabBar
+          ? HIDDEN_TAB_STYLE
+          : {
+              backgroundColor: CyberColors.cardBg,
+              borderTopColor: CyberColors.border,
+              borderTopWidth: 1,
+              height: 64,
+              paddingBottom: 8,
+              paddingTop: 6,
+            },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '700',
@@ -84,9 +91,18 @@ export default function AppTabs() {
         }}
       />
 
-      <Tabs.Screen name="login" options={{ href: null }} />
-      <Tabs.Screen name="register" options={{ href: null }} />
-      <Tabs.Screen name="verify-otp" options={{ href: null }} />
+      <Tabs.Screen
+        name="login"
+        options={{ href: null, tabBarStyle: HIDDEN_TAB_STYLE }}
+      />
+      <Tabs.Screen
+        name="register"
+        options={{ href: null, tabBarStyle: HIDDEN_TAB_STYLE }}
+      />
+      <Tabs.Screen
+        name="verify-otp"
+        options={{ href: null, tabBarStyle: HIDDEN_TAB_STYLE }}
+      />
     </Tabs>
   );
 }

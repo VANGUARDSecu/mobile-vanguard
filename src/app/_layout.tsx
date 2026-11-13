@@ -3,7 +3,6 @@ import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
-  Stack,
   usePathname,
   useRouter,
 } from 'expo-router';
@@ -24,8 +23,6 @@ function RootNavigator() {
   const router = useRouter();
 
   useEffect(() => {
-    // Ensure native splash screen hides once session initialization resolves,
-    // with a failsafe timeout to prevent permanent screen freezing in Expo Go.
     const failsafe = setTimeout(() => {
       SplashScreen.hideAsync().catch(() => {});
     }, 2500);
@@ -48,30 +45,17 @@ function RootNavigator() {
     }
   }, [isInitializing, isAuthenticated, pathname, router]);
 
-  if (isInitializing) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={CyberColors.cyan} />
-        <Text style={styles.loadingText}>INITIALIZING VANGUARD SESSION...</Text>
-      </View>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: CyberColors.background },
-        }}>
-        <Stack.Screen name="login" />
-        <Stack.Screen name="register" />
-        <Stack.Screen name="verify-otp" />
-      </Stack>
-    );
-  }
-
-  return <AppTabs />;
+  return (
+    <View style={styles.rootContainer}>
+      <AppTabs />
+      {isInitializing ? (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={CyberColors.cyan} />
+          <Text style={styles.loadingText}>INITIALIZING VANGUARD SESSION...</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export default function TabLayout() {
@@ -88,12 +72,21 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  loadingScreen: {
+  rootContainer: {
     flex: 1,
+    backgroundColor: CyberColors.background,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: CyberColors.background,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
+    zIndex: 999,
   },
   loadingText: {
     color: CyberColors.cyan,

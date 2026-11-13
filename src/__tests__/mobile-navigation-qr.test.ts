@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   resolveAuthRedirectPath,
   getAuthenticatorBackScreen,
+  shouldHideAppTabBar,
 } from '../utils/navigation-guard.ts';
 import { parseDevicePairingQrPayload } from '../services/qr-payload.service.ts';
 import {
@@ -338,4 +339,17 @@ test('AppsStorageService resolves primary and secondary Supabase keys from .env 
     if (prevSecKey === undefined) delete process.env.SUPABASE_KEY_SECOND;
     else process.env.SUPABASE_KEY_SECOND = prevSecKey;
   }
+});
+
+test('shouldHideAppTabBar hides tab bar on auth routes and when unauthenticated so single Tabs navigator can stay mounted', () => {
+  assert.equal(shouldHideAppTabBar(false, '/login'), true);
+  assert.equal(shouldHideAppTabBar(false, '/register'), true);
+  assert.equal(shouldHideAppTabBar(false, '/verify-otp'), true);
+  assert.equal(shouldHideAppTabBar(false, '/'), true);
+  assert.equal(shouldHideAppTabBar(true, '/login'), true);
+  assert.equal(shouldHideAppTabBar(true, '/verify-otp'), true);
+  assert.equal(shouldHideAppTabBar(true, '/'), false);
+  assert.equal(shouldHideAppTabBar(true, '/vault'), false);
+  assert.equal(shouldHideAppTabBar(true, '/devices'), false);
+  assert.equal(shouldHideAppTabBar(true, '/explore'), false);
 });

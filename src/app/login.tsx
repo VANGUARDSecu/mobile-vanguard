@@ -16,13 +16,15 @@ import { router } from 'expo-router';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import { GoogleAccountPickerModal } from '@/components/cyber/google-account-picker-modal';
 import type { MfaChallengeResponse } from '@/models/auth.models';
+import type { GoogleAccountProfile } from '@/services/auth.service';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,6 +32,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState<MfaChallengeResponse | null>(null);
 
   // Load remembered credentials preference on mount
@@ -95,6 +98,13 @@ export default function LoginScreen() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleGoogleAccountSelected = async (account: GoogleAccountProfile) => {
+    setErrorMessage(null);
+    await loginWithGoogle(account);
+    setShowGoogleModal(false);
+    router.replace('/');
   };
 
   if (mfaChallenge) {
@@ -230,6 +240,35 @@ export default function LoginScreen() {
                 )}
               </Pressable>
 
+              {/* Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Sign In with Google Button */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.googleBtn,
+                  pressed && styles.googleBtnPressed,
+                  submitting && styles.signInBtnDisabled,
+                ]}
+                onPress={() => {
+                  setErrorMessage(null);
+                  setShowGoogleModal(true);
+                }}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with Google"
+                testID="google-sign-in-button"
+              >
+                <View style={styles.googleIconCircle}>
+                  <Text style={styles.googleIconG}>G</Text>
+                </View>
+                <Text style={styles.googleBtnText}>Sign in with Google</Text>
+              </Pressable>
+
               {/* Create Account Prompt */}
               <View style={styles.signUpPromptWrap}>
                 <Text style={styles.signUpPromptText}>{"Don't have an account?"}</Text>
@@ -253,6 +292,12 @@ export default function LoginScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      <GoogleAccountPickerModal
+        visible={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        onSelectAccount={handleGoogleAccountSelected}
+      />
     </View>
   );
 }
@@ -458,6 +503,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  dividerText: {
+    color: CyberColors.textMuted,
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  googleBtnPressed: {
+    backgroundColor: 'rgba(66, 133, 244, 0.15)',
+    borderColor: '#4285F4',
+  },
+  googleIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleIconG: {
+    color: '#4285F4',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  googleBtnText: {
+    color: CyberColors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
   },
   signUpPromptWrap: {
     flexDirection: 'row',

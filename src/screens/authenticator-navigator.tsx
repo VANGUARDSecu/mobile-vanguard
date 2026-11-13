@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, StyleSheet, AppState, AppStateStatus, Linking } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  AppState,
+  AppStateStatus,
+  Linking,
+  BackHandler,
+} from 'react-native';
 
 import { TotpAccount, AuthenticatorScreenName } from '@/models/vault.models';
 import { VaultScreen } from './vault-screen';
@@ -15,6 +22,7 @@ import biometricService, { BiometricType } from '@/services/biometric-auth.servi
 import vaultService from '@/services/vault.service';
 import { AuthService } from '@/services/auth.service';
 import { CyberColors } from '@/constants/cyber-theme';
+import { getAuthenticatorBackScreen } from '@/utils/navigation-guard';
 
 export type { AuthenticatorScreenName };
 
@@ -223,6 +231,29 @@ export function AuthenticatorNavigator({
       subscription.remove();
     };
   }, [autoPromptBiometrics, triggerUnlock]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isLocked) {
+        return false;
+      }
+
+      const previousScreen = getAuthenticatorBackScreen(currentScreen);
+      if (!previousScreen) {
+        return false;
+      }
+
+      setCurrentScreen(previousScreen);
+      if (previousScreen === 'vault') {
+        setSelectedAccount(null);
+      }
+      return true;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [currentScreen, isLocked]);
 
   const navigateToVault = () => {
     setCurrentScreen('vault');

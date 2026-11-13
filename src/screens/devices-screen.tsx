@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   StyleSheet,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,10 +18,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { PushApprovalModal } from '@/components/cyber/push-approval-modal';
+import { QrCameraScanner } from '@/components/cyber/qr-camera-scanner';
 import { PushApprovalRequest } from '@/models/push-mfa.models';
 import pushMfaService from '@/services/push-mfa.service';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
-import { AppsStorageService } from '@/services/apps-storage.service';
+import { parseDevicePairingQrPayload } from '@/services/qr-payload.service';
 
 const getPairedDeviceStorageKey = (email?: string | null): string => {
   const clean = email?.trim().toLowerCase();
@@ -37,7 +39,7 @@ export interface PairedDeviceMetadata {
 }
 
 export default function DevicesScreen() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser } = useAuth();
 
   // Biometrics and Hardware Attestation State
   const [biometricInfo, setBiometricInfo] = useState<{
@@ -58,6 +60,7 @@ export default function DevicesScreen() {
   const [pairingSuccess, setPairingSuccess] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [pairedDevice, setPairedDevice] = useState<PairedDeviceMetadata | null>(null);
+  const [showQrScannerModal, setShowQrScannerModal] = useState(false);
 
   // Push MFA State
   const [activePushRequest, setActivePushRequest] = useState<PushApprovalRequest | null>(null);
@@ -75,13 +78,17 @@ export default function DevicesScreen() {
     });
 
     // Load paired device from user-scoped local storage first
-    setPairedDevice(null);
     AsyncStorage.getItem(storageKey)
       .then((raw) => {
-        if (isMounted && raw) {
+        if (!isMounted) return;
+        if (raw) {
           try {
             setPairedDevice(JSON.parse(raw));
-          } catch {}
+          } catch {
+            setPairedDevice(null);
+          }
+        } else {
+          setPairedDevice(null);
         }
       })
       .catch(() => {});
@@ -142,8 +149,8 @@ export default function DevicesScreen() {
     }
   };
 
-  const handlePairDevice = async () => {
-    const rawKey = pairingKeyInput.trim().toUpperCase();
+  const pairWithKey = async (keyToPair: string) => {
+    const rawKey = keyToPair.trim().toUpperCase();
     if (!rawKey) {
       setPairingError('Please enter the pairing key from your web dashboard.');
       return;
@@ -205,6 +212,25 @@ export default function DevicesScreen() {
       setPairingError('Failed to complete device pairing. Please check your connection.');
     } finally {
       setIsPairing(false);
+    }
+  };
+
+  const handlePairDevice = async () => {
+    await pairWithKey(pairingKeyInput);
+  };
+
+  const handleQrPairingScanned = async (rawPayload: string) => {
+    try {
+      setPairingError(null);
+      const parsed = parseDevicePairingQrPayload(rawPayload);
+      setShowQrScannerModal(false);
+      setPairingKeyInput(parsed.pairingKey);
+      await pairWithKey(parsed.pairingKey);
+    } catch (err: unknown) {
+      setShowQrScannerModal(false);
+      setPairingError(
+        err instanceof Error ? err.message : 'Invalid device pairing QR code.'
+      );
     }
   };
 
@@ -437,8 +463,23 @@ export default function DevicesScreen() {
                   </View>
                 ) : null}
 
+                <TouchableOpacity
+                  style={styles.scanQrBtn}
+                  onPress={() => {
+                    setPairingError(null);
+                    setShowQrScannerModal(true);
+                  }}
+                  disabled={isPairing}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Scan Dashboard Pairing QR Code"
+                  testID="scan-pairing-qr-button"
+                >
+                  <Text style={styles.scanQrBtnText}>📷 Scan Dashboard QR Code</Text>
+                </TouchableOpacity>
+
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Dashboard Pairing Key</Text>
+                  <Text style={styles.inputLabel}>Or Enter Dashboard Pairing Key</Text>
                   <TextInput
                     style={styles.input}
                     value={pairingKeyInput}
@@ -561,6 +602,26 @@ export default function DevicesScreen() {
         onDeny={handleDenyPush}
         onClose={() => setActivePushRequest(null)}
       />
+
+      {/* Live Camera QR Scanner Modal for Web Dashboard Pairing */}
+      <Modal
+        visible={showQrScannerModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowQrScannerModal(false)}
+      >
+        <View style={styles.qrModalBackdrop}>
+          <View style={styles.qrModalCard}>
+            <QrCameraScanner
+              title="SCAN WEB DASHBOARD PAIRING QR"
+              subtitle="Open Vanguard Web Dashboard → Devices → Pair New Device and scan the QR code."
+              onScan={handleQrPairingScanned}
+              onCancel={() => setShowQrScannerModal(false)}
+              testID="device-pairing-qr-scanner"
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -961,5 +1022,36 @@ const styles = StyleSheet.create({
     color: CyberColors.textMuted,
     fontSize: 10,
     marginTop: 2,
+  },
+  scanQrBtn: {
+    backgroundColor: 'rgba(0, 229, 255, 0.14)',
+    borderColor: CyberColors.cyan,
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  scanQrBtnText: {
+    color: CyberColors.cyan,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  qrModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 10, 20, 0.88)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  qrModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: CyberColors.cardBg,
+    borderRadius: CyberRadius.lg,
+    borderWidth: 1,
+    borderColor: CyberColors.borderHighlight,
+    padding: 18,
   },
 });

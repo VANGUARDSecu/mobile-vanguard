@@ -1,18 +1,27 @@
 import React, { useEffect } from 'react';
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+  Stack,
+  usePathname,
+  useRouter,
+} from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 
 import AppTabs from '@/components/app-tabs';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { AppsProvider } from '@/context/apps-context';
-import LoginScreen from './login';
 import { CyberColors } from '@/constants/cyber-theme';
+import { resolveAuthRedirectPath } from '@/utils/navigation-guard';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootNavigator() {
   const { isAuthenticated, isInitializing } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
     // Ensure native splash screen hides once session initialization resolves,
@@ -28,6 +37,17 @@ function RootNavigator() {
     return () => clearTimeout(failsafe);
   }, [isInitializing]);
 
+  useEffect(() => {
+    if (isInitializing) {
+      return;
+    }
+
+    const redirectTarget = resolveAuthRedirectPath(isAuthenticated, pathname);
+    if (redirectTarget) {
+      router.replace(redirectTarget);
+    }
+  }, [isInitializing, isAuthenticated, pathname, router]);
+
   if (isInitializing) {
     return (
       <View style={styles.loadingScreen}>
@@ -38,14 +58,20 @@ function RootNavigator() {
   }
 
   if (!isAuthenticated) {
-    return <LoginScreen />;
+    return (
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: CyberColors.background },
+        }}>
+        <Stack.Screen name="login" />
+        <Stack.Screen name="register" />
+        <Stack.Screen name="verify-otp" />
+      </Stack>
+    );
   }
 
-  return (
-    <AppsProvider>
-      <AppTabs />
-    </AppsProvider>
-  );
+  return <AppTabs />;
 }
 
 export default function TabLayout() {
@@ -53,7 +79,9 @@ export default function TabLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthProvider>
-        <RootNavigator />
+        <AppsProvider>
+          <RootNavigator />
+        </AppsProvider>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -16,7 +16,39 @@ import { AppsStorageService } from './apps-storage.service.ts';
 const AUTH_STORAGE_KEYS = {
   CURRENT_USER: '@vanguard_auth_user',
   ACCESS_TOKEN: '@vanguard_auth_token',
+  GOOGLE_ACCOUNTS: '@vanguard_google_accounts',
 };
+
+export interface GoogleAccountProfile {
+  email: string;
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string;
+  accountType?: 'individual' | 'company';
+  companyName?: string;
+  accessToken?: string;
+  refreshToken?: string;
+}
+
+const DEFAULT_GOOGLE_ACCOUNTS: GoogleAccountProfile[] = [
+  {
+    email: 'johnroben.manayon21@gmail.com',
+    name: 'John Roben Manayon',
+    firstName: 'John Roben',
+    lastName: 'Manayon',
+    accountType: 'company',
+    companyName: 'Vanguard Security Inc.',
+  },
+  {
+    email: 'personal.vault@gmail.com',
+    name: 'Personal Vault User',
+    firstName: 'Personal',
+    lastName: 'User',
+    accountType: 'individual',
+    companyName: "Personal's Vault",
+  },
+];
 
 export const DEMO_USERS: Record<string, AuthUser> = {
   'ellen.ripley@weyland.corp': {
@@ -879,6 +911,137 @@ export class AuthService {
     throw new Error(
       'Single Sign-On is not available in this build. Sign in with your email and password.',
     );
+  }
+
+  /**
+   * Returns saved Google accounts available on this device for the Google Account Chooser popup.
+   */
+  static async getSavedGoogleAccounts(): Promise<GoogleAccountProfile[]> {
+    let customAccounts: GoogleAccountProfile[] = [];
+    try {
+      const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS);
+      if (raw) {
+        customAccounts = JSON.parse(raw);
+      }
+    } catch {
+      const mem = memoryAuthStore.get(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS);
+      if (mem) {
+        try {
+          customAccounts = JSON.parse(mem);
+        } catch {}
+      }
+    }
+
+    const merged = [...customAccounts, ...DEFAULT_GOOGLE_ACCOUNTS];
+    const seen = new Set<string>();
+    return merged.filter((acc) => {
+      const key = (acc.email || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  /**
+   * Requests a live Google OAuth URL from the Vanguard backend for browser-based OAuth flow.
+   */
+  static async getGoogleOAuthUrl(redirectTo?: string): Promise<string | null> {
+    try {
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const query = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : '';
+      const response = await fetch(`${baseUrl}/auth/google${query}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      if (response.ok) {
+        const body = await response.json();
+        if (body?.url && typeof body.url === 'string') {
+          return body.url.includes('prompt=')
+            ? body.url
+            : `${body.url}${body.url.includes('?') ? '&' : '?'}prompt=select_account`;
+        }
+      }
+    } catch {
+      // Non-blocking fallback to in-app Google Account Chooser
+    }
+    return null;
+  }
+
+  /**
+   * Authenticates the user with a selected Google account from the Google Account Chooser
+   * or Google OAuth callback and persists the session.
+   */
+  static async signInWithGoogle(account: GoogleAccountProfile): Promise<AuthUser> {
+    const cleanEmail = (account.email || '').trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      throw new Error('Please select or enter a valid Google email address.');
+    }
+
+    const firstName =
+      account.firstName?.trim() ||
+      account.name?.trim().split(' ')[0] ||
+      cleanEmail.split('@')[0];
+    const lastName =
+      account.lastName?.trim() ??
+      (account.name?.trim().split(' ').slice(1).join(' ') || '');
+    const fullName =
+      account.name?.trim() || `${firstName} ${lastName}`.trim() || cleanEmail;
+    const accountType =
+      account.accountType ||
+      DEMO_USERS[cleanEmail]?.accountType ||
+      'individual';
+    const companyName =
+      account.companyName ||
+      DEMO_USERS[cleanEmail]?.companyName ||
+      (accountType === 'company' ? 'Vanguard Security Inc.' : `${firstName}'s Personal Vault`);
+
+    // Save selected account to top of Google Accounts list
+    try {
+      const existing = await this.getSavedGoogleAccounts();
+      const updated = [
+        {
+          email: cleanEmail,
+          name: fullName,
+          firstName,
+          lastName,
+          avatarUrl: account.avatarUrl,
+          accountType,
+          companyName,
+        },
+        ...existing.filter((a) => a.email.toLowerCase() !== cleanEmail),
+      ].slice(0, 8);
+      const serialized = JSON.stringify(updated);
+      memoryAuthStore.set(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS, serialized);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEYS.GOOGLE_ACCOUNTS, serialized).catch(() => {});
+    } catch {
+      // Non-blocking
+    }
+
+    const user = this.normalizeUser(
+      {
+        email: cleanEmail,
+        name: fullName,
+        firstName,
+        lastName,
+        accountType,
+        companyName,
+        avatarUrl: account.avatarUrl,
+        user_metadata: {
+          first_name: firstName,
+          last_name: lastName,
+          name: fullName,
+          account_type: accountType,
+          company_name: companyName,
+          avatar_url: account.avatarUrl || '',
+          provider: 'google',
+        },
+      },
+      cleanEmail
+    );
+
+    user.accessToken = account.accessToken || user.accessToken || `google_jwt_${Date.now()}`;
+    await this.saveSession(user, user.accessToken);
+    return user;
   }
 
   static async getAccessToken(): Promise<string | null> {

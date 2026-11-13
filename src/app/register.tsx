@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  BackHandler,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,11 +16,25 @@ import { router } from 'expo-router';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import { GoogleAccountPickerModal } from '@/components/cyber/google-account-picker-modal';
+import type { GoogleAccountProfile } from '@/services/auth.service';
+import {
+  REGISTRATION_PAGES,
+  type RegistrationPageKey,
+  type RegistrationDraft,
+  validateRegistrationPage,
+  getNextRegistrationPage,
+  getPrevRegistrationPage,
+  evaluatePasswordRules,
+} from '@/utils/registration-wizard';
 
 export default function RegisterScreen() {
-  const { signup } = useAuth();
+  const { signup, loginWithGoogle } = useAuth();
 
-  const [accountType, setAccountType] = useState<'individual' | 'company'>('individual');
+  const [currentPage, setCurrentPage] =
+    useState<RegistrationPageKey>('identity');
+  const [accountType, setAccountType] =
+    useState<'individual' | 'company'>('individual');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -31,39 +46,113 @@ export default function RegisterScreen() {
   const [agreeTerms, setAgreeTerms] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const validate = (): string | null => {
-    if (!firstName.trim()) return 'Please enter your first name.';
-    if (!lastName.trim()) return 'Please enter your last name.';
-    if (accountType === 'company' && !companyName.trim()) {
-      return 'Please enter your company or organization name.';
+  const draft: RegistrationDraft = {
+    accountType,
+    firstName,
+    lastName,
+    companyName,
+    email,
+    phone,
+    password,
+    confirmPassword,
+    agreeTerms,
+  };
+
+  const currentPageMeta =
+    REGISTRATION_PAGES.find((p) => p.key === currentPage) ||
+    REGISTRATION_PAGES[0];
+  const passwordRules = evaluatePasswordRules(password);
+
+  // Support Android hardware back button across wizard pages
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      const prev = getPrevRegistrationPage(currentPage);
+      if (prev) {
+        setErrorMessage(null);
+        setCurrentPage(prev);
+        return true;
+      }
+      return false;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [currentPage]);
+
+  const handleNextPage = () => {
+    const validationErr = validateRegistrationPage(currentPage, draft);
+    if (validationErr) {
+      setErrorMessage(validationErr);
+      return;
     }
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
-      return 'Please enter a valid email address.';
+
+    const nextPage = getNextRegistrationPage(currentPage);
+    if (nextPage) {
+      setErrorMessage(null);
+      setCurrentPage(nextPage);
     }
-    if (accountType === 'company' && !phone.trim()) {
-      return 'Please enter a company contact phone number.';
+  };
+
+  const handlePrevPage = () => {
+    const prevPage = getPrevRegistrationPage(currentPage);
+    if (prevPage) {
+      setErrorMessage(null);
+      setCurrentPage(prevPage);
     }
-    if (!password || password.length < 6) {
-      return 'Password must be at least 6 characters long.';
+  };
+
+  const handleSelectStepTab = (targetKey: RegistrationPageKey) => {
+    const targetIndex = REGISTRATION_PAGES.findIndex((p) => p.key === targetKey);
+    const currentIndex = REGISTRATION_PAGES.findIndex(
+      (p) => p.key === currentPage
+    );
+
+    if (targetIndex <= currentIndex) {
+      setErrorMessage(null);
+      setCurrentPage(targetKey);
+      return;
     }
-    if (password !== confirmPassword) {
-      return 'Passwords do not match. Please verify both fields.';
+
+    // Validate intermediate pages before jumping forward
+    for (let i = currentIndex; i < targetIndex; i++) {
+      const err = validateRegistrationPage(REGISTRATION_PAGES[i].key, draft);
+      if (err) {
+        setErrorMessage(err);
+        return;
+      }
     }
-    if (!agreeTerms) {
-      return 'Please accept the Terms of Service and Privacy Policy to continue.';
-    }
-    return null;
+
+    setErrorMessage(null);
+    setCurrentPage(targetKey);
+  };
+
+  const handleGoogleAccountSelected = async (account: GoogleAccountProfile) => {
+    setErrorMessage(null);
+    await loginWithGoogle({
+      ...account,
+      accountType: account.accountType || accountType,
+      companyName:
+        accountType === 'company'
+          ? companyName.trim() || account.companyName
+          : account.companyName,
+    });
+    setShowGoogleModal(false);
+    router.replace('/');
   };
 
   const handleRegister = async () => {
-    const error = validate();
-    if (error) {
-      setErrorMessage(error);
-      return;
+    for (const page of REGISTRATION_PAGES) {
+      const err = validateRegistrationPage(page.key, draft);
+      if (err) {
+        setCurrentPage(page.key);
+        setErrorMessage(err);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -71,26 +160,33 @@ export default function RegisterScreen() {
     setSuccessMessage(null);
 
     try {
+      const cleanEmail = email.trim().toLowerCase();
       const result = await signup({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        companyName: accountType === 'company' ? companyName.trim() : undefined,
+        companyName:
+          accountType === 'company' ? companyName.trim() : undefined,
         phone: phone.trim() || undefined,
         accountType,
       });
 
-      setSuccessMessage(result.message || 'Account created! Enter your verification code.');
+      setSuccessMessage(
+        result.message || 'Account created! Enter your verification code.'
+      );
 
       setTimeout(() => {
         router.push({
           pathname: '/verify-otp',
-          params: { email: email.trim().toLowerCase(), mode: 'signup' },
+          params: { email: cleanEmail, mode: 'signup' },
         });
-      }, 800);
+      }, 600);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Registration failed. Please try again.';
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Registration failed. Please try again.';
       setErrorMessage(msg);
     } finally {
       setSubmitting(false);
@@ -120,264 +216,525 @@ export default function RegisterScreen() {
               </Text>
             </View>
 
-            {/* Registration Card */}
+            {/* Multi-Page Registration Card */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Choose Account Type</Text>
-              <Text style={styles.cardSubtitle}>
-                Select whether you are setting up a Personal Vault or Company Directory
-              </Text>
-
-              {/* Account Type Selector Cards */}
-              <View style={styles.typeSelectorRow}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.typeCard,
-                    accountType === 'individual' && styles.typeCardActive,
-                    pressed && styles.typeCardPressed,
-                  ]}
-                  onPress={() => {
-                    setAccountType('individual');
-                    setErrorMessage(null);
-                  }}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: accountType === 'individual' }}
-                  accessibilityLabel="Individual Personal Account"
-                >
-                  <View style={styles.typeIconBadge}>
-                    <Text style={styles.typeIconText}>👤</Text>
-                  </View>
-                  <View style={styles.typeInfo}>
-                    <Text style={[styles.typeName, accountType === 'individual' && styles.typeNameActive]}>
-                      Personal
-                    </Text>
-                    <Text style={styles.typeDesc}>
-                      Personal Vault, TOTP keys & self-managed apps
-                    </Text>
-                  </View>
-                  {accountType === 'individual' && (
-                    <Text style={styles.checkIndicator}>✓</Text>
-                  )}
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.typeCard,
-                    accountType === 'company' && styles.typeCardActive,
-                    pressed && styles.typeCardPressed,
-                  ]}
-                  onPress={() => {
-                    setAccountType('company');
-                    setErrorMessage(null);
-                  }}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: accountType === 'company' }}
-                  accessibilityLabel="Company Organization Account"
-                >
-                  <View style={styles.typeIconBadge}>
-                    <Text style={styles.typeIconText}>🏢</Text>
-                  </View>
-                  <View style={styles.typeInfo}>
-                    <Text style={[styles.typeName, accountType === 'company' && styles.typeNameActive]}>
-                      Company Org
-                    </Text>
-                    <Text style={styles.typeDesc}>
-                      Enterprise directory, employee SSO & IT governance
-                    </Text>
-                  </View>
-                  {accountType === 'company' && (
-                    <Text style={styles.checkIndicator}>✓</Text>
-                  )}
-                </Pressable>
+              {/* Page Step Indicator */}
+              <View style={styles.stepperHeader}>
+                <Text style={styles.pageCounterBadge}>
+                  PAGE {currentPageMeta.stepNumber} OF {REGISTRATION_PAGES.length}
+                </Text>
+                <View style={styles.stepTabsRow}>
+                  {REGISTRATION_PAGES.map((step) => {
+                    const isActive = step.key === currentPage;
+                    const isCompleted =
+                      step.stepNumber < currentPageMeta.stepNumber;
+                    return (
+                      <Pressable
+                        key={step.key}
+                        style={[
+                          styles.stepTab,
+                          isActive && styles.stepTabActive,
+                          isCompleted && styles.stepTabCompleted,
+                        ]}
+                        onPress={() => handleSelectStepTab(step.key)}
+                        testID={`register-page-tab-${step.key}`}
+                      >
+                        <View
+                          style={[
+                            styles.stepNumberCircle,
+                            isActive && styles.stepNumberCircleActive,
+                            isCompleted && styles.stepNumberCircleCompleted,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.stepNumberText,
+                              (isActive || isCompleted) &&
+                                styles.stepNumberTextActive,
+                            ]}
+                          >
+                            {isCompleted ? '✓' : step.stepNumber}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.stepTabLabel,
+                            isActive && styles.stepTabLabelActive,
+                          ]}
+                        >
+                          {step.shortLabel}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
 
+              <Text style={styles.cardTitle}>{currentPageMeta.title}</Text>
+              <Text style={styles.cardSubtitle}>{currentPageMeta.subtitle}</Text>
+
               {/* Error Banner */}
-              {errorMessage && (
+              {errorMessage ? (
                 <View style={styles.errorBanner}>
                   <Text style={styles.errorIcon}>⚠️</Text>
                   <Text style={styles.errorText}>{errorMessage}</Text>
                 </View>
-              )}
+              ) : null}
 
               {/* Success Banner */}
-              {successMessage && (
+              {successMessage ? (
                 <View style={styles.successBanner}>
                   <Text style={styles.successIcon}>✓</Text>
                   <Text style={styles.successText}>{successMessage}</Text>
                 </View>
-              )}
+              ) : null}
 
-              {/* Name Fields */}
-              <View style={styles.rowTwoCol}>
-                <View style={[styles.fieldWrap, styles.colHalf]}>
-                  <Text style={styles.fieldLabel}>FIRST NAME</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={firstName}
-                    onChangeText={(t) => {
-                      setFirstName(t);
-                      if (errorMessage) setErrorMessage(null);
-                    }}
-                    placeholder="e.g. John"
-                    placeholderTextColor={CyberColors.textMuted}
-                    autoCapitalize="words"
-                  />
-                </View>
-
-                <View style={[styles.fieldWrap, styles.colHalf]}>
-                  <Text style={styles.fieldLabel}>LAST NAME</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={lastName}
-                    onChangeText={(t) => {
-                      setLastName(t);
-                      if (errorMessage) setErrorMessage(null);
-                    }}
-                    placeholder="e.g. Doe"
-                    placeholderTextColor={CyberColors.textMuted}
-                    autoCapitalize="words"
-                  />
-                </View>
-              </View>
-
-              {/* Company Name (Company Mode Only) */}
-              {accountType === 'company' && (
-                <View style={styles.fieldWrap}>
-                  <Text style={styles.fieldLabel}>COMPANY / ORGANIZATION NAME</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={companyName}
-                    onChangeText={(t) => {
-                      setCompanyName(t);
-                      if (errorMessage) setErrorMessage(null);
-                    }}
-                    placeholder="e.g. Acme Security Corp"
-                    placeholderTextColor={CyberColors.textMuted}
-                    autoCapitalize="words"
-                  />
-                </View>
-              )}
-
-              {/* Email Address */}
-              <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>
-                  {accountType === 'company' ? 'WORK EMAIL ADDRESS' : 'PERSONAL EMAIL ADDRESS'}
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={(t) => {
-                    setEmail(t);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  placeholder={accountType === 'company' ? 'admin@company.com' : 'you@example.com'}
-                  placeholderTextColor={CyberColors.textMuted}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                />
-              </View>
-
-              {/* Phone Number */}
-              <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>
-                  {accountType === 'company' ? 'PHONE NUMBER (MFA / IDENTITY)' : 'PHONE NUMBER (OPTIONAL)'}
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={phone}
-                  onChangeText={(t) => {
-                    setPhone(t);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  placeholder="+1 (555) 000-0000"
-                  placeholderTextColor={CyberColors.textMuted}
-                  keyboardType="phone-pad"
-                />
-              </View>
-
-              {/* Master Password */}
-              <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>MASTER PASSWORD</Text>
-                <View style={styles.passwordWrap}>
-                  <TextInput
-                    style={[styles.input, styles.passwordInput]}
-                    value={password}
-                    onChangeText={(t) => {
-                      setPassword(t);
-                      if (errorMessage) setErrorMessage(null);
-                    }}
-                    placeholder="Minimum 6 characters"
-                    placeholderTextColor={CyberColors.textMuted}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                  />
+              {/* PAGE 1: ACCOUNT TYPE & IDENTITY */}
+              {currentPage === 'identity' ? (
+                <View testID="register-page-identity">
+                  {/* Quick Sign Up with Google */}
                   <Pressable
-                    style={styles.eyeBtn}
-                    onPress={() => setShowPassword(!showPassword)}
+                    style={({ pressed }) => [
+                      styles.googleBtn,
+                      pressed && styles.googleBtnPressed,
+                    ]}
+                    onPress={() => {
+                      setErrorMessage(null);
+                      setShowGoogleModal(true);
+                    }}
                     accessibilityRole="button"
-                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                    accessibilityLabel="Sign up with Google"
+                    testID="google-sign-up-button"
                   >
-                    <Text style={styles.eyeIcon}>{showPassword ? '👁️' : '🔒'}</Text>
+                    <View style={styles.googleIconCircle}>
+                      <Text style={styles.googleIconG}>G</Text>
+                    </View>
+                    <Text style={styles.googleBtnText}>
+                      Sign up with Google
+                    </Text>
+                  </Pressable>
+
+                  <View style={styles.dividerRow}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>OR CREATE MANUALLY</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
+
+                  {/* Account Type Selector Cards */}
+                  <View style={styles.typeSelectorRow}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.typeCard,
+                        accountType === 'individual' && styles.typeCardActive,
+                        pressed && styles.typeCardPressed,
+                      ]}
+                      onPress={() => {
+                        setAccountType('individual');
+                        setErrorMessage(null);
+                      }}
+                      accessibilityRole="radio"
+                      accessibilityState={{
+                        selected: accountType === 'individual',
+                      }}
+                      accessibilityLabel="Individual Personal Account"
+                    >
+                      <View style={styles.typeIconBadge}>
+                        <Text style={styles.typeIconText}>👤</Text>
+                      </View>
+                      <View style={styles.typeInfo}>
+                        <Text
+                          style={[
+                            styles.typeName,
+                            accountType === 'individual' &&
+                              styles.typeNameActive,
+                          ]}
+                        >
+                          Personal
+                        </Text>
+                        <Text style={styles.typeDesc}>
+                          Personal Vault, TOTP keys & self-managed apps
+                        </Text>
+                      </View>
+                      {accountType === 'individual' ? (
+                        <Text style={styles.checkIndicator}>✓</Text>
+                      ) : null}
+                    </Pressable>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.typeCard,
+                        accountType === 'company' && styles.typeCardActive,
+                        pressed && styles.typeCardPressed,
+                      ]}
+                      onPress={() => {
+                        setAccountType('company');
+                        setErrorMessage(null);
+                      }}
+                      accessibilityRole="radio"
+                      accessibilityState={{
+                        selected: accountType === 'company',
+                      }}
+                      accessibilityLabel="Company Organization Account"
+                    >
+                      <View style={styles.typeIconBadge}>
+                        <Text style={styles.typeIconText}>🏢</Text>
+                      </View>
+                      <View style={styles.typeInfo}>
+                        <Text
+                          style={[
+                            styles.typeName,
+                            accountType === 'company' && styles.typeNameActive,
+                          ]}
+                        >
+                          Company Org
+                        </Text>
+                        <Text style={styles.typeDesc}>
+                          Enterprise directory, employee SSO & IT governance
+                        </Text>
+                      </View>
+                      {accountType === 'company' ? (
+                        <Text style={styles.checkIndicator}>✓</Text>
+                      ) : null}
+                    </Pressable>
+                  </View>
+
+                  {/* First & Last Name */}
+                  <View style={styles.rowTwoCol}>
+                    <View style={[styles.fieldWrap, styles.colHalf]}>
+                      <Text style={styles.fieldLabel}>FIRST NAME *</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={firstName}
+                        onChangeText={(t) => {
+                          setFirstName(t);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                        placeholder="e.g. John"
+                        placeholderTextColor={CyberColors.textMuted}
+                        autoCapitalize="words"
+                        testID="register-first-name-input"
+                      />
+                    </View>
+
+                    <View style={[styles.fieldWrap, styles.colHalf]}>
+                      <Text style={styles.fieldLabel}>LAST NAME *</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={lastName}
+                        onChangeText={(t) => {
+                          setLastName(t);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                        placeholder="e.g. Doe"
+                        placeholderTextColor={CyberColors.textMuted}
+                        autoCapitalize="words"
+                        testID="register-last-name-input"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Company Name (Company Mode Only) */}
+                  {accountType === 'company' ? (
+                    <View style={styles.fieldWrap}>
+                      <Text style={styles.fieldLabel}>
+                        COMPANY / ORGANIZATION NAME *
+                      </Text>
+                      <TextInput
+                        style={styles.input}
+                        value={companyName}
+                        onChangeText={(t) => {
+                          setCompanyName(t);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                        placeholder="e.g. Acme Security Corp"
+                        placeholderTextColor={CyberColors.textMuted}
+                        autoCapitalize="words"
+                        testID="register-company-name-input"
+                      />
+                    </View>
+                  ) : null}
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.submitBtn,
+                      pressed && styles.submitBtnPressed,
+                    ]}
+                    onPress={handleNextPage}
+                    accessibilityRole="button"
+                    accessibilityLabel="Next Page: Contact Details"
+                    testID="register-next-to-contact-button"
+                  >
+                    <Text style={styles.submitBtnText}>
+                      Next: Contact Details →
+                    </Text>
                   </Pressable>
                 </View>
-              </View>
+              ) : null}
 
-              {/* Confirm Password */}
-              <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
-                <TextInput
-                  style={styles.input}
-                  value={confirmPassword}
-                  onChangeText={(t) => {
-                    setConfirmPassword(t);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  placeholder="Re-enter master password"
-                  placeholderTextColor={CyberColors.textMuted}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                />
-              </View>
+              {/* PAGE 2: CONTACT & RECOVERY */}
+              {currentPage === 'contact' ? (
+                <View testID="register-page-contact">
+                  <View style={styles.summaryPill}>
+                    <Text style={styles.summaryPillText}>
+                      {accountType === 'company' ? '🏢' : '👤'}{' '}
+                      {firstName.trim()} {lastName.trim()}
+                      {accountType === 'company' && companyName.trim()
+                        ? ` • ${companyName.trim()}`
+                        : ' • Personal Vault'}
+                    </Text>
+                  </View>
 
-              {/* Terms Agreement Checkbox */}
-              <Pressable
-                style={styles.termsWrap}
-                onPress={() => setAgreeTerms(!agreeTerms)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: agreeTerms }}
-              >
-                <View style={[styles.checkbox, agreeTerms && styles.checkboxChecked]}>
-                  {agreeTerms && <Text style={styles.checkboxCheck}>✓</Text>}
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>
+                      {accountType === 'company'
+                        ? 'WORK EMAIL ADDRESS *'
+                        : 'PERSONAL EMAIL ADDRESS *'}
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={email}
+                      onChangeText={(t) => {
+                        setEmail(t);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
+                      placeholder={
+                        accountType === 'company'
+                          ? 'admin@company.com'
+                          : 'you@example.com'
+                      }
+                      placeholderTextColor={CyberColors.textMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      testID="register-email-input"
+                    />
+                  </View>
+
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>
+                      {accountType === 'company'
+                        ? 'PHONE NUMBER (MFA / IDENTITY) *'
+                        : 'PHONE NUMBER (OPTIONAL)'}
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={phone}
+                      onChangeText={(t) => {
+                        setPhone(t);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
+                      placeholder="+1 (555) 000-0000"
+                      placeholderTextColor={CyberColors.textMuted}
+                      keyboardType="phone-pad"
+                      testID="register-phone-input"
+                    />
+                  </View>
+
+                  <View style={styles.wizardNavRow}>
+                    <Pressable
+                      style={styles.secondaryNavBtn}
+                      onPress={handlePrevPage}
+                      accessibilityRole="button"
+                      accessibilityLabel="Back to Identity Page"
+                      testID="register-back-to-identity-button"
+                    >
+                      <Text style={styles.secondaryNavBtnText}>← Back</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.submitBtn,
+                        styles.wizardPrimaryBtn,
+                        pressed && styles.submitBtnPressed,
+                      ]}
+                      onPress={handleNextPage}
+                      accessibilityRole="button"
+                      accessibilityLabel="Next Page: Security Setup"
+                      testID="register-next-to-security-button"
+                    >
+                      <Text style={styles.submitBtnText}>
+                        Next: Security →
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
-                <Text style={styles.termsText}>
-                  I agree to the Vanguard <Text style={styles.termsHighlight}>Terms of Service</Text> and{' '}
-                  <Text style={styles.termsHighlight}>Privacy Policy</Text>.
-                </Text>
-              </Pressable>
+              ) : null}
 
-              {/* Submit Button */}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.submitBtn,
-                  pressed && styles.submitBtnPressed,
-                  submitting && styles.submitBtnDisabled,
-                ]}
-                onPress={handleRegister}
-                disabled={submitting}
-                accessibilityRole="button"
-                accessibilityLabel="Create Account"
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" color={CyberColors.textDark} />
-                ) : (
-                  <Text style={styles.submitBtnText}>
-                    {accountType === 'company' ? 'Register Company Account' : 'Create Personal Account'}
-                  </Text>
-                )}
-              </Pressable>
+              {/* PAGE 3: MASTER PASSWORD & POLICY */}
+              {currentPage === 'security' ? (
+                <View testID="register-page-security">
+                  <View style={styles.summaryPill}>
+                    <Text style={styles.summaryPillText}>
+                      {accountType === 'company' ? '🏢' : '👤'}{' '}
+                      {firstName.trim()} {lastName.trim()} •{' '}
+                      {email.trim().toLowerCase()}
+                    </Text>
+                  </View>
+
+                  {/* Master Password */}
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>MASTER PASSWORD *</Text>
+                    <View style={styles.passwordWrap}>
+                      <TextInput
+                        style={[styles.input, styles.passwordInput]}
+                        value={password}
+                        onChangeText={(t) => {
+                          setPassword(t);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                        placeholder="Minimum 6 characters"
+                        placeholderTextColor={CyberColors.textMuted}
+                        secureTextEntry={!showPassword}
+                        autoCapitalize="none"
+                        testID="register-password-input"
+                      />
+                      <Pressable
+                        style={styles.eyeBtn}
+                        onPress={() => setShowPassword(!showPassword)}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          showPassword ? 'Hide password' : 'Show password'
+                        }
+                      >
+                        <Text style={styles.eyeIcon}>
+                          {showPassword ? '👁️' : '🔒'}
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    {/* Password checklist */}
+                    <View style={styles.rulesGrid}>
+                      <Text
+                        style={[
+                          styles.ruleItem,
+                          passwordRules.hasMinLength && styles.ruleItemMet,
+                        ]}
+                      >
+                        {passwordRules.hasMinLength ? '✓' : '○'} 8+ chars
+                      </Text>
+                      <Text
+                        style={[
+                          styles.ruleItem,
+                          passwordRules.hasUpper && styles.ruleItemMet,
+                        ]}
+                      >
+                        {passwordRules.hasUpper ? '✓' : '○'} Uppercase
+                      </Text>
+                      <Text
+                        style={[
+                          styles.ruleItem,
+                          passwordRules.hasLower && styles.ruleItemMet,
+                        ]}
+                      >
+                        {passwordRules.hasLower ? '✓' : '○'} Lowercase
+                      </Text>
+                      <Text
+                        style={[
+                          styles.ruleItem,
+                          passwordRules.hasSpecial && styles.ruleItemMet,
+                        ]}
+                      >
+                        {passwordRules.hasSpecial ? '✓' : '○'} Symbol
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Confirm Password */}
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>CONFIRM PASSWORD *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={confirmPassword}
+                      onChangeText={(t) => {
+                        setConfirmPassword(t);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
+                      placeholder="Re-enter master password"
+                      placeholderTextColor={CyberColors.textMuted}
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      testID="register-confirm-password-input"
+                    />
+                  </View>
+
+                  {/* Terms Agreement Checkbox */}
+                  <Pressable
+                    style={styles.termsWrap}
+                    onPress={() => {
+                      setAgreeTerms(!agreeTerms);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: agreeTerms }}
+                    testID="register-agree-terms-checkbox"
+                  >
+                    <View
+                      style={[
+                        styles.checkbox,
+                        agreeTerms && styles.checkboxChecked,
+                      ]}
+                    >
+                      {agreeTerms ? (
+                        <Text style={styles.checkboxCheck}>✓</Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.termsText}>
+                      I agree to the Vanguard{' '}
+                      <Text style={styles.termsHighlight}>
+                        Terms of Service
+                      </Text>{' '}
+                      and{' '}
+                      <Text style={styles.termsHighlight}>Privacy Policy</Text>.
+                    </Text>
+                  </Pressable>
+
+                  <View style={styles.wizardNavRow}>
+                    <Pressable
+                      style={styles.secondaryNavBtn}
+                      onPress={handlePrevPage}
+                      disabled={submitting}
+                      accessibilityRole="button"
+                      accessibilityLabel="Back to Contact Page"
+                      testID="register-back-to-contact-button"
+                    >
+                      <Text style={styles.secondaryNavBtnText}>← Back</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.submitBtn,
+                        styles.wizardPrimaryBtn,
+                        pressed && styles.submitBtnPressed,
+                        submitting && styles.submitBtnDisabled,
+                      ]}
+                      onPress={handleRegister}
+                      disabled={submitting}
+                      accessibilityRole="button"
+                      accessibilityLabel="Create Account"
+                      testID="register-submit-button"
+                    >
+                      {submitting ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={CyberColors.textDark}
+                        />
+                      ) : (
+                        <Text style={styles.submitBtnText}>
+                          {accountType === 'company'
+                            ? 'Register Company'
+                            : 'Create Account'}
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
 
               {/* Sign In Navigation Prompt */}
               <View style={styles.signInPromptWrap}>
-                <Text style={styles.signInPromptText}>Already have an account?</Text>
+                <Text style={styles.signInPromptText}>
+                  Already have an account?
+                </Text>
                 <Pressable
                   onPress={() => router.replace('/login')}
                   accessibilityRole="link"
@@ -398,6 +755,13 @@ export default function RegisterScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      <GoogleAccountPickerModal
+        visible={showGoogleModal}
+        onClose={() => setShowGoogleModal(false)}
+        onSelectAccount={handleGoogleAccountSelected}
+        title="Sign up with Google"
+      />
     </View>
   );
 }
@@ -421,7 +785,7 @@ const styles = StyleSheet.create({
   },
   brandContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   shieldBadge: {
     width: 56,
@@ -433,18 +797,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
-    shadowColor: CyberColors.cyan,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-    elevation: 4,
   },
   shieldIcon: {
     fontSize: 26,
   },
   brandTitle: {
     color: CyberColors.cyan,
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '900',
     letterSpacing: 3,
   },
@@ -457,8 +816,8 @@ const styles = StyleSheet.create({
   },
   heroText: {
     color: CyberColors.textSecondary,
-    fontSize: 13,
-    marginTop: 6,
+    fontSize: 12.5,
+    marginTop: 5,
     textAlign: 'center',
   },
   card: {
@@ -468,14 +827,77 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: CyberRadius.lg,
     padding: 20,
-    shadowColor: CyberColors.cyan,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+  },
+  stepperHeader: {
+    marginBottom: 14,
+  },
+  pageCounterBadge: {
+    color: CyberColors.cyan,
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+  stepTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  stepTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: CyberRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+  },
+  stepTabActive: {
+    borderColor: CyberColors.cyan,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+  },
+  stepTabCompleted: {
+    borderColor: 'rgba(0, 255, 136, 0.4)',
+    backgroundColor: 'rgba(0, 255, 136, 0.08)',
+  },
+  stepNumberCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: CyberColors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberCircleActive: {
+    borderColor: CyberColors.cyan,
+    backgroundColor: CyberColors.cyan,
+  },
+  stepNumberCircleCompleted: {
+    borderColor: CyberColors.green,
+    backgroundColor: CyberColors.green,
+  },
+  stepNumberText: {
+    color: CyberColors.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  stepNumberTextActive: {
+    color: CyberColors.textDark,
+  },
+  stepTabLabel: {
+    color: CyberColors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stepTabLabelActive: {
+    color: CyberColors.cyan,
+    fontWeight: '800',
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: CyberColors.textPrimary,
     marginBottom: 4,
@@ -483,72 +905,170 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     fontSize: 12,
     color: CyberColors.textSecondary,
-    lineHeight: 16,
-    marginBottom: 16,
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  googleBtnPressed: {
+    backgroundColor: 'rgba(66, 133, 244, 0.15)',
+    borderColor: '#4285F4',
+  },
+  googleIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleIconG: {
+    color: '#4285F4',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  googleBtnText: {
+    color: CyberColors.textPrimary,
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    gap: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  dividerText: {
+    color: CyberColors.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   typeSelectorRow: {
-    flexDirection: 'row',
     gap: 10,
     marginBottom: 16,
   },
   typeCard: {
-    flex: 1,
-    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-    borderColor: 'rgba(100, 116, 139, 0.4)',
-    borderWidth: 1.5,
-    borderRadius: CyberRadius.md,
-    padding: 10,
+    flexDirection: 'row',
     alignItems: 'center',
-    position: 'relative',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    padding: 12,
+    gap: 12,
   },
   typeCardActive: {
-    backgroundColor: 'rgba(0, 229, 255, 0.08)',
     borderColor: CyberColors.cyan,
-    shadowColor: CyberColors.cyan,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
   },
   typeCardPressed: {
-    opacity: 0.85,
+    opacity: 0.9,
   },
   typeIconBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
   typeIconText: {
     fontSize: 18,
   },
   typeInfo: {
-    alignItems: 'center',
+    flex: 1,
   },
   typeName: {
-    fontSize: 13,
+    color: CyberColors.textPrimary,
+    fontSize: 13.5,
     fontWeight: '800',
-    color: CyberColors.textSecondary,
-    marginBottom: 2,
   },
   typeNameActive: {
     color: CyberColors.cyan,
   },
   typeDesc: {
-    fontSize: 9.5,
-    color: CyberColors.textMuted,
-    textAlign: 'center',
-    lineHeight: 12,
+    color: CyberColors.textSecondary,
+    fontSize: 11.5,
+    marginTop: 2,
   },
   checkIndicator: {
-    position: 'absolute',
-    top: 6,
-    right: 8,
     color: CyberColors.cyan,
+    fontSize: 16,
     fontWeight: '900',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  errorIcon: {
+    fontSize: 14,
+  },
+  errorText: {
+    flex: 1,
+    color: '#fca5a5',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 255, 136, 0.12)',
+    borderColor: 'rgba(0, 255, 136, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  successIcon: {
+    color: CyberColors.green,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  successText: {
+    flex: 1,
+    color: CyberColors.green,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  summaryPill: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+  },
+  summaryPillText: {
+    color: CyberColors.cyan,
+    fontSize: 12,
+    fontWeight: '700',
   },
   rowTwoCol: {
     flexDirection: 'row',
@@ -558,23 +1078,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fieldWrap: {
-    marginBottom: 12,
+    marginBottom: 14,
   },
   fieldLabel: {
     color: CyberColors.textSecondary,
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 5,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 6,
   },
   input: {
-    backgroundColor: '#1e293b',
-    borderColor: 'rgba(100, 116, 139, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
     borderWidth: 1,
     borderRadius: CyberRadius.md,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
     color: CyberColors.textPrimary,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     fontSize: 13.5,
   },
   passwordWrap: {
@@ -594,41 +1114,78 @@ const styles = StyleSheet.create({
   eyeIcon: {
     fontSize: 16,
   },
+  rulesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  ruleItem: {
+    color: CyberColors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  ruleItemMet: {
+    color: CyberColors.green,
+  },
   termsWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
+    alignItems: 'flex-start',
     marginBottom: 16,
     gap: 10,
   },
   checkbox: {
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
     borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: CyberColors.textSecondary,
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 2,
   },
   checkboxChecked: {
     backgroundColor: CyberColors.cyan,
     borderColor: CyberColors.cyan,
   },
   checkboxCheck: {
-    color: '#0a0e17',
+    color: CyberColors.textDark,
     fontSize: 12,
     fontWeight: '900',
   },
   termsText: {
     flex: 1,
     color: CyberColors.textSecondary,
-    fontSize: 11.5,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   termsHighlight: {
     color: CyberColors.cyan,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  wizardNavRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  secondaryNavBtn: {
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryNavBtnText: {
+    color: CyberColors.textSecondary,
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  wizardPrimaryBtn: {
+    flex: 1,
+    marginTop: 0,
   },
   submitBtn: {
     backgroundColor: CyberColors.cyan,
@@ -636,30 +1193,24 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: CyberColors.cyan,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 4,
+    marginTop: 4,
   },
   submitBtnPressed: {
     opacity: 0.85,
-    transform: [{ scale: 0.99 }],
   },
   submitBtnDisabled: {
     opacity: 0.6,
   },
   submitBtnText: {
-    color: '#0a0e17',
+    color: CyberColors.textDark,
     fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 0.8,
   },
   signInPromptWrap: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 18,
   },
   signInPromptText: {
     color: CyberColors.textSecondary,
@@ -670,55 +1221,11 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '800',
   },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
-    gap: 8,
-  },
-  errorIcon: {
-    fontSize: 14,
-  },
-  errorText: {
-    color: '#f87171',
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-  },
-  successBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
-    gap: 8,
-  },
-  successIcon: {
-    color: '#10b981',
-    fontWeight: '900',
-    fontSize: 14,
-  },
-  successText: {
-    color: '#10b981',
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-  },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 24,
     gap: 6,
+    marginTop: 24,
   },
   footerShield: {
     fontSize: 12,
@@ -726,6 +1233,6 @@ const styles = StyleSheet.create({
   footerText: {
     color: CyberColors.textMuted,
     fontSize: 11,
-    fontWeight: '600',
+    textAlign: 'center',
   },
 });

@@ -210,7 +210,10 @@ export class PushMfaService {
           this.notify();
         }
         return req;
-      } else if (this.activeRequest && this.activeRequest.id.startsWith('push_mfa_')) {
+      } else if (
+        this.activeRequest &&
+        (this.activeRequest.id.startsWith('push_mfa_') || this.activeRequest.id.startsWith('push_test_'))
+      ) {
         // If previous active backend request is no longer pending (e.g. expired or approved)
         this.activeRequest = null;
         this.notify();
@@ -260,6 +263,80 @@ export class PushMfaService {
       return res.ok;
     } catch {
       return false;
+    }
+  }
+
+  public async listPairedDevices(email: string): Promise<{ ok: boolean; devices: any[] }> {
+    try {
+      const url = `${getApiBaseUrl()}/oauth/devices?email=${encodeURIComponent(email)}`;
+      const res = await fetch(url);
+      if (!res.ok) return { ok: false, devices: [] };
+      const data = await res.json();
+      return { ok: true, devices: Array.isArray(data?.devices) ? data.devices : [] };
+    } catch {
+      return { ok: false, devices: [] };
+    }
+  }
+
+  public async pairDevice(payload: {
+    pairingKey: string;
+    deviceName?: string;
+    deviceType?: string;
+    model?: string;
+    osVersion?: string;
+    biometricType?: string;
+    email?: string;
+  }): Promise<{ success: boolean; device?: any; pairedEmail?: string; error?: string }> {
+    try {
+      const url = `${getApiBaseUrl()}/oauth/devices/pair`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        return {
+          success: false,
+          error: data?.message || 'Invalid or expired pairing key. Generate a fresh key on the web dashboard.',
+        };
+      }
+      return { success: true, device: data.device, pairedEmail: data.pairedEmail };
+    } catch {
+      return { success: false, error: 'Unable to reach Vanguard Identity Hub backend.' };
+    }
+  }
+
+  public async unlinkPairedDevice(deviceId: string, email?: string): Promise<boolean> {
+    try {
+      const query = email ? `?email=${encodeURIComponent(email)}` : '';
+      const url = `${getApiBaseUrl()}/oauth/devices/${encodeURIComponent(deviceId)}${query}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  public async triggerDeviceTestPush(payload: {
+    email: string;
+    deviceId?: string;
+    deviceName?: string;
+  }): Promise<{ success: boolean; challengeId?: string; error?: string }> {
+    try {
+      const url = `${getApiBaseUrl()}/oauth/mfa/push/test`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        return { success: false, error: data?.message || 'Unable to trigger push verification.' };
+      }
+      return { success: true, challengeId: data.challengeId };
+    } catch {
+      return { success: false, error: 'Network error dispatching push test.' };
     }
   }
 

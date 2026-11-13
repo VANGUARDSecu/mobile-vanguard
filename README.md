@@ -568,6 +568,9 @@ The Authenticator Vault implements production-grade mobile security standards al
    - Plaintext secrets are never exported unencrypted.
 8. **Device-Bound Push MFA Approvals**:
    - Background polling requires authenticated user email identity (`GET /oauth/mfa/push/pending?email=...`), preventing anonymous challenge enumeration.
+9. **Real Dashboard Pairing & Test Push Sync (SCRUM-183)**:
+   - `DevicesScreen` and `PushMfaService` connect directly to the backend pairing APIs (`POST /oauth/devices/pair`, `GET /oauth/devices`, `DELETE /oauth/devices/:deviceId`, `POST /oauth/mfa/push/test`) scoped per signed-in user email.
+   - Pairing requires a valid dashboard-issued pairing key, unlinking removes the device from the backend directory, and test pushes dispatch real number-matching challenges only when the phone is paired.
 
 
 

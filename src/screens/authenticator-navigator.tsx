@@ -53,11 +53,13 @@ export function AuthenticatorNavigator({
       setActivePushRequest(req);
     });
 
-    // Auto-discover user session and start polling backend for pending SSO pushes (SCRUM-85)
+    // Auto-discover user session and start polling backend for pending SSO pushes & TOTP sync (SCRUM-85/178)
+    vaultService.setAuthTokenProvider(() => AuthService.getAccessToken());
     AuthService.getCurrentUser().then((user) => {
       if (isMounted && user?.email) {
         vaultService.setCurrentUserEmail(user.email);
         pushMfaService.startPolling(user.email);
+        void vaultService.syncWithBackend(user.accessToken || undefined);
       }
     }).catch(() => {});
 

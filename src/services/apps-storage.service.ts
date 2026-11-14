@@ -302,6 +302,16 @@ export class AppsStorageService {
     }
   }
 
+  static isLiveToken(token?: string | null): token is string {
+    return Boolean(
+      token &&
+      typeof token === 'string' &&
+      !token.startsWith('mock_jwt_') &&
+      !token.startsWith('mock-') &&
+      !token.startsWith('test-'),
+    );
+  }
+
   static async addPersonalApp(
     input: PersonalAppInput,
     email?: string,
@@ -337,14 +347,10 @@ export class AppsStorageService {
       ...apps.filter((a) => a.name.toLowerCase().trim() !== newApp.name.toLowerCase().trim()),
     ];
     await this.savePersonalApps(updatedPersonal, email);
-
-    // SCRUM-182: Also update enterprise apps store so newly added apps display in all views
-    const entApps = await this.getEnterpriseApps(email);
-    const updatedEnt = [
-      newApp,
-      ...entApps.filter((a) => a.name.toLowerCase().trim() !== newApp.name.toLowerCase().trim()),
-    ];
-    await this.saveEnterpriseApps(updatedEnt, email);
+    await setStoredItem(
+      `@vanguard_personal_apps_migrated_${cleanEmail || 'default'}`,
+      '1',
+    );
 
     // Save credentials to personal vault items if username or password provided
     if (input.username || input.password) {
@@ -366,18 +372,18 @@ export class AppsStorageService {
       }
     }
 
-    // Best-effort backend synchronization if online with active session token
-    if (token && userId) {
+    // SCRUM-178: Push personal app to /apps/personal so web frontend receives it
+    if (this.isLiveToken(token)) {
       try {
         const baseUrl = this.getBackendApiUrl();
-        fetch(`${baseUrl}/apps?targetUserId=${encodeURIComponent(userId)}`, {
+        fetch(`${baseUrl}/apps/personal`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
-            appId: newApp.id,
+            id: newApp.id,
             name: newApp.name,
             protocol: newApp.protocol,
             launchUrl: newApp.launchUrl,
@@ -386,7 +392,6 @@ export class AppsStorageService {
             description: newApp.description,
             assignedUsername: newApp.assignedUsername,
             assignedPassword: newApp.assignedPassword,
-            targetUserEmail: newApp.targetUserEmail,
           }),
         }).catch(() => {});
       } catch {
@@ -397,11 +402,91 @@ export class AppsStorageService {
     return newApp;
   }
 
+  static async syncPersonalAppsWithBackend(
+    token?: string,
+    email?: string,
+  ): Promise<SaaSApp[]> {
+    const currentLocal = await this.getPersonalApps(email);
+    if (!this.isLiveToken(token)) return currentLocal;
+
+    const cleanEmail = email?.trim().toLowerCase() || 'default';
+    const migrationKey = `@vanguard_personal_apps_migrated_${cleanEmail}`;
+
+    try {
+      const baseUrl = this.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const response = await fetch(`${baseUrl}/apps/personal`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const rows = await response.json();
+        if (Array.isArray(rows)) {
+          const alreadyMigrated = (await getStoredItem(migrationKey)) === '1';
+          if (rows.length === 0 && !alreadyMigrated && currentLocal.length > 0) {
+            await setStoredItem(migrationKey, '1');
+            for (const app of currentLocal) {
+              await fetch(`${baseUrl}/apps/personal`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  id: app.id,
+                  name: app.name,
+                  protocol: app.protocol || 'Extension Autofill',
+                  launchUrl: app.launchUrl,
+                  category: app.category || 'cloud',
+                  icon: app.icon || '🌐',
+                  description: app.description || '',
+                  assignedUsername: app.assignedUsername,
+                  assignedPassword: app.assignedPassword,
+                }),
+              }).catch(() => {});
+            }
+            return currentLocal;
+          }
+
+          await setStoredItem(migrationKey, '1');
+          const mapped: SaaSApp[] = rows.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            category: (r.category as SaaSApp['category']) || 'cloud',
+            description: r.description || '',
+            icon: r.icon || '🌐',
+            protocol: r.protocol || 'Extension Autofill',
+            launchUrl: r.launchUrl || r.launch_url || '',
+            assigned: r.assigned !== false,
+            status: 'Approved',
+            assignedUsername: r.assignedUsername || r.assigned_username,
+            assignedPassword: r.assignedPassword || r.assigned_password,
+            targetUserId: r.userId || r.targetUserId,
+            targetUserEmail: cleanEmail !== 'default' ? cleanEmail : undefined,
+          }));
+          await this.savePersonalApps(mapped, email);
+          return mapped;
+        }
+      }
+    } catch {
+      // Offline fallback keeps cached local personal apps
+    }
+    return currentLocal;
+  }
+
   static async deletePersonalApp(
     id: string,
     email?: string,
     token?: string,
-    userId?: string
+    _userId?: string
   ): Promise<void> {
     const apps = await this.getPersonalApps(email);
     const updated = apps.filter((a) => a.id !== id);
@@ -409,20 +494,19 @@ export class AppsStorageService {
 
     const entApps = await this.getEnterpriseApps(email);
     const updatedEnt = entApps.filter((a) => a.id !== id);
-    await this.saveEnterpriseApps(updatedEnt, email);
+    if (updatedEnt.length !== entApps.length) {
+      await this.saveEnterpriseApps(updatedEnt, email);
+    }
 
-    if (token && userId) {
+    if (this.isLiveToken(token)) {
       try {
         const baseUrl = this.getBackendApiUrl();
-        fetch(
-          `${baseUrl}/apps?targetUserId=${encodeURIComponent(userId)}&appId=${encodeURIComponent(id)}`,
-          {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          }
-        ).catch(() => {});
+        fetch(`${baseUrl}/apps/personal/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }).catch(() => {});
       } catch {
         // Non-blocking
       }
@@ -474,8 +558,7 @@ export class AppsStorageService {
     email?: string,
   ): Promise<SaaSApp[]> {
     const currentLocal = await this.getEnterpriseApps(email);
-    const currentPersonal = await this.getPersonalApps(email);
-    if (!token) return currentLocal;
+    if (!this.isLiveToken(token)) return currentLocal;
 
     try {
       const baseUrl = this.getBackendApiUrl();
@@ -512,17 +595,16 @@ export class AppsStorageService {
             targetUserEmail: r.target_user_email || r.targetUserEmail,
           }));
 
-          const mergedMap = new Map<string, SaaSApp>();
-          // Priority to backend assigned rows, while preserving local bookmarks
-          for (const app of [...mapped, ...currentLocal, ...currentPersonal]) {
+          const dedupedMap = new Map<string, SaaSApp>();
+          for (const app of mapped) {
             const key = (app.name || app.id).toLowerCase().trim();
-            if (!mergedMap.has(key)) {
-              mergedMap.set(key, app);
+            if (!dedupedMap.has(key)) {
+              dedupedMap.set(key, app);
             }
           }
-          const merged = Array.from(mergedMap.values());
-          await this.saveEnterpriseApps(merged, email);
-          return merged;
+          const authoritative = Array.from(dedupedMap.values());
+          await this.saveEnterpriseApps(authoritative, email);
+          return authoritative;
         }
       }
     } catch {
@@ -596,8 +678,13 @@ export class AppsStorageService {
     }
   }
 
-  static async syncConnectedAppsWithBackend(email?: string): Promise<UserConnectedApp[]> {
+  static async syncConnectedAppsWithBackend(
+    email?: string,
+    token?: string,
+  ): Promise<UserConnectedApp[]> {
     const currentLocal = await this.getConnectedApps();
+    if (!this.isLiveToken(token)) return currentLocal;
+
     try {
       const baseUrl = this.getBackendApiUrl();
       const url = email
@@ -605,21 +692,24 @@ export class AppsStorageService {
         : `${baseUrl}/oauth/connected-apps`;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
 
       const response = await fetch(url, {
         method: 'GET',
-        headers: { 'Accept': 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
 
       if (response.ok) {
         const body = await response.json();
-        if (body?.success && Array.isArray(body.connectedApps) && body.connectedApps.length > 0) {
-          const merged = this.deduplicateConnectedApps([...body.connectedApps, ...currentLocal]);
-          await this.saveConnectedApps(merged);
-          return merged;
+        if (body?.success && Array.isArray(body.connectedApps)) {
+          const authoritative = this.deduplicateConnectedApps(body.connectedApps);
+          await this.saveConnectedApps(authoritative);
+          return authoritative;
         }
       }
     } catch {
@@ -628,7 +718,11 @@ export class AppsStorageService {
     return currentLocal;
   }
 
-  static async disconnectConnectedApp(clientId: string, email?: string): Promise<void> {
+  static async disconnectConnectedApp(
+    clientId: string,
+    email?: string,
+    token?: string,
+  ): Promise<void> {
     const apps = await this.getConnectedApps();
     const target = apps.find((a) => a.clientId === clientId);
     const targetOrigin = target ? (target.originUrl || '').toLowerCase().trim().replace(/\/$/, '') : '';
@@ -640,15 +734,23 @@ export class AppsStorageService {
 
     await this.saveConnectedApps(updated);
 
-    // Asynchronously notify backend revocation if online
-    try {
-      const baseUrl = this.getBackendApiUrl();
-      const url = email
-        ? `${baseUrl}/oauth/connected-apps/${encodeURIComponent(clientId)}?email=${encodeURIComponent(email)}`
-        : `${baseUrl}/oauth/connected-apps/${encodeURIComponent(clientId)}`;
-      fetch(url, { method: 'DELETE' }).catch(() => {});
-    } catch {
-      // Non-blocking
+    // Notify backend revocation with Bearer JWT if live session token is available
+    if (this.isLiveToken(token)) {
+      try {
+        const baseUrl = this.getBackendApiUrl();
+        const url = email
+          ? `${baseUrl}/oauth/connected-apps/${encodeURIComponent(clientId)}?email=${encodeURIComponent(email)}`
+          : `${baseUrl}/oauth/connected-apps/${encodeURIComponent(clientId)}`;
+        fetch(url, {
+          method: 'DELETE',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }).catch(() => {});
+      } catch {
+        // Non-blocking
+      }
     }
   }
 
@@ -703,7 +805,7 @@ export class AppsStorageService {
     email?: string,
   ): Promise<AppAccessRequest[]> {
     const currentLocal = await this.getAccessRequests(email);
-    if (!token) return currentLocal;
+    if (!this.isLiveToken(token)) return currentLocal;
 
     try {
       const baseUrl = this.getBackendApiUrl();
@@ -743,15 +845,11 @@ export class AppsStorageService {
             adminNotes: r.admin_notes || r.adminNotes,
           }));
 
-          const mergedMap = new Map<string, AppAccessRequest>();
-          for (const req of [...mapped, ...currentLocal]) {
-            if (!mergedMap.has(req.id)) {
-              mergedMap.set(req.id, req);
-            }
-          }
-          const merged = Array.from(mergedMap.values());
-          await this.saveAccessRequests(merged, email);
-          return merged;
+          const authoritative = Array.from(
+            new Map(mapped.map((req) => [req.id, req])).values(),
+          );
+          await this.saveAccessRequests(authoritative, email);
+          return authoritative;
         }
       }
     } catch {
@@ -793,7 +891,7 @@ export class AppsStorageService {
     const updated = [newReq, ...requests];
     await this.saveAccessRequests(updated, input.userEmail);
 
-    if (token) {
+    if (this.isLiveToken(token)) {
       try {
         const baseUrl = this.getBackendApiUrl();
         fetch(`${baseUrl}/apps/access-requests`, {

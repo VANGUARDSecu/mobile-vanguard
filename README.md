@@ -50,10 +50,10 @@ The application is configured to connect directly to the live deployed Vanguard 
 
 ### 3. Mobile & Devices Hub (`src/screens/devices-screen.tsx`, `/devices`)
 - **Zero-Trust Hardware Attestation**: Evaluates device platform (`Android` / `iOS`), real biometric sensor availability (`Face ID`, `Touch ID`, `Fingerprint`) via `expo-local-authentication`, and hardware-backed AES-256-GCM Secure Enclave / Keystore integrity.
-- **Web Dashboard Pairing**:
-  - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
-  - Enter the generated Pairing Key (`VG-XXXX-XXXX` or 10-char token) into the mobile app's Devices screen.
-  - Automatically registers device trust and enables push MFA on the authoritative backend (`POST /oauth/mfa/push/preference`).
+- **Web Dashboard Pairing (QR Scanner & Pairing Key - SCRUM-185)**:
+  - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Account Security** / **Mobile & Devices** -> Click **Pair Vanguard Mobile Authenticator** to display the QR code and Pairing Key (`VG-XXXX-XXXX`).
+  - Tap **Scan Mobile Integration QR** (`expo-camera`) on the mobile Devices tab to scan the QR payload (`JSON`, `vanguard-enroll://`, or `VG-XXXX-XXXX` key) or enter the Pairing Key manually.
+  - Validates account email alignment, registers device trust (`POST /oauth/devices/pair`), and enables push MFA on the authoritative backend (`POST /oauth/mfa/push/preference`).
 - **Real-Time Out-of-Band Push MFA**:
   - Background polling listener (`GET /oauth/mfa/push/pending?email=...`) captures out-of-band SSO verification requests dispatched when signing in from **Acme Dummy Web** (`https://vanguard-dummy-web.pages.dev`).
   - Interactive **2-digit number matching challenge** modal prevents MFA fatigue attacks.
@@ -94,6 +94,7 @@ The application is configured to connect directly to the live deployed Vanguard 
 
    *Core Dependencies included:*
    - `expo`: `~57.0.24`
+   - `expo-camera`: `~57.0.6` (Mobile Integration QR pairing scanner)
    - `expo-router`: `~57.0.22`
    - `expo-local-authentication`: `~57.0.2`
    - `expo-secure-store`: `~57.0.4`
@@ -162,7 +163,7 @@ EXPO_PUBLIC_API_URL=https://backend-vanguard.onrender.com npx expo start --tunne
 ```
 
 #### 3. Standalone Android APK Build (`eas build` / `npx expo run:android`)
-The application is pre-configured with Android package identifier `com.vanguard.security.mobile`, required permissions (`INTERNET`, `USE_BIOMETRIC`, `USE_FINGERPRINT`), and URI schemes (`vanguard-auth`, `vanguard-enroll`, `mobilevanguard`):
+The application is pre-configured with Android package identifier `com.vanguard.security.mobile`, required permissions (`INTERNET`, `CAMERA`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, plus iOS `NSCameraUsageDescription` and `NSFaceIDUsageDescription`), and URI schemes (`vanguard-auth`, `vanguard-enroll`, `mobilevanguard`):
 
 ```bash
 # 1. Install EAS CLI globally if not already present

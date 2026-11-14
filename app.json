@@ -8,13 +8,17 @@
     "scheme": ["mobilevanguard", "vanguard-auth", "vanguard-enroll"],
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Vanguard to use the camera to scan Mobile Integration QR codes from your web dashboard."
+      }
     },
     "android": {
       "package": "com.vanguard.security.mobile",
       "permissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
         "android.permission.INTERNET"
       ],
       "adaptiveIcon": {
@@ -44,6 +48,12 @@
         "expo-local-authentication",
         {
           "faceIDPermission": "Allow Vanguard to use Face ID to authenticate and unlock your secure vault."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Vanguard to use the camera to scan Mobile Integration QR codes from your web dashboard."
         }
       ]
     ],

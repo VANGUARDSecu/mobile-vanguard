@@ -148,7 +148,22 @@ export default function DevicesScreen() {
     }
   };
 
+  const notifyAccountMismatch = (message: string) => {
+    setPairingError(message);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
+      window.alert(message);
+    } else if (Platform.OS !== 'web') {
+      Alert.alert('Account Mismatch', message);
+    }
+  };
+
   const handlePairDevice = async (overrideKey?: string) => {
+    const activeEmail = currentUser?.email?.trim();
+    if (!activeEmail) {
+      setPairingError('You must be signed in on Vanguard Mobile before pairing a device.');
+      return;
+    }
+
     const rawKey = (overrideKey ?? pairingKeyInput).trim().toUpperCase();
     if (!rawKey) {
       setPairingError('Please enter the pairing key or scan the QR code from your web dashboard.');
@@ -182,11 +197,16 @@ export default function DevicesScreen() {
         model: 'Vanguard Mobile Authenticator',
         osVersion,
         biometricType: biometricInfo.biometricType,
-        email: currentUser?.email,
+        email: activeEmail,
       });
 
       if (!res.success || !res.device) {
-        setPairingError(res.error || 'Failed to complete device pairing. Verify pairing key and retry.');
+        const errMsg = res.error || 'Failed to complete device pairing. Verify pairing key and retry.';
+        if (/different Vanguard account/i.test(errMsg)) {
+          notifyAccountMismatch(errMsg);
+        } else {
+          setPairingError(errMsg);
+        }
         return;
       }
 
@@ -219,6 +239,11 @@ export default function DevicesScreen() {
     setPairingSuccess(null);
     setHasScannedQr(false);
 
+    if (!currentUser?.email?.trim()) {
+      setPairingError('Please sign in with your Vanguard account before scanning a pairing QR code.');
+      return;
+    }
+
     if (!cameraPermission?.granted) {
       const result = await requestCameraPermission();
       if (!result.granted) {
@@ -247,11 +272,17 @@ export default function DevicesScreen() {
     }
 
     const activeEmail = currentUser?.email?.trim().toLowerCase();
-    if (parsed.email && activeEmail && parsed.email !== activeEmail) {
+    if (!activeEmail) {
       setIsQrScannerOpen(false);
-      setPairingError(
-        `This QR code belongs to ${parsed.email}, while your mobile app is signed in as ${currentUser?.email}. Switch accounts or generate a new QR.`,
-      );
+      setPairingError('Please sign in with your Vanguard account before scanning a pairing QR code.');
+      return;
+    }
+
+    if (parsed.email && parsed.email !== activeEmail) {
+      setIsQrScannerOpen(false);
+      const mismatchMsg =
+        `This QR code belongs to ${parsed.email}, while your mobile app is signed in as ${currentUser?.email}. Switch accounts or generate a new QR.`;
+      notifyAccountMismatch(mismatchMsg);
       return;
     }
 

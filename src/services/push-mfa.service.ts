@@ -5,6 +5,7 @@ import type {
   PushHarnessPreset,
 } from '../models/push-mfa.models.ts';
 import { AppsStorageService } from './apps-storage.service.ts';
+import { AuthService } from './auth.service.ts';
 
 export const PUSH_HARNESS_PRESETS: PushHarnessPreset[] = [
   {
@@ -171,13 +172,19 @@ export class PushMfaService {
     }
   }
 
-  private async buildAuthHeaders(includeJson = false): Promise<Record<string, string>> {
+  private async buildAuthHeaders(
+    includeJson = false,
+    explicitToken?: string,
+  ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
     if (includeJson) {
       headers['Content-Type'] = 'application/json';
     }
     try {
-      const token = await AsyncStorage?.getItem?.('@vanguard_auth_token');
+      const token =
+        explicitToken ||
+        (await AsyncStorage?.getItem?.('@vanguard_auth_token')) ||
+        (await AuthService.getAccessToken());
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
@@ -269,7 +276,8 @@ export class PushMfaService {
   public async listPairedDevices(email: string): Promise<{ ok: boolean; devices: any[] }> {
     try {
       const url = `${getApiBaseUrl()}/oauth/devices?email=${encodeURIComponent(email)}`;
-      const res = await fetch(url);
+      const headers = await this.buildAuthHeaders();
+      const res = await fetch(url, { headers });
       if (!res.ok) return { ok: false, devices: [] };
       const data = await res.json();
       return { ok: true, devices: Array.isArray(data?.devices) ? data.devices : [] };
@@ -286,19 +294,26 @@ export class PushMfaService {
     osVersion?: string;
     biometricType?: string;
     email?: string;
+    accessToken?: string;
   }): Promise<{ success: boolean; device?: any; pairedEmail?: string; error?: string }> {
     try {
       const url = `${getApiBaseUrl()}/oauth/devices/pair`;
+      const { accessToken, ...bodyPayload } = payload;
+      const headers = await this.buildAuthHeaders(true, accessToken);
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers,
+        body: JSON.stringify(bodyPayload),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) {
+        const defaultMsg =
+          res.status === 401
+            ? 'Your mobile session is invalid or expired. Sign in with the matching Vanguard account before pairing.'
+            : 'Invalid or expired pairing key. Generate a fresh key on the web dashboard.';
         return {
           success: false,
-          error: data?.message || 'Invalid or expired pairing key. Generate a fresh key on the web dashboard.',
+          error: data?.message || defaultMsg,
         };
       }
       return { success: true, device: data.device, pairedEmail: data.pairedEmail };
@@ -311,7 +326,8 @@ export class PushMfaService {
     try {
       const query = email ? `?email=${encodeURIComponent(email)}` : '';
       const url = `${getApiBaseUrl()}/oauth/devices/${encodeURIComponent(deviceId)}${query}`;
-      const res = await fetch(url, { method: 'DELETE' });
+      const headers = await this.buildAuthHeaders();
+      const res = await fetch(url, { method: 'DELETE', headers });
       return res.ok;
     } catch {
       return false;
@@ -325,9 +341,10 @@ export class PushMfaService {
   }): Promise<{ success: boolean; challengeId?: string; error?: string }> {
     try {
       const url = `${getApiBaseUrl()}/oauth/mfa/push/test`;
+      const headers = await this.buildAuthHeaders(true);
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));

@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseDevicePairingQrPayload } from '../utils/pairing-qr.ts';
+import pushMfaService from '../services/push-mfa.service.ts';
 
 describe('Vanguard Mobile Integration Pairing QR Parser (SCRUM-185)', () => {
   it('parses Vanguard JSON pairing payload emitted by frontend-vanguard Mobile Integration modal', () => {
@@ -66,5 +67,35 @@ describe('Vanguard Mobile Integration Pairing QR Parser (SCRUM-185)', () => {
     assert.equal(parseDevicePairingQrPayload('{broken-json').valid, false);
     assert.equal(parseDevicePairingQrPayload(JSON.stringify({ issuer: 'Vanguard' })).valid, false);
     assert.equal(parseDevicePairingQrPayload('hello world invalid').valid, false);
+  });
+
+  it('attaches Bearer token on PushMfaService.pairDevice and handles 401/403 account mismatches (SCRUM-180)', async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedAuthHeader: string | undefined;
+
+    globalThis.fetch = (async (_url: string | URL | Request, options?: RequestInit) => {
+      const headers = (options?.headers || {}) as Record<string, string>;
+      capturedAuthHeader = headers['Authorization'];
+      return {
+        ok: false,
+        status: 403,
+        json: async () => ({
+          message: 'This pairing key belongs to a different Vanguard account.',
+        }),
+      } as any;
+    }) as any;
+
+    try {
+      const res = await pushMfaService.pairDevice({
+        pairingKey: 'VG-1234-5678',
+        email: 'bob@corp.com',
+        accessToken: 'jwt-bob-123',
+      });
+      assert.equal(capturedAuthHeader, 'Bearer jwt-bob-123');
+      assert.equal(res.success, false);
+      assert.match(res.error ?? '', /different Vanguard account/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

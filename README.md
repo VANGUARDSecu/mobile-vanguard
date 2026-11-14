@@ -70,8 +70,12 @@ The application is configured to connect directly to the live deployed Vanguard 
   - Application cards display `✓ Approved`, `⚡ Auto-fill Ready`, and `🔑 Account: <username>` badges with cross-workspace delete capability.
 - **Authoritative Identity-Scoped Data Synchronization**:
   - Applications and access requests are strictly scoped per authenticated user email (`@vanguard_personal_apps_<email>`, `@vanguard_enterprise_apps_<email>`, `@vanguard_access_requests_<email>`).
-  - Active enterprise apps synchronize in real time against the backend employee launchpad (`GET https://backend-vanguard.onrender.com/apps/my`).
-  - Access requests automatically sync with backend governance endpoints (`GET /apps/access-requests`, `POST /apps/access-requests`, `POST /apps/access-requests/:id/approve`, `POST /apps/access-requests/:id/reject`).
+  - Active enterprise apps synchronize against the backend employee launchpad (`GET https://backend-vanguard.onrender.com/apps/my`).
+  - Self-service personal applications synchronize bidirectionally across mobile and web via `GET/POST/PATCH/DELETE /apps/personal` (replacing legacy admin-only `/apps` routes).
+  - Connected SSO OIDC applications synchronize authoritatively via `GET/DELETE /oauth/connected-apps` using `Authorization: Bearer <token>`.
+  - 2FA TOTP Authenticator accounts synchronize bidirectionally with server-side AES-256-GCM encryption via `GET/POST/PATCH/DELETE /totp-accounts` (while remaining cached locally in hardware-backed secure keychain storage for offline access).
+  - Automatic background watermark coordinator (`GET /sync/state`, 5s interval + app foreground resume) reconciles additions, updates, and server-authoritative deletions without full payload polling.
+  - Access requests automatically sync with backend governance endpoints (`GET /apps/access-requests`, `POST /apps/access-requests`, `DELETE /apps/access-requests/:id`, `POST /apps/access-requests/:id/approve`, `POST /apps/access-requests/:id/reject`).
   - Authenticator vault payloads are scoped to the active user's identity (`@vanguard:encrypted_totp_vault_<email>`), ensuring zero confusion across multiple user accounts and complete alignment with web frontend state.
 
 ### 5. Production Cloud Connectivity

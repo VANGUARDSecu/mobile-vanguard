@@ -7,6 +7,7 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 import {
   SaaSApp,
   UserConnectedApp,
@@ -19,6 +20,8 @@ import {
 import { AppsStorageService } from '@/services/apps-storage.service';
 import { AppLauncherService } from '@/services/app-launcher.service';
 import { AuthService } from '@/services/auth.service';
+import vaultService from '@/services/vault.service';
+import { syncCoordinatorService } from '@/services/sync-coordinator.service';
 import { AuthContext } from './auth-context';
 
 interface AppsContextType {
@@ -73,6 +76,12 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      vaultService.setAuthTokenProvider(async () =>
+        currentUser?.accessToken || (await AuthService.getAccessToken()),
+      );
+      if (userEmail) {
+        vaultService.setCurrentUserEmail(userEmail);
+      }
 
       const [entApps, pApps, cApps, requests, vault] = await Promise.all([
         AppsStorageService.getEnterpriseApps(userEmail),
@@ -88,29 +97,24 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       setAccessRequests(requests);
       setVaultCredentials(vault);
 
-      // SCRUM-182: Await live synchronization from production backend when session token is present
-      if (token) {
+      // SCRUM-178 & SCRUM-182: Authoritative backend sync across TOTP, Personal Apps, Enterprise Apps, Connected Apps & Requests
+      if (AppsStorageService.isLiveToken(token)) {
         try {
-          const [syncedApps, syncedRequests] = await Promise.all([
+          const [syncedPersonal, syncedApps, syncedRequests, syncedConnected] = await Promise.all([
+            AppsStorageService.syncPersonalAppsWithBackend(token, userEmail),
             AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail),
             AppsStorageService.syncAccessRequestsWithBackend(token, userEmail),
+            AppsStorageService.syncConnectedAppsWithBackend(userEmail, token),
+            vaultService.syncWithBackend(token),
           ]);
-          if (syncedApps && syncedApps.length > 0) {
-            setApps(syncedApps);
-          }
-          if (syncedRequests && syncedRequests.length > 0) {
-            setAccessRequests(syncedRequests);
-          }
+          setPersonalApps(syncedPersonal);
+          setApps(syncedApps);
+          setAccessRequests(syncedRequests);
+          setConnectedApps(syncedConnected);
         } catch {
           // Graceful offline fallback
         }
       }
-
-      AppsStorageService.syncConnectedAppsWithBackend(userEmail)
-        .then((synced) => {
-          setConnectedApps(synced);
-        })
-        .catch(() => {});
     } catch {
       // Ignored
     } finally {
@@ -120,17 +124,70 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   const syncConnectedApps = useCallback(async () => {
     try {
-      const synced = await AppsStorageService.syncConnectedAppsWithBackend(userEmail);
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const synced = await AppsStorageService.syncConnectedAppsWithBackend(userEmail, token);
       setConnectedApps(synced);
     } catch {
       // Graceful fallback
     }
-  }, [userEmail]);
+  }, [currentUser, userEmail]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
+
+  // SCRUM-178: Cross-device watermark polling + foreground resume listener
+  useEffect(() => {
+    const getToken = async () =>
+      currentUser?.accessToken || (await AuthService.getAccessToken());
+
+    vaultService.setAuthTokenProvider(getToken);
+    syncCoordinatorService.resetWatermarks();
+    syncCoordinatorService.configure({
+      getToken,
+      onDomainsChanged: async (domains) => {
+        const token = (await getToken()) || undefined;
+        if (!AppsStorageService.isLiveToken(token)) return;
+        await Promise.all(
+          domains.map(async (domain) => {
+            if (domain === 'totp') {
+              await vaultService.syncWithBackend(token);
+            } else if (domain === 'personalApps') {
+              setPersonalApps(
+                await AppsStorageService.syncPersonalAppsWithBackend(token, userEmail),
+              );
+            } else if (domain === 'enterpriseApps') {
+              setApps(await AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail));
+            } else if (domain === 'connectedApps') {
+              setConnectedApps(
+                await AppsStorageService.syncConnectedAppsWithBackend(userEmail, token),
+              );
+            } else if (domain === 'accessRequests') {
+              setAccessRequests(
+                await AppsStorageService.syncAccessRequestsWithBackend(token, userEmail),
+              );
+            }
+          }),
+        );
+      },
+    });
+
+    if (currentUser) {
+      syncCoordinatorService.start(5000);
+    }
+
+    const appStateSub = AppState?.addEventListener?.('change', (nextState) => {
+      if (nextState === 'active') {
+        void syncCoordinatorService.checkOnce();
+      }
+    });
+
+    return () => {
+      syncCoordinatorService.stop();
+      appStateSub?.remove?.();
+    };
+  }, [currentUser, userEmail]);
 
   // SCRUM-84: Mode is strictly immutable and derived from account type.
   const setIsPersonalWorkspace = useCallback((_isPersonal: boolean) => {
@@ -286,7 +343,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [vaultCredentials]
   );
 
-  // Add Personal Application (SCRUM-182: updates both stores and syncs)
+  // Add Personal Application (SCRUM-178: isolated in personalApps; activeAppsList merges personalApps + enterprise apps)
   const addPersonalApp = useCallback(
     async (input: PersonalAppInput): Promise<SaaSApp> => {
       const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
@@ -296,16 +353,12 @@ export function AppsProvider({ children }: { children: ReactNode }) {
         created,
         ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
       ]);
-      setApps((prev) => [
-        created,
-        ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
-      ]);
       return created;
     },
     [currentUser, userEmail]
   );
 
-  // Delete Personal Application (SCRUM-182: updates both stores and syncs)
+  // Delete Personal Application (SCRUM-178)
   const deletePersonalApp = useCallback(
     async (id: string): Promise<void> => {
       const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
@@ -348,10 +401,14 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   );
 
   // Disconnect Connected SSO Application
-  const disconnectConnectedApp = useCallback(async (clientId: string): Promise<void> => {
-    await AppsStorageService.disconnectConnectedApp(clientId);
-    setConnectedApps((prev) => prev.filter((c) => c.clientId !== clientId));
-  }, []);
+  const disconnectConnectedApp = useCallback(
+    async (clientId: string): Promise<void> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      await AppsStorageService.disconnectConnectedApp(clientId, userEmail, token);
+      setConnectedApps((prev) => prev.filter((c) => c.clientId !== clientId));
+    },
+    [currentUser, userEmail],
+  );
 
   const value = useMemo(
     () => ({

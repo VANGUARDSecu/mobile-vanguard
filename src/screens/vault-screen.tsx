@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,6 +47,16 @@ export function VaultScreen({
   const [copiedAccountId, setCopiedAccountId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showManualModal, setShowManualModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const readLocalVault = useCallback(async () => {
+    try {
+      const data = await vaultService.getAccounts();
+      setAccounts(data);
+    } catch {
+      // Keep existing
+    }
+  }, []);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -53,18 +64,45 @@ export function VaultScreen({
       if (user?.email) {
         vaultService.setCurrentUserEmail(user.email);
       }
-      const data = await vaultService.getAccounts();
-      setAccounts(data);
+      vaultService.setAuthTokenProvider(async () =>
+        user?.accessToken || (await AuthService.getAccessToken()),
+      );
+      await readLocalVault();
+      const updatedFromBackend = await vaultService.syncWithBackend(
+        user?.accessToken || undefined,
+      );
+      if (updatedFromBackend) {
+        await readLocalVault();
+      }
     } catch {
       // Keep existing
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [readLocalVault]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const user = await AuthService.getCurrentUser();
+      await vaultService.syncWithBackend(user?.accessToken || undefined);
+      await readLocalVault();
+    } catch {
+      // Non-fatal
+    } finally {
+      setRefreshing(false);
+    }
+  }, [readLocalVault]);
 
   useEffect(() => {
-    loadAccounts();
-  }, [loadAccounts]);
+    void loadAccounts();
+    const unsub = vaultService.subscribe(() => {
+      void readLocalVault();
+    });
+    return () => {
+      unsub();
+    };
+  }, [loadAccounts, readLocalVault]);
 
   // Dynamic offline TOTP countdown timer tick with instant cycle rollover
   useEffect(() => {
@@ -117,6 +155,14 @@ export function VaultScreen({
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={CyberColors.cyan}
+              colors={[CyberColors.cyan]}
+            />
+          }
         >
           {/* Header */}
           <View style={styles.header}>

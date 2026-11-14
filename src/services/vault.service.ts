@@ -13,6 +13,7 @@ import {
   SecureStorageError,
 } from './secure-storage.provider.ts';
 import { TotpEngine } from './totp-engine.service.ts';
+import { TotpSyncService, isLiveBackendToken } from './totp-sync.service.ts';
 
 const KEYCHAIN_MASTER_KEY = '@vanguard:keychain_master_key_v1';
 const SECURE_VAULT_PAYLOAD_KEY = '@vanguard:encrypted_totp_vault_v1';
@@ -125,9 +126,48 @@ export class VaultService {
   private lockTimer: ReturnType<typeof setTimeout> | null = null;
   private storageError: string | null = null;
   private currentUserEmail: string | null = null;
+  private listeners = new Set<() => void>();
+  private authTokenProvider: (() => Promise<string | null>) | null = null;
+  private pendingCreateIds = new Set<string>();
+  private pendingDeleteIds = new Set<string>();
+  private migratedUsers = new Set<string>();
 
   constructor(customProvider?: ISecureStorageProvider) {
     this.secureStorage = customProvider || createDefaultSecureProvider();
+  }
+
+  setAuthTokenProvider(provider: (() => Promise<string | null>) | null): void {
+    this.authTokenProvider = provider;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notifyListeners(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        // Ignore subscriber UI error
+      }
+    }
+  }
+
+  private async resolveLiveToken(tokenOverride?: string | null): Promise<string | null> {
+    if (isLiveBackendToken(tokenOverride)) return tokenOverride;
+    if (this.authTokenProvider) {
+      try {
+        const provided = await this.authTokenProvider();
+        if (isLiveBackendToken(provided)) return provided;
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 
   /**
@@ -139,6 +179,9 @@ export class VaultService {
       this.currentUserEmail = clean;
       this.isInitialized = false;
       this.memoryCache = [];
+      this.pendingCreateIds.clear();
+      this.pendingDeleteIds.clear();
+      this.notifyListeners();
     }
   }
 
@@ -369,6 +412,19 @@ export class VaultService {
     this.memoryCache.unshift(newAccount);
     await this.persistEncryptedAccounts(this.memoryCache);
     this.resetAutoLock();
+    this.notifyListeners();
+
+    const userKey = this.currentUserEmail || 'default';
+    this.migratedUsers.add(userKey);
+    const liveToken = await this.resolveLiveToken();
+    if (liveToken) {
+      this.pendingCreateIds.add(newAccount.id);
+      void TotpSyncService.pushUpsertTotp(newAccount, liveToken)
+        .finally(() => {
+          this.pendingCreateIds.delete(newAccount.id);
+        });
+    }
+
     return { ...newAccount };
   }
 
@@ -411,6 +467,13 @@ export class VaultService {
     this.memoryCache[index] = updated;
     await this.persistEncryptedAccounts(this.memoryCache);
     this.resetAutoLock();
+    this.notifyListeners();
+
+    const liveToken = await this.resolveLiveToken();
+    if (liveToken) {
+      void TotpSyncService.pushUpdateTotp(id, updates, liveToken);
+    }
+
     return { ...updated };
   }
 
@@ -425,9 +488,76 @@ export class VaultService {
     if (this.memoryCache.length !== initialLength) {
       await this.persistEncryptedAccounts(this.memoryCache);
       this.resetAutoLock();
+      this.notifyListeners();
+
+      const liveToken = await this.resolveLiveToken();
+      if (liveToken) {
+        this.pendingDeleteIds.add(id);
+        void TotpSyncService.pushDeleteTotp(id, liveToken)
+          .finally(() => {
+            this.pendingDeleteIds.delete(id);
+          });
+      }
       return true;
     }
     return false;
+  }
+
+  /**
+   * SCRUM-178: Pull and reconcile 2FA TOTP accounts with the backend
+   * (GET /totp-accounts). Server deletions remove locally unless the item
+   * is currently an un-migrated local entry on first sync.
+   */
+  async syncWithBackend(tokenOverride?: string): Promise<boolean> {
+    if (this.isLockedState) return false;
+    await this.ensureInitialized();
+
+    const token = await this.resolveLiveToken(tokenOverride);
+    if (!token) return false;
+
+    const remote = await TotpSyncService.fetchTotpAccounts(token);
+    if (!remote) return false;
+
+    const userKey = this.currentUserEmail || 'default';
+    if (
+      remote.accounts.length === 0 &&
+      remote.deletedIds.length === 0 &&
+      !this.migratedUsers.has(userKey) &&
+      this.memoryCache.length > 0
+    ) {
+      this.migratedUsers.add(userKey);
+      for (const localAcc of this.memoryCache) {
+        this.pendingCreateIds.add(localAcc.id);
+        await TotpSyncService.pushUpsertTotp(localAcc, token);
+        this.pendingCreateIds.delete(localAcc.id);
+      }
+      return false;
+    }
+
+    this.migratedUsers.add(userKey);
+    const reconciled = remote.accounts.filter((a) => !this.pendingDeleteIds.has(a.id));
+    for (const localAcc of this.memoryCache) {
+      if (
+        this.pendingCreateIds.has(localAcc.id) &&
+        !this.pendingDeleteIds.has(localAcc.id) &&
+        !reconciled.some((s) => s.id === localAcc.id)
+      ) {
+        reconciled.unshift(localAcc);
+      }
+    }
+
+    const digest = (list: TotpAccount[]) =>
+      JSON.stringify(
+        list.map((a) => `${a.id}:${a.issuer}:${a.accountName || a.name}:${a.secret}:${a.digits}:${a.period}:${a.algorithm}:${a.updatedAt || ''}`),
+      );
+    if (digest(reconciled) === digest(this.memoryCache)) {
+      return false;
+    }
+
+    this.memoryCache = reconciled;
+    await this.persistEncryptedAccounts(this.memoryCache);
+    this.notifyListeners();
+    return true;
   }
 
   generateCode(

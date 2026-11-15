@@ -17,6 +17,8 @@ import type { OAuthAuthorizeDeepLinkParams } from '../utils/oauth-deeplink.ts';
 const AUTH_STORAGE_KEYS = {
   CURRENT_USER: '@vanguard_auth_user',
   ACCESS_TOKEN: '@vanguard_auth_token',
+  REFRESH_TOKEN: '@vanguard_refresh_token',
+  TOKEN_EXPIRES_AT: '@vanguard_token_expires_at',
   GOOGLE_ACCOUNTS: '@vanguard_google_accounts',
 };
 
@@ -165,7 +167,97 @@ const isTestRunner = (): boolean =>
   (process.env.NODE_ENV === 'test' ||
     Boolean(process.argv && process.argv.some((a) => a.includes('test'))));
 
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function decodeBase64Ascii(b64: string): string {
+  if (typeof atob === 'function') {
+    return atob(b64);
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(b64, 'base64').toString('utf8');
+  }
+  const clean = b64.replace(/=+$/, '');
+  let out = '';
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const idx = BASE64_CHARS.indexOf(clean[i]);
+    if (idx === -1) continue;
+    buffer = (buffer << 6) | idx;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+export function decodeJwtExpiryEpoch(token?: string | null): number | null {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 === 0 ? b64 : b64 + '='.repeat(4 - (b64.length % 4));
+    const json = JSON.parse(decodeBase64Ascii(pad)) as { exp?: unknown };
+    return typeof json?.exp === 'number' && Number.isFinite(json.exp) ? json.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+type SessionMeta = {
+  refreshToken?: string | null;
+  expiresAt?: number | null;
+};
+
+function extractSessionTokens(session?: AuthResponse['session']): {
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+} {
+  return {
+    accessToken: session?.accessToken || session?.access_token,
+    refreshToken: session?.refreshToken || session?.refresh_token,
+    expiresAt: session?.expiresAt ?? session?.expires_at,
+  };
+}
+
 export class AuthService {
+  private static refreshInFlight: Promise<string | null> | null = null;
+  private static readonly sessionUpdatedListeners = new Set<(user: AuthUser) => void>();
+  private static readonly sessionInvalidatedListeners = new Set<() => void>();
+
+  static onSessionUpdated(listener: (user: AuthUser) => void): () => void {
+    this.sessionUpdatedListeners.add(listener);
+    return () => {
+      this.sessionUpdatedListeners.delete(listener);
+    };
+  }
+
+  static onSessionInvalidated(listener: () => void): () => void {
+    this.sessionInvalidatedListeners.add(listener);
+    return () => {
+      this.sessionInvalidatedListeners.delete(listener);
+    };
+  }
+
+  private static notifySessionUpdated(user: AuthUser): void {
+    for (const listener of this.sessionUpdatedListeners) {
+      try {
+        listener(user);
+      } catch {}
+    }
+  }
+
+  private static notifySessionInvalidated(): void {
+    for (const listener of this.sessionInvalidatedListeners) {
+      try {
+        listener();
+      } catch {}
+    }
+  }
   /**
    * Retrieves the currently authenticated user from local storage
    */
@@ -442,10 +534,14 @@ export class AuthService {
         // Direct authentication without MFA
         if (body.success && body.user) {
           const user = this.normalizeUser(body.user, cleanEmail, body.user.role);
-          if (body.session?.accessToken || body.session?.access_token) {
-            user.accessToken = body.session.accessToken || body.session.access_token;
+          const sessionTokens = extractSessionTokens(body.session);
+          if (sessionTokens.accessToken) {
+            user.accessToken = sessionTokens.accessToken;
           }
-          await this.saveSession(user, user.accessToken);
+          if (sessionTokens.refreshToken) {
+            user.refreshToken = sessionTokens.refreshToken;
+          }
+          await this.saveSession(user, user.accessToken, sessionTokens);
           return { requireMfa: false, user };
         }
       } else {
@@ -675,11 +771,15 @@ export class AuthService {
         const body: AuthResponse = await response.json();
         if (body.success && body.user) {
           const user = this.normalizeUser(body.user, cleanEmail, body.user.role);
-          if (body.session?.accessToken || body.session?.access_token) {
-            user.accessToken = body.session.accessToken || body.session.access_token;
+          const sessionTokens = extractSessionTokens(body.session);
+          if (sessionTokens.accessToken) {
+            user.accessToken = sessionTokens.accessToken;
+          }
+          if (sessionTokens.refreshToken) {
+            user.refreshToken = sessionTokens.refreshToken;
           }
           this.pendingRegistrations.delete(cleanEmail);
-          await this.saveSession(user, user.accessToken);
+          await this.saveSession(user, user.accessToken, sessionTokens);
           return user;
         }
       } else {
@@ -791,10 +891,14 @@ export class AuthService {
       if (response.ok) {
         const body: AuthResponse = await response.json();
         const user = this.normalizeUser(body.user, cleanEmail);
-        if (body.session?.accessToken || body.session?.access_token) {
-          user.accessToken = body.session.accessToken || body.session.access_token;
+        const sessionTokens = extractSessionTokens(body.session);
+        if (sessionTokens.accessToken) {
+          user.accessToken = sessionTokens.accessToken;
         }
-        await this.saveSession(user, user.accessToken);
+        if (sessionTokens.refreshToken) {
+          user.refreshToken = sessionTokens.refreshToken;
+        }
+        await this.saveSession(user, user.accessToken, sessionTokens);
         return user;
       } else {
         const errJson = await response.json().catch(() => null);
@@ -1104,8 +1208,15 @@ export class AuthService {
       }
 
       const user = this.normalizeUser(body.user, cleanEmail);
-      user.accessToken = account.accessToken;
-      await this.saveSession(user, user.accessToken);
+      const sessionTokens = extractSessionTokens(body.session);
+      user.accessToken = sessionTokens.accessToken || account.accessToken;
+      if (sessionTokens.refreshToken || account.refreshToken) {
+        user.refreshToken = sessionTokens.refreshToken || account.refreshToken;
+      }
+      await this.saveSession(user, user.accessToken, {
+        refreshToken: user.refreshToken,
+        expiresAt: sessionTokens.expiresAt,
+      });
       return { requireMfa: false, user };
     } finally {
       clearTimeout(timeoutId);
@@ -1124,20 +1235,218 @@ export class AuthService {
     return memoryAuthStore.get(AUTH_STORAGE_KEYS.ACCESS_TOKEN) ?? null;
   }
 
+  static async getRefreshToken(): Promise<string | null> {
+    try {
+      if (AsyncStorage && typeof AsyncStorage.getItem === 'function') {
+        const token = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN);
+        if (token) return token;
+      }
+    } catch {
+      // In-memory fallback
+    }
+    return memoryAuthStore.get(AUTH_STORAGE_KEYS.REFRESH_TOKEN) ?? null;
+  }
+
+  static async getTokenExpiresAt(): Promise<number | null> {
+    try {
+      if (AsyncStorage && typeof AsyncStorage.getItem === 'function') {
+        const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT);
+        const parsed = raw ? Number(raw) : NaN;
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+    } catch {
+      // In-memory fallback
+    }
+    const mem = memoryAuthStore.get(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT);
+    const parsed = mem ? Number(mem) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  static isJwtExpired(token?: string | null, leewaySec = 30): boolean {
+    const exp = decodeJwtExpiryEpoch(token);
+    if (exp === null) return false;
+    return Math.floor(Date.now() / 1000) >= exp - leewaySec;
+  }
+
+  private static async invalidateSessionLocally(): Promise<void> {
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.CURRENT_USER);
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.REFRESH_TOKEN);
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT);
+    try {
+      await AsyncStorage.multiRemove([
+        AUTH_STORAGE_KEYS.CURRENT_USER,
+        AUTH_STORAGE_KEYS.ACCESS_TOKEN,
+        AUTH_STORAGE_KEYS.REFRESH_TOKEN,
+        AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT,
+      ]);
+    } catch {
+      // Non-blocking fallback
+    }
+    this.notifySessionInvalidated();
+  }
+
+  /**
+   * Refreshes an expired or near-expiry Supabase session via POST /auth/refresh (with mutex queueing).
+   * Invalidates the local session only when the refresh token is missing or explicitly rejected.
+   */
+  static async refreshSession(): Promise<string | null> {
+    if (this.refreshInFlight) {
+      return this.refreshInFlight;
+    }
+
+    const work = (async (): Promise<string | null> => {
+      const refreshToken = await this.getRefreshToken();
+      if (!refreshToken) {
+        const currentToken = await this.getAccessToken();
+        if (this.isJwtExpired(currentToken, 0)) {
+          await this.invalidateSessionLocally();
+        }
+        return null;
+      }
+
+      const baseUrl = AppsStorageService.getBackendApiUrl();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(`${baseUrl}/auth/refresh`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ refreshToken }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          await this.invalidateSessionLocally();
+          return null;
+        }
+        if (!response.ok) {
+          return null;
+        }
+
+        const body = (await response.json().catch(() => null)) as AuthResponse | null;
+        const nextTokens = extractSessionTokens(body?.session);
+        if (!body?.success || !nextTokens.accessToken) {
+          await this.invalidateSessionLocally();
+          return null;
+        }
+
+        const existingUser = await this.getCurrentUser();
+        const updatedUser: AuthUser = existingUser
+          ? {
+              ...existingUser,
+              accessToken: nextTokens.accessToken,
+              refreshToken: nextTokens.refreshToken || existingUser.refreshToken || refreshToken,
+            }
+          : {
+              id: '',
+              email: '',
+              name: 'Vanguard User',
+              role: 'user',
+              accessToken: nextTokens.accessToken,
+              refreshToken: nextTokens.refreshToken || refreshToken,
+            };
+
+        await this.saveSession(updatedUser, nextTokens.accessToken, {
+          refreshToken: nextTokens.refreshToken || refreshToken,
+          expiresAt: nextTokens.expiresAt ?? decodeJwtExpiryEpoch(nextTokens.accessToken),
+        });
+        this.notifySessionUpdated(updatedUser);
+        return nextTokens.accessToken;
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    })();
+
+    this.refreshInFlight = work;
+    try {
+      return await work;
+    } finally {
+      this.refreshInFlight = null;
+    }
+  }
+
+  /**
+   * Returns a valid access token, proactively refreshing 30s before JWT expiry so
+   * background pollers do not hammer the backend with JWTExpired errors (SCRUM-202).
+   */
+  static async ensureValidAccessToken(
+    candidateToken?: string | null,
+    forceRefresh = false,
+  ): Promise<string | null> {
+    const stored = await this.getAccessToken();
+    const token =
+      stored && candidateToken && stored !== candidateToken
+        ? this.isJwtExpired(stored, 0) && !this.isJwtExpired(candidateToken, 0)
+          ? candidateToken
+          : stored
+        : stored || candidateToken || null;
+
+    if (!token) return null;
+
+    const jwtExp = decodeJwtExpiryEpoch(token);
+    if (jwtExp === null) {
+      return forceRefresh ? null : token;
+    }
+
+    const storedExp = await this.getTokenExpiresAt();
+    const effectiveExp = Math.min(jwtExp, storedExp || jwtExp);
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!forceRefresh && nowSec < effectiveExp - 30) {
+      return token;
+    }
+
+    return this.refreshSession();
+  }
+
   /**
    * Saves the user session to local storage
    */
-  static async saveSession(user: AuthUser, token?: string): Promise<void> {
-    const serialized = JSON.stringify(user);
+  static async saveSession(
+    user: AuthUser,
+    token?: string,
+    sessionMeta?: SessionMeta,
+  ): Promise<void> {
+    const refreshToken =
+      sessionMeta?.refreshToken !== undefined ? sessionMeta.refreshToken : user.refreshToken;
+    const expiresAt =
+      sessionMeta?.expiresAt !== undefined
+        ? sessionMeta.expiresAt
+        : decodeJwtExpiryEpoch(token);
+
+    const userToStore: AuthUser = {
+      ...user,
+      ...(token ? { accessToken: token } : {}),
+      ...(refreshToken ? { refreshToken } : {}),
+    };
+    const serialized = JSON.stringify(userToStore);
     memoryAuthStore.set(AUTH_STORAGE_KEYS.CURRENT_USER, serialized);
     if (token) {
       memoryAuthStore.set(AUTH_STORAGE_KEYS.ACCESS_TOKEN, token);
+    }
+    if (refreshToken) {
+      memoryAuthStore.set(AUTH_STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
+    }
+    if (typeof expiresAt === 'number' && Number.isFinite(expiresAt) && expiresAt > 0) {
+      memoryAuthStore.set(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT, String(expiresAt));
     }
 
     try {
       await AsyncStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER, serialized);
       if (token) {
         await AsyncStorage.setItem(AUTH_STORAGE_KEYS.ACCESS_TOKEN, token);
+      }
+      if (refreshToken) {
+        await AsyncStorage.setItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
+      }
+      if (typeof expiresAt === 'number' && Number.isFinite(expiresAt) && expiresAt > 0) {
+        await AsyncStorage.setItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT, String(expiresAt));
       }
     } catch {
       // Non-blocking
@@ -1150,6 +1459,8 @@ export class AuthService {
   static async logout(): Promise<void> {
     memoryAuthStore.delete(AUTH_STORAGE_KEYS.CURRENT_USER);
     memoryAuthStore.delete(AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.REFRESH_TOKEN);
+    memoryAuthStore.delete(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT);
 
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
@@ -1172,10 +1483,13 @@ export class AuthService {
       await AsyncStorage.multiRemove([
         AUTH_STORAGE_KEYS.CURRENT_USER,
         AUTH_STORAGE_KEYS.ACCESS_TOKEN,
+        AUTH_STORAGE_KEYS.REFRESH_TOKEN,
+        AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT,
       ]);
     } catch {
       // Non-blocking fallback
     }
+    this.notifySessionInvalidated();
   }
 
   /**

@@ -46,13 +46,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Restore session from AsyncStorage on app boot
+  // Restore session from AsyncStorage on app boot and stay synced with token refreshes
   useEffect(() => {
     let isMounted = true;
+    const unsubUpdated = AuthService.onSessionUpdated((updatedUser) => {
+      if (isMounted) {
+        setCurrentUser(updatedUser);
+      }
+    });
+    const unsubInvalidated = AuthService.onSessionInvalidated(() => {
+      if (isMounted) {
+        setCurrentUser(null);
+      }
+    });
+
     AuthService.getCurrentUser()
       .then((user) => {
-        if (isMounted) {
-          setCurrentUser(user);
+        if (!isMounted) return;
+        setCurrentUser(user);
+        if (user?.accessToken && AuthService.isJwtExpired(user.accessToken, 30)) {
+          void AuthService.refreshSession();
         }
       })
       .catch(() => {})
@@ -64,6 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMounted = false;
+      unsubUpdated();
+      unsubInvalidated();
     };
   }, []);
 

@@ -25,6 +25,8 @@ export type SyncDomainKey =
 
 export interface SyncCoordinatorCallbacks {
   getToken: () => Promise<string | null>;
+  refreshToken?: () => Promise<string | null>;
+  onUnauthorized?: () => void;
   onDomainsChanged: (domains: SyncDomainKey[]) => Promise<void> | void;
 }
 
@@ -57,8 +59,10 @@ export class SyncCoordinatorService {
     this.inFlight = false;
   }
 
-  async fetchSyncState(token: string): Promise<SyncWatermarks | null> {
-    if (!isLiveBackendToken(token)) return null;
+  private async fetchSyncStateStatus(
+    token: string,
+  ): Promise<{ status: number; data: SyncWatermarks | null }> {
+    if (!isLiveBackendToken(token)) return { status: 0, data: null };
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
@@ -72,11 +76,19 @@ export class SyncCoordinatorService {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      if (!response.ok) return null;
-      return (await response.json()) as SyncWatermarks;
+      if (!response.ok) return { status: response.status, data: null };
+      return {
+        status: response.status,
+        data: (await response.json()) as SyncWatermarks,
+      };
     } catch {
-      return null;
+      return { status: 0, data: null };
     }
+  }
+
+  async fetchSyncState(token: string): Promise<SyncWatermarks | null> {
+    const res = await this.fetchSyncStateStatus(token);
+    return res.data;
   }
 
   async checkOnce(forceAll = false): Promise<SyncDomainKey[]> {
@@ -86,7 +98,20 @@ export class SyncCoordinatorService {
       const token = await this.callbacks.getToken();
       if (!isLiveBackendToken(token)) return [];
 
-      const next = await this.fetchSyncState(token);
+      let res = await this.fetchSyncStateStatus(token);
+      if (res.status === 401) {
+        const refreshed = await this.callbacks.refreshToken?.();
+        if (refreshed && isLiveBackendToken(refreshed)) {
+          res = await this.fetchSyncStateStatus(refreshed);
+        }
+        if (res.status === 401 || !refreshed) {
+          this.stop();
+          this.callbacks.onUnauthorized?.();
+          return [];
+        }
+      }
+
+      const next = res.data;
       if (!next) return [];
 
       const prev = this.lastWatermarks;

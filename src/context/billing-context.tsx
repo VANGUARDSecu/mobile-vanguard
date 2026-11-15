@@ -97,7 +97,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
     setSubscription(cached);
 
     const token =
-      currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
     if (!isLiveBackendToken(token)) {
       return cached;
     }
@@ -193,7 +193,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       }
 
       const token =
-        currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+        (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       if (!isLiveBackendToken(token)) {
         setBillingError(
           'Sign in with an active Vanguard account connected to the backend to complete PayMongo checkout.',
@@ -258,7 +258,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
     }
 
     const token =
-      currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
     if (!isLiveBackendToken(token)) return;
 
     setIsLoadingBilling(true);
@@ -308,7 +308,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       }
 
       const token =
-        currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+        (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       if (!isLiveBackendToken(token)) {
         setBillingError('Sign in with a live Vanguard account to restore a paid plan.');
         return false;
@@ -356,7 +356,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       }
 
       const token =
-        currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+        (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       if (!isLiveBackendToken(token)) {
         setBillingError('Sign in with a live Vanguard account to email receipts.');
         return false;

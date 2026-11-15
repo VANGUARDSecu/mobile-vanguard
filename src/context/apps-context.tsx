@@ -16,6 +16,9 @@ import {
   PersonalAppInput,
   AppCategory,
   AppItemCategory,
+  isAppMatchedConnectedApp,
+  countUnifiedIntegratedApps,
+  isIntegratedAppSlotTaken,
 } from '@/models/apps.models';
 import { AppsStorageService } from '@/services/apps-storage.service';
 import { AppLauncherService } from '@/services/app-launcher.service';
@@ -43,6 +46,7 @@ interface AppsContextType {
   apps: SaaSApp[];
   personalApps: SaaSApp[];
   activeAppsList: SaaSApp[];
+  totalIntegratedAppsCount: number;
   filteredApps: SaaSApp[];
   connectedApps: UserConnectedApp[];
   activeConnectedApps: UserConnectedApp[];
@@ -133,7 +137,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshDevices = useCallback(async () => {
-    const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+    const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
     if (!AppsStorageService.isLiveToken(token)) return;
     const res = await SecurityActivityService.fetchEnrolledDevices(token, userEmail);
     if (res.ok) {
@@ -142,7 +146,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   }, [currentUser, userEmail]);
 
   const refreshSecurityData = useCallback(async () => {
-    const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+    const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
     if (!AppsStorageService.isLiveToken(token)) return;
     const [logs, posture, admin] = await Promise.all([
       SecurityActivityService.fetchAuditLogs(token, { limit: 50 }),
@@ -163,9 +167,9 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       vaultService.setAuthTokenProvider(async () =>
-        currentUser?.accessToken || (await AuthService.getAccessToken()),
+        AuthService.ensureValidAccessToken(currentUser?.accessToken),
       );
       if (userEmail) {
         vaultService.setCurrentUserEmail(userEmail);
@@ -232,7 +236,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   const syncConnectedApps = useCallback(async () => {
     try {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       const synced = await AppsStorageService.syncConnectedAppsWithBackend(userEmail, token);
       setConnectedApps(synced);
     } catch {
@@ -248,13 +252,14 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   // SCRUM-178: Cross-device watermark polling + foreground resume listener
   useEffect(() => {
     const getToken = async () =>
-      currentUser?.accessToken || (await AuthService.getAccessToken());
+      AuthService.ensureValidAccessToken(currentUser?.accessToken);
 
     vaultService.setCurrentUserEmail(userEmail || null);
     vaultService.setAuthTokenProvider(getToken);
     syncCoordinatorService.resetWatermarks();
     syncCoordinatorService.configure({
       getToken,
+      refreshToken: () => AuthService.refreshSession(),
       onDomainsChanged: async (domains) => {
         const token = (await getToken()) || undefined;
         if (!AppsStorageService.isLiveToken(token)) return;
@@ -322,7 +327,22 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     );
   }, [currentUser]);
 
-  // SCRUM-58, SCRUM-159 & SCRUM-182: Strict deduplication ensuring all active applications & approved requests render
+  // SCRUM-58 & SCRUM-72: Strict deduplication and user account filtering (defined before activeAppsList so SSO apps are excluded from My Apps)
+  const activeConnectedApps = useMemo<UserConnectedApp[]>(() => {
+    const deduped = AppsStorageService.deduplicateConnectedApps(connectedApps);
+    if (!userEmail) {
+      return deduped;
+    }
+    const cleanUserEmail = userEmail.toLowerCase().trim();
+    return deduped.filter(
+      (conn) =>
+        !conn.userEmail ||
+        conn.userEmail === 'all' ||
+        conn.userEmail.toLowerCase().trim() === cleanUserEmail
+    );
+  }, [connectedApps, userEmail]);
+
+  // SCRUM-58, SCRUM-159, SCRUM-182 & SCRUM-201: Strict deduplication; connected SSO apps live in ConnectedAppsSection only
   const activeAppsList = useMemo<SaaSApp[]>(() => {
     const email = currentUser?.email?.toLowerCase().trim();
     const uid = currentUser?.id;
@@ -359,6 +379,9 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     const deduped: SaaSApp[] = [];
 
     for (const app of [...rawSource, ...approvedRequests]) {
+      if (isAppMatchedConnectedApp(app, activeConnectedApps)) {
+        continue;
+      }
       const key = (app.name || app.id || app.launchUrl).toLowerCase().trim();
       if (!seen.has(key)) {
         seen.add(key);
@@ -366,7 +389,12 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       }
     }
     return deduped;
-  }, [isPersonalWorkspace, personalApps, apps, accessRequests, currentUser]);
+  }, [isPersonalWorkspace, personalApps, apps, accessRequests, currentUser, activeConnectedApps]);
+
+  const totalIntegratedAppsCount = useMemo<number>(
+    () => countUnifiedIntegratedApps(activeAppsList, activeConnectedApps),
+    [activeAppsList, activeConnectedApps],
+  );
 
   // Category Filtering
   const filteredApps = useMemo<SaaSApp[]>(() => {
@@ -375,21 +403,6 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     }
     return activeAppsList.filter((app) => app.category === selectedCategory);
   }, [activeAppsList, selectedCategory]);
-
-  // SCRUM-58 & SCRUM-72: Strict deduplication and user account filtering
-  const activeConnectedApps = useMemo<UserConnectedApp[]>(() => {
-    const deduped = AppsStorageService.deduplicateConnectedApps(connectedApps);
-    if (!userEmail) {
-      return deduped;
-    }
-    const cleanUserEmail = userEmail.toLowerCase().trim();
-    return deduped.filter(
-      (conn) =>
-        !conn.userEmail ||
-        conn.userEmail === 'all' ||
-        conn.userEmail.toLowerCase().trim() === cleanUserEmail
-    );
-  }, [connectedApps, userEmail]);
 
   // For Admin: all requests in organization; for Employee: only their own requests
   const visibleAccessRequests = useMemo(() => {
@@ -418,24 +431,55 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   const approveAccessRequest = useCallback(
     async (id: string, notes?: string) => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
-      const updated = await AppsStorageService.approveAccessRequest(
-        id,
-        currentUser?.name || 'Company Admin',
-        token,
-        notes,
-        userEmail
-      );
-      if (updated) {
-        setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      const targetReq = accessRequests.find((r) => r.id === id);
+      if (
+        billing &&
+        targetReq &&
+        !isIntegratedAppSlotTaken(targetReq.appName, targetReq.launchUrl, activeAppsList, activeConnectedApps)
+      ) {
+        const quota = billing.checkAppQuota(totalIntegratedAppsCount);
+        if (!quota.allowed) {
+          billing.openBillingModal(quota.reason);
+          return;
+        }
+      }
+
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
+      try {
+        const updated = await AppsStorageService.approveAccessRequest(
+          id,
+          currentUser?.name || 'Company Admin',
+          token,
+          notes,
+          userEmail
+        );
+        if (updated) {
+          setAccessRequests((prev) => prev.map((r) => (r.id === id ? updated : r)));
+        }
+      } catch (err) {
+        if (isBillingLimitError(err)) {
+          await refreshBilling?.();
+          billing?.openBillingModal(err.message);
+          return;
+        }
+        throw err;
       }
     },
-    [currentUser, userEmail]
+    [
+      accessRequests,
+      activeAppsList,
+      activeConnectedApps,
+      billing,
+      currentUser,
+      refreshBilling,
+      totalIntegratedAppsCount,
+      userEmail,
+    ]
   );
 
   const rejectAccessRequest = useCallback(
     async (id: string, notes?: string) => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       const updated = await AppsStorageService.rejectAccessRequest(
         id,
         currentUser?.name || 'Company Admin',
@@ -475,7 +519,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       const uid = currentUser?.id;
       try {
         const created = await AppsStorageService.addPersonalApp(input, userEmail, token, uid);
@@ -498,7 +542,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   // Delete Personal Application (SCRUM-178)
   const deletePersonalApp = useCallback(
     async (id: string): Promise<void> => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       const uid = currentUser?.id;
       await AppsStorageService.deletePersonalApp(id, userEmail, token, uid);
       setPersonalApps((prev) => prev.filter((a) => a.id !== id));
@@ -515,7 +559,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       category?: AppItemCategory;
       icon?: string;
     }): Promise<AppAccessRequest> => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       const created = await AppsStorageService.submitAccessRequest(
         {
           ...input,
@@ -540,7 +584,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   // Disconnect Connected SSO Application
   const disconnectConnectedApp = useCallback(
     async (clientId: string): Promise<void> => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       await AppsStorageService.disconnectConnectedApp(clientId, userEmail, token);
       setConnectedApps((prev) => prev.filter((c) => c.clientId !== clientId));
     },
@@ -549,7 +593,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   const unlockCredentialVault = useCallback(
     async (password: string): Promise<PersonalVaultItem[]> => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       return credentialVaultSyncService.unlockWithPassword(password, token);
     },
     [currentUser],
@@ -570,7 +614,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       notes?: string;
       favorite?: boolean;
     }): Promise<PersonalVaultItem[]> => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       return credentialVaultSyncService.upsertItem(input, token);
     },
     [currentUser],
@@ -578,7 +622,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   const deleteCredential = useCallback(
     async (id: string): Promise<PersonalVaultItem[]> => {
-      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
       return credentialVaultSyncService.deleteItem(id, token);
     },
     [currentUser],
@@ -623,6 +667,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       apps,
       personalApps,
       activeAppsList,
+      totalIntegratedAppsCount,
       filteredApps,
       connectedApps,
       activeConnectedApps,
@@ -663,6 +708,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       apps,
       personalApps,
       activeAppsList,
+      totalIntegratedAppsCount,
       filteredApps,
       connectedApps,
       activeConnectedApps,

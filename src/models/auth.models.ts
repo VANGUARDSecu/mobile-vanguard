@@ -12,6 +12,7 @@ export interface AuthUser {
   avatar?: string;
   avatarUrl?: string;
   accessToken?: string;
+  refreshToken?: string;
   tenantId?: string;
   user_metadata?: Record<string, any>;
 }
@@ -70,6 +71,8 @@ export interface AuthResponse {
     access_token?: string;
     refreshToken?: string;
     refresh_token?: string;
+    expiresAt?: number;
+    expires_at?: number;
   };
 }
 

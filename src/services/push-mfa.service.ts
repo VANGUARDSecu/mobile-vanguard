@@ -148,6 +148,9 @@ export class PushMfaService {
 
   constructor() {
     this.history = [];
+    AuthService.onSessionInvalidated(() => {
+      this.stopPolling();
+    });
   }
 
   public getActiveRequest(): PushApprovalRequest | null {
@@ -183,8 +186,8 @@ export class PushMfaService {
     try {
       const token =
         explicitToken ||
-        (await AsyncStorage?.getItem?.('@vanguard_auth_token')) ||
-        (await AuthService.getAccessToken());
+        (await AuthService.ensureValidAccessToken()) ||
+        (await AsyncStorage?.getItem?.('@vanguard_auth_token'));
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
@@ -206,7 +209,22 @@ export class PushMfaService {
     try {
       const url = `${getApiBaseUrl()}/oauth/mfa/push/pending?email=${encodeURIComponent(targetEmail)}`;
       const headers = await this.buildAuthHeaders();
-      const response = await fetch(url, { headers });
+      let response = await fetch(url, { headers });
+      if (response.status === 401) {
+        const refreshedToken = await AuthService.refreshSession();
+        if (refreshedToken) {
+          response = await fetch(url, {
+            headers: {
+              ...headers,
+              Authorization: `Bearer ${refreshedToken}`,
+            },
+          });
+        }
+        if (response.status === 401) {
+          this.stopPolling();
+          return null;
+        }
+      }
       if (!response.ok) return null;
       const data = await response.json();
       if (data && data.activeRequest) {

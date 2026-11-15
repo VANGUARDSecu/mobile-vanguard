@@ -39,7 +39,10 @@ export function BillingModal() {
     paywallMessage,
     closeBillingModal,
     refreshSubscription,
+    canRestorePlanWithoutCharge,
     startPaymongoCheckout,
+    resumeSubscription,
+    resendReceipt,
     cancelSubscription,
   } = billing;
 
@@ -191,6 +194,25 @@ export function BillingModal() {
                         <View style={styles.currentBadge}>
                           <Text style={styles.currentBadgeText}>✓ Active Across Web & Mobile</Text>
                         </View>
+                      ) : isPaid && canRestorePlanWithoutCharge(plan.id) ? (
+                        <TouchableOpacity
+                          style={styles.restoreBtn}
+                          onPress={() =>
+                            void resumeSubscription(
+                              plan.id as 'personal_pro' | 'business_pro' | 'enterprise',
+                            )
+                          }
+                          disabled={isProcessingCheckout}
+                        >
+                          {isProcessingCheckout ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text style={styles.payBtnText}>
+                              Restore {plan.name} ($0 — Paid until{' '}
+                              {subscription.paidCredit?.paidUntil?.split('T')?.[0] || 'cycle end'})
+                            </Text>
+                          )}
+                        </TouchableOpacity>
                       ) : isPaid ? (
                         <TouchableOpacity
                           style={styles.payBtn}
@@ -237,6 +259,43 @@ export function BillingModal() {
                     </TouchableOpacity>
                   ) : null}
                 </View>
+
+                {subscription.invoices && subscription.invoices.length > 0 ? (
+                  <View style={styles.receiptsCard}>
+                    <Text style={styles.receiptsTitle}>
+                      🧾 Official Vanguard Purchase Receipts
+                    </Text>
+                    {subscription.invoices.slice(0, 5).map((inv) => (
+                      <View key={inv.id} style={styles.receiptItem}>
+                        <View style={styles.receiptTopRow}>
+                          <Text style={styles.receiptNum}>
+                            {inv.receiptNumber || inv.id} • {inv.planName}
+                          </Text>
+                          <Text style={styles.receiptAmt}>${inv.amountUsd}.00 PAID</Text>
+                        </View>
+                        <Text style={styles.receiptEmailText}>
+                          Sent to Registered Email:{' '}
+                          {inv.receiptSentTo || inv.buyerEmail || currentUser?.email || 'Account Email'}
+                        </Text>
+                        {inv.gatewayPayerEmail &&
+                        inv.gatewayPayerEmail !== (inv.receiptSentTo || inv.buyerEmail) ? (
+                          <Text style={styles.receiptGatewayText}>
+                            PayMongo Checkout Email: {inv.gatewayPayerEmail}
+                          </Text>
+                        ) : null}
+                        <TouchableOpacity
+                          style={styles.resendBtn}
+                          onPress={() => void resendReceipt(inv.id)}
+                          disabled={isLoadingBilling}
+                        >
+                          <Text style={styles.resendBtnText}>
+                            ✉ Send Receipt to Registered Email
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ) : null}
           </ScrollView>
@@ -460,6 +519,76 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  restoreBtn: {
+    backgroundColor: '#0284c7',
+    borderColor: 'rgba(56, 189, 248, 0.55)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.sm,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptsCard: {
+    marginTop: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderColor: 'rgba(148, 163, 184, 0.22)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    padding: 12,
+    gap: 10,
+  },
+  receiptsTitle: {
+    color: CyberColors.textPrimary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  receiptItem: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(148, 163, 184, 0.14)',
+    paddingTop: 8,
+    gap: 4,
+  },
+  receiptTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  receiptNum: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  receiptAmt: {
+    color: '#34d399',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  receiptEmailText: {
+    color: '#7dd3fc',
+    fontSize: 11,
+  },
+  receiptGatewayText: {
+    color: '#94a3b8',
+    fontSize: 11,
+  },
+  resendBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.45)',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+  },
+  resendBtnText: {
+    color: '#6ee7b7',
+    fontSize: 11,
+    fontWeight: '700',
   },
   payBtnText: {
     color: '#ffffff',

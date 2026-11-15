@@ -82,13 +82,20 @@ The application is configured to connect directly to the live deployed Vanguard 
 - **Deployed Backend Integration**: Every authentication challenge, device pairing verification, and push MFA response is securely submitted to `https://backend-vanguard.onrender.com`.
 - **Extended Warm-Up Tolerance**: Network timeout handlers allocate 30 seconds to gracefully accommodate cloud spin-up latency on server cold starts without aborting verification requests prematurely.
 
-### 6. Billing Isolation, Free-Tier Quotas & Web-Mobile Sync (SCRUM-185)
+### 6. Billing Isolation, Free-Tier Quotas, No-Charge Restore & Receipts (SCRUM-185, SCRUM-189)
 - **Bidirectional Subscription Synchronization**:
   - Subscriptions purchased on the Web Dashboard automatically unlock Unlimited Applications and Unlimited 2FA Authenticator accounts on `mobile-vanguard` via `GET /billing/subscription` and `GET /sync/state` (`billingUpdatedAt` watermark + app foreground `AppState` resume).
   - Subscriptions purchased on Mobile via PayMongo (`expo-web-browser`) trigger backend `SyncService` + Supabase Realtime updates so `frontend-vanguard` reflects Paid features without a manual page reload.
 - **Identical Free-Tier Quotas & 3-Role Isolation**:
   - Free accounts (`Individual Free Starter` and `Company Free Trial`) enforce max **1 integrated application** and max **3 third-party 2FA accounts**, rolling back `403 billing_limit_reached` server rejections cleanly.
   - **Individual** users see Personal plans (`Free Starter`, `Personal Pro $5/mo`), **Company Admins** see Organization plans (`Company Free Trial`, `Business Pro $29/mo`, `Enterprise $79/mo`), and **Tenant Employees** see a read-only **Managed by Company Administrator** status panel that unlocks automatically when their Admin upgrades.
+- **No-Charge Restore & Registered-Email Vanguard Receipts (`POST /billing/resume`, `POST /billing/receipts/resend`, SCRUM-189)**:
+  - Downgrading to Free preserves active `paidCredit` until `paidUntil`; re-upgrading to the same or lower paid tier shows **Restore `<Plan>` ($0 — Paid until `<date>`)** without launching PayMongo checkout.
+  - **Official Vanguard Purchase Receipts** in `BillingModal` display `VG-RCPT-*` receipt numbers, `Sent to Registered Email` destination, optional separate PayMongo checkout email, and a **Send Receipt to Registered Email** action.
+
+### 7. Native Relying-Party SSO Handoff (`vanguard-auth://oauth/authorize`, SCRUM-188)
+- **Incoming Deep-Link Interception**: `RootNavigator` (`src/app/_layout.tsx`) listens for `vanguard-auth://oauth/authorize?...` and `mobilevanguard://oauth/authorize?...` deep links via `expo-linking` (`Linking.getInitialURL` and `Linking.addEventListener('url', ...)`) using `parseOAuthAuthorizeDeepLink` (`src/utils/oauth-deeplink.ts`).
+- **Consent & Approval Modal**: `SsoConsentModal` (`src/components/cyber/sso-consent-modal.tsx`) shows the requesting app's name, `client_id`, `redirect_uri`, and scopes. Signed-in users can approve natively (`AuthService.approveOAuthAuthorization` -> `POST /oauth/approve` on `https://backend-vanguard.onrender.com`) and redirect back to the calling app (e.g., `vanguard-dummy://oauth/callback?code=...&state=...`), sign in on mobile first, deny (`error=access_denied`), or continue in the deployed Vanguard Web Portal (`https://vanguard-security.pages.dev/login`).
 
 ---
 

@@ -6,6 +6,7 @@ import type {
   BillingPlanId,
   BillingSubscriptionState,
   BillingCheckoutInitResponse,
+  PaidCycleCredit,
 } from '../models/billing.models.ts';
 import { AppsStorageService } from './apps-storage.service.ts';
 import { isLiveBackendToken } from './totp-sync.service.ts';
@@ -211,6 +212,72 @@ export function getCacheKeyForUser(email?: string | null, accountType?: BillingA
   return `${BILLING_CACHE_PREFIX}${acct}_${cleanEmail}`;
 }
 
+function billingTierRank(planId: BillingPlanId): number {
+  if (planId === 'enterprise') return 3;
+  if (planId === 'business_pro') return 2;
+  if (planId === 'personal_pro') return 1;
+  return 0;
+}
+
+function normalizeActivePaidCredit(
+  credit: PaidCycleCredit | null | undefined,
+): PaidCycleCredit | null {
+  if (!credit || !credit.planId || !credit.paidUntil) return null;
+  const expiresMs = new Date(credit.paidUntil).getTime();
+  if (!Number.isFinite(expiresMs) || expiresMs <= Date.now()) return null;
+  return credit;
+}
+
+function normalizeServerSubscriptionPayload(
+  data: any,
+  user?: {
+    id?: string | null;
+    email?: string | null;
+    accountType?: BillingAccountType | null;
+    role?: string | null;
+    companyName?: string | null;
+  } | null,
+  forcedAccountType?: BillingAccountType,
+): BillingSubscriptionState | null {
+  if (!data || !data.planId) return null;
+  const acct: BillingAccountType =
+    forcedAccountType || (data.accountType === 'company' ? 'company' : 'individual');
+  const fallback = buildDefaultSubscriptionState({
+    ...user,
+    accountType: acct,
+  });
+
+  return {
+    accountType: acct,
+    planId: data.planId,
+    planName:
+      data.planName ||
+      (data.planId === 'free'
+        ? acct === 'company'
+          ? 'Company Free Trial'
+          : 'Free Starter'
+        : data.planId),
+    status: data.status || 'active',
+    scopeKey: data.scopeKey || fallback.scopeKey,
+    tenantId: data.tenantId ?? null,
+    canManageBilling:
+      typeof data.canManageBilling === 'boolean'
+        ? data.canManageBilling
+        : fallback.canManageBilling,
+    roleLabel: data.roleLabel || fallback.roleLabel,
+    priceMonthlyUsd: Number(data.priceMonthlyUsd ?? 0),
+    priceMonthlyPhp: Number(data.priceMonthlyPhp ?? 0),
+    currentPeriodEnd: data.currentPeriodEnd ?? null,
+    paidCredit: normalizeActivePaidCredit(
+      data.paidCredit ?? data.paymentGateway?.paidCredit ?? null,
+    ),
+    entitlements:
+      data.entitlements || defaultEntitlementsForPlan(data.planId, acct),
+    invoices: Array.isArray(data.invoices) ? data.invoices : [],
+    updatedAt: data.currentPeriodStart || new Date().toISOString(),
+  };
+}
+
 export class BillingService {
   static getVisiblePlans(accountType: BillingAccountType): BillingPlanDefinition[] {
     return accountType === 'company' ? COMPANY_BILLING_PLANS : INDIVIDUAL_BILLING_PLANS;
@@ -310,6 +377,17 @@ export class BillingService {
     }
   }
 
+  static canRestorePlanWithoutCharge(
+    subscription: BillingSubscriptionState,
+    planId: BillingPlanId,
+  ): boolean {
+    if (planId === 'free') return false;
+    if (subscription.planId === planId && subscription.status === 'active') return false;
+    const credit = normalizeActivePaidCredit(subscription.paidCredit);
+    if (!credit) return false;
+    return billingTierRank(planId) <= billingTierRank(credit.planId);
+  }
+
   static async fetchSubscription(
     token: string,
     user?: {
@@ -338,44 +416,12 @@ export class BillingService {
       if (!response.ok) return null;
 
       const data = (await response.json()) as any;
-      if (!data || !data.planId) return null;
-
-      const acct: BillingAccountType =
-        data.accountType === 'company' ? 'company' : 'individual';
-      const fallback = buildDefaultSubscriptionState({
-        ...user,
-        accountType: acct,
-      });
-
-      const normalized: BillingSubscriptionState = {
-        accountType: acct,
-        planId: data.planId,
-        planName:
-          data.planName ||
-          (data.planId === 'free'
-            ? acct === 'company'
-              ? 'Company Free Trial'
-              : 'Free Starter'
-            : data.planId),
-        status: data.status || 'active',
-        scopeKey: data.scopeKey || fallback.scopeKey,
-        tenantId: data.tenantId ?? null,
-        canManageBilling:
-          typeof data.canManageBilling === 'boolean'
-            ? data.canManageBilling
-            : fallback.canManageBilling,
-        roleLabel: data.roleLabel || fallback.roleLabel,
-        priceMonthlyUsd: Number(data.priceMonthlyUsd ?? 0),
-        priceMonthlyPhp: Number(data.priceMonthlyPhp ?? 0),
-        entitlements:
-          data.entitlements || defaultEntitlementsForPlan(data.planId, acct),
-        invoices: Array.isArray(data.invoices) ? data.invoices : [],
-        updatedAt: data.currentPeriodStart || new Date().toISOString(),
-      };
+      const normalized = normalizeServerSubscriptionPayload(data, user);
+      if (!normalized) return null;
 
       if (user?.email) {
         await writeCache(
-          getCacheKeyForUser(user.email, acct),
+          getCacheKeyForUser(user.email, normalized.accountType),
           JSON.stringify(normalized),
         );
       }
@@ -440,7 +486,11 @@ export class BillingService {
     if (!response.ok) {
       throw new Error(body?.message || 'Unable to cancel subscription.');
     }
-    const sub = body?.subscription as BillingSubscriptionState | undefined;
+    const sub = normalizeServerSubscriptionPayload(
+      body?.subscription || body,
+      { email: userEmail },
+      accountType,
+    );
     if (sub && userEmail) {
       await writeCache(
         getCacheKeyForUser(userEmail, accountType),
@@ -448,5 +498,99 @@ export class BillingService {
       );
     }
     return sub ?? null;
+  }
+
+  static async resumeSubscription(
+    token: string,
+    planId: 'personal_pro' | 'business_pro' | 'enterprise',
+    accountType: BillingAccountType,
+    userEmail?: string | null,
+  ): Promise<{
+    subscription: BillingSubscriptionState | null;
+    message: string;
+  }> {
+    if (!isLiveBackendToken(token)) {
+      throw new Error('Sign in with a live Vanguard account to restore a paid plan.');
+    }
+
+    const baseUrl = AppsStorageService.getBackendApiUrl();
+    const response = await fetch(`${baseUrl}/billing/resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ planId, accountType }),
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body?.message || 'Unable to restore paid subscription at $0.');
+    }
+    const sub = normalizeServerSubscriptionPayload(
+      body?.subscription,
+      { email: userEmail },
+      accountType,
+    );
+    if (sub && userEmail) {
+      await writeCache(
+        getCacheKeyForUser(userEmail, accountType),
+        JSON.stringify(sub),
+      );
+    }
+    return {
+      subscription: sub,
+      message: body?.message || 'Subscription restored at $0 within your already-paid billing cycle.',
+    };
+  }
+
+  static async resendReceipt(
+    token: string,
+    accountType: BillingAccountType,
+    invoiceId?: string,
+    userEmail?: string | null,
+  ): Promise<{
+    sentTo: string;
+    receiptNumber: string;
+    subscription: BillingSubscriptionState | null;
+    message: string;
+  }> {
+    if (!isLiveBackendToken(token)) {
+      throw new Error('Sign in with a live Vanguard account to email an official receipt.');
+    }
+
+    const baseUrl = AppsStorageService.getBackendApiUrl();
+    const response = await fetch(`${baseUrl}/billing/receipts/resend`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ accountType, invoiceId }),
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body?.message || 'Unable to send Vanguard purchase receipt.');
+    }
+    const sub = normalizeServerSubscriptionPayload(
+      body?.subscription,
+      { email: userEmail },
+      accountType,
+    );
+    if (sub && userEmail) {
+      await writeCache(
+        getCacheKeyForUser(userEmail, accountType),
+        JSON.stringify(sub),
+      );
+    }
+    return {
+      sentTo: body?.sentTo || userEmail || 'registered email',
+      receiptNumber: body?.receiptNumber || '',
+      subscription: sub,
+      message: body?.message || 'Official Vanguard receipt sent to your registered account email.',
+    };
   }
 }

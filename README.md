@@ -115,12 +115,15 @@ The application is configured to connect directly to the live deployed Vanguard 
    - `expo`: `~57.0.24`
    - `expo-camera`: `~57.0.6` (Mobile Integration QR pairing scanner)
    - `expo-router`: `~57.0.22`
-   - `expo-local-authentication`: `~57.0.2`
+   - `expo-local-authentication`: `~57.0.3`
    - `expo-secure-store`: `~57.0.4`
+   - `expo-crypto`: `~57.0.4` (CSPRNG random bytes on Android/iOS native)
    - `expo-web-browser`: `~57.0.3`
    - `expo-linking`: `~57.0.10`
    - `expo-clipboard`: `~57.0.2`
    - `otpauth`: `^9.5.2`
+   - `@noble/ciphers`: `^2.4.0` (NIST AES-256-GCM on React Native Hermes without `crypto.subtle`)
+   - `@noble/hashes`: `^2.4.0` (PBKDF2-SHA256 key derivation compatible with WebCrypto)
    - `react-native-svg`: `~15.11.2`
    - `@react-native-async-storage/async-storage`: `2.2.0`
    - `react-native`: `0.86.3`
@@ -538,7 +541,7 @@ Vanguard enforces strict account isolation between **Personal (Individual)** and
 - `src/models/vault.models.ts`: TypeScript models for `TotpAccount`, `VaultSecuritySettings`, `AddTotpAccountInput`, `EncryptedVaultEnvelope`, and `ISecureStorageProvider`.
 - `src/models/push-mfa.models.ts`: TypeScript definitions for `PushApprovalRequest`, `PushApprovalResult`, `PushGeoLocation`, `NumberMatchingChallenge`, and `PushHarnessPreset`.
 - `src/services/totp-engine.service.ts`: Standalone RFC 6238 TOTP calculation engine with Base32 decoding, countdown calculations, warning color shifts, and drift tolerance.
-- `src/services/aes-gcm.service.ts`: Authenticated 256-bit AES-GCM encryption/decryption service with 96-bit random IVs and WebCrypto compatibility.
+- `src/services/aes-gcm.service.ts`: Authenticated 256-bit AES-GCM and PBKDF2-SHA256 encryption/decryption service with 96-bit random IVs, WebCrypto SubtleCrypto on Web/Node, and `@noble/ciphers` + `@noble/hashes` + `expo-crypto` fallback for React Native Hermes.
 - `src/services/secure-storage.provider.ts`: Pluggable secure storage layer with `ExpoSecureStoreAdapter` (iOS Keychain / Android Keystore) and `MockKeychainProvider`.
 - `src/services/biometric-auth.service.ts`: Standalone biometric authentication provider with native hardware abstraction (`ExpoBiometricAdapter`), mock testing adapter (`MockBiometricProvider`), capability queries, and settings persistence.
 - `src/services/push-mfa.service.ts`: Reactive out-of-band push verification service with request dispatching, number matching challenge validation, audit history, and offline presets.

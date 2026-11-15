@@ -147,4 +147,88 @@ test('Local Secure Vault & Keychain Storage for TOTP Secrets (SCRUM-18)', async 
       { message: /Invalid Base32 secret key/i }
     );
   });
+
+  await t.test('7. Pure-JS Hermes fallback works without crypto.subtle and interoperates byte-for-byte with WebCrypto', async () => {
+    const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    const originalCrypto = globalThis.crypto;
+
+    // Generate envelopes via standard WebCrypto first
+    const masterKey = await AesGcmService.generateMasterKey();
+    const webEnvelope = await AesGcmService.encrypt('{"item":"webcrypto"}', masterKey);
+    const webPwdEnvelope = await AesGcmService.encryptWithPassword(
+      '{"secret":"web-pwd"}',
+      'VanguardMasterPass!99',
+      1000,
+    );
+
+    try {
+      // Simulate React Native Hermes where globalThis.crypto.subtle is absent
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        writable: true,
+        value: {
+          getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+        },
+      });
+
+      // Decrypt WebCrypto payloads on simulated Hermes pure-JS path
+      const decryptedFromWeb = await AesGcmService.decrypt(webEnvelope, masterKey);
+      assert.equal(decryptedFromWeb, '{"item":"webcrypto"}');
+
+      const decryptedPwdFromWeb = await AesGcmService.decryptWithPassword(
+        webPwdEnvelope.ciphertext,
+        webPwdEnvelope.iv,
+        webPwdEnvelope.salt,
+        'VanguardMasterPass!99',
+        webPwdEnvelope.iterations,
+      );
+      assert.equal(decryptedPwdFromWeb, '{"secret":"web-pwd"}');
+
+      // Generate master key + encrypt via pure-JS path + run full VaultService CRUD
+      const hermesMasterKey = await AesGcmService.generateMasterKey();
+      const hermesEnvelope = await AesGcmService.encrypt('{"item":"hermes"}', hermesMasterKey);
+      const hermesPwdEnvelope = await AesGcmService.encryptWithPassword(
+        '{"secret":"hermes-pwd"}',
+        'VanguardMasterPass!99',
+        1000,
+      );
+
+      const mockKeychain = new MockKeychainProvider();
+      const service = new VaultService(mockKeychain);
+      const saved = await service.saveAccount({
+        accountName: 'android@vanguard.security',
+        issuer: 'Android Hermes Check',
+        secret: 'JBSWY3DPEHPK3PXP',
+      });
+      const accounts = await service.getAccounts();
+      assert.ok(accounts.some((acc) => acc.id === saved.id));
+
+      // Restore WebCrypto and verify it decrypts payloads created on Hermes
+      if (originalCryptoDescriptor) {
+        Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor);
+      }
+
+      const webDecryptedHermes = await AesGcmService.decrypt(hermesEnvelope, hermesMasterKey);
+      assert.equal(webDecryptedHermes, '{"item":"hermes"}');
+
+      const webDecryptedHermesPwd = await AesGcmService.decryptWithPassword(
+        hermesPwdEnvelope.ciphertext,
+        hermesPwdEnvelope.iv,
+        hermesPwdEnvelope.salt,
+        'VanguardMasterPass!99',
+        hermesPwdEnvelope.iterations,
+      );
+      assert.equal(webDecryptedHermesPwd, '{"secret":"hermes-pwd"}');
+    } finally {
+      if (originalCryptoDescriptor) {
+        Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor);
+      } else {
+        Object.defineProperty(globalThis, 'crypto', {
+          configurable: true,
+          writable: true,
+          value: originalCrypto,
+        });
+      }
+    }
+  });
 });

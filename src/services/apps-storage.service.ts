@@ -660,12 +660,9 @@ export class AppsStorageService {
     const configured =
       typeof process !== 'undefined' ? process.env?.EXPO_PUBLIC_API_URL : undefined;
     if (configured && typeof configured === 'string' && configured.trim().length > 0) {
-      const normalized = configured.trim().replace(/\/$/, '');
-      if (!normalized.includes('backend-vanguard.onrender.com')) {
-        return normalized;
-      }
+      return configured.trim().replace(/\/$/, '');
     }
-    return 'http://127.0.0.1:3000';
+    return 'https://backend-vanguard.onrender.com';
   }
 
   static getSupabaseUrl(): string {

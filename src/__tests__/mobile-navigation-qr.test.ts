@@ -13,6 +13,7 @@ import {
   getNextRegistrationPage,
   getPrevRegistrationPage,
   evaluatePasswordRules,
+  extractGoogleOAuthCallbackError,
   parseGoogleOAuthCallbackUrl,
 } from '../utils/registration-wizard.ts';
 import { AuthService } from '../services/auth.service.ts';
@@ -273,14 +274,33 @@ test('parseGoogleOAuthCallbackUrl extracts JWT user claims from OAuth redirect h
   assert.equal(extracted?.accessToken, fakeJwt);
 });
 
-test('AppsStorageService.getBackendApiUrl avoids dead Render placeholder and resolves active backend', () => {
+test('extractGoogleOAuthCallbackError surfaces OAuth error descriptions cleanly', () => {
+  assert.equal(
+    extractGoogleOAuthCallbackError(
+      'mobilevanguard://login#error=access_denied&error_description=User+cancelled+login'
+    ),
+    'User cancelled login'
+  );
+  assert.equal(
+    extractGoogleOAuthCallbackError('mobilevanguard://login#access_token=abc'),
+    null
+  );
+});
+
+test('AppsStorageService.getBackendApiUrl defaults to deployed Render backend and honors EXPO_PUBLIC_API_URL', () => {
   const prev = process.env.EXPO_PUBLIC_API_URL;
   try {
     delete process.env.EXPO_PUBLIC_API_URL;
-    assert.equal(AppsStorageService.getBackendApiUrl(), 'http://127.0.0.1:3000');
+    assert.equal(
+      AppsStorageService.getBackendApiUrl(),
+      'https://backend-vanguard.onrender.com'
+    );
 
     process.env.EXPO_PUBLIC_API_URL = 'https://backend-vanguard.onrender.com/';
-    assert.equal(AppsStorageService.getBackendApiUrl(), 'http://127.0.0.1:3000');
+    assert.equal(
+      AppsStorageService.getBackendApiUrl(),
+      'https://backend-vanguard.onrender.com'
+    );
 
     process.env.EXPO_PUBLIC_API_URL = 'http://localhost:3000/';
     assert.equal(AppsStorageService.getBackendApiUrl(), 'http://localhost:3000');

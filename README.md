@@ -184,6 +184,8 @@ EXPO_PUBLIC_API_URL=https://backend-vanguard.onrender.com npx expo start --tunne
 #### 3. Standalone Android APK Build (`eas build` / `npx expo run:android`)
 The application is pre-configured with Android package identifier `com.vanguard.security.mobile`, required permissions (`INTERNET`, `CAMERA`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, plus iOS `NSCameraUsageDescription` and `NSFaceIDUsageDescription`), and URI schemes (`vanguard-auth`, `vanguard-enroll`, `mobilevanguard`):
 
+- **Supabase Redirect URLs (required for Google OAuth in APK):** In Supabase Dashboard → **Authentication** → **URL Configuration** → **Redirect URLs**, ensure `mobilevanguard://login`, `mobilevanguard://**`, and `https://vanguard-security.pages.dev/auth/mobile-callback` are allowlisted so Google Sign-In returns directly to the installed APK instead of falling back to the web portal.
+
 ```bash
 # 1. Install EAS CLI globally if not already present
 npm install -g eas-cli

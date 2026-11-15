@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,10 @@ import { launchGoogleBrowserOAuthSession } from '@/components/cyber/google-accou
 import { GoogleLogo } from '@/components/cyber/google-logo';
 import type { MfaChallengeResponse } from '@/models/auth.models';
 import type { GoogleAccountProfile } from '@/services/auth.service';
-import { parseGoogleOAuthCallbackUrl } from '@/utils/registration-wizard';
+import {
+  extractGoogleOAuthCallbackError,
+  parseGoogleOAuthCallbackUrl,
+} from '@/utils/registration-wizard';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
@@ -36,6 +39,8 @@ export default function LoginScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState<MfaChallengeResponse | null>(null);
+  const isBrowserOAuthActiveRef = useRef(false);
+  const handledAccessTokenRef = useRef<string | null>(null);
 
   // Load remembered credentials preference on mount
   useEffect(() => {
@@ -104,6 +109,10 @@ export default function LoginScreen() {
 
   const handleGoogleOAuthVerified = useCallback(
     async (account: GoogleAccountProfile) => {
+      if (account.accessToken && handledAccessTokenRef.current === account.accessToken) {
+        return;
+      }
+      handledAccessTokenRef.current = account.accessToken || null;
       setSubmitting(true);
       setErrorMessage(null);
       try {
@@ -114,6 +123,7 @@ export default function LoginScreen() {
           router.replace('/');
         }
       } catch (err: unknown) {
+        handledAccessTokenRef.current = null;
         setErrorMessage(
           err instanceof Error
             ? err.message
@@ -129,6 +139,7 @@ export default function LoginScreen() {
   const handleGoogleBrowserSignIn = async () => {
     setSubmitting(true);
     setErrorMessage(null);
+    isBrowserOAuthActiveRef.current = true;
     try {
       const oauthAccount = await launchGoogleBrowserOAuthSession();
       if (oauthAccount) {
@@ -141,6 +152,7 @@ export default function LoginScreen() {
           : 'Could not complete Google Browser OAuth.'
       );
     } finally {
+      isBrowserOAuthActiveRef.current = false;
       setSubmitting(false);
     }
   };
@@ -150,7 +162,13 @@ export default function LoginScreen() {
     let isMounted = true;
 
     const handleIncomingUrl = (url: string | null) => {
-      if (!isMounted || !url || !url.includes('access_token=')) return;
+      if (!isMounted || isBrowserOAuthActiveRef.current || !url) return;
+      const oauthError = extractGoogleOAuthCallbackError(url);
+      if (oauthError) {
+        setErrorMessage(oauthError);
+        return;
+      }
+      if (!url.includes('access_token=')) return;
       const parsed = parseGoogleOAuthCallbackUrl(url);
       if (parsed) {
         void handleGoogleOAuthVerified(parsed);

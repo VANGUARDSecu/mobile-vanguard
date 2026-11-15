@@ -24,14 +24,31 @@ export interface BillingPlanDefinition {
 
 export interface BillingInvoiceRecord {
   id: string;
+  receiptNumber?: string;
   planId: BillingPlanId;
   planName: string;
+  accountType?: BillingAccountType;
   amountUsd: number;
   amountPhp?: number;
   status: 'paid' | 'failed' | 'pending' | 'cancelled';
   date: string;
   transactionId: string;
   paymentMethod?: string;
+  buyerEmail?: string;
+  receiptSentTo?: string;
+  gatewayPayerEmail?: string;
+  receiptDeliveryStatus?: 'sent' | 'logged' | 'failed';
+  receiptSentAt?: string;
+  periodStart?: string;
+  periodEnd?: string;
+}
+
+export interface PaidCycleCredit {
+  planId: Exclude<BillingPlanId, 'free'>;
+  planName: string;
+  paidUntil: string;
+  lastTransactionId: string | null;
+  downgradedAt?: string;
 }
 
 export interface BillingSubscriptionState {
@@ -45,6 +62,8 @@ export interface BillingSubscriptionState {
   roleLabel: string;
   priceMonthlyUsd: number;
   priceMonthlyPhp: number;
+  currentPeriodEnd?: string | null;
+  paidCredit?: PaidCycleCredit | null;
   entitlements: BillingEntitlements;
   invoices: BillingInvoiceRecord[];
   updatedAt?: string;

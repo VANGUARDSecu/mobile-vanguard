@@ -191,4 +191,152 @@ test('Mobile Billing Parity, Isolation & Web-Mobile Sync (SCRUM-185)', async (t)
       globalThis.fetch = originalFetch;
     }
   });
+
+  await t.test('5. Option 1 downgrade preserves paidCredit and restores paid tier at $0 via /billing/resume', async () => {
+    const originalFetch = globalThis.fetch;
+    const futurePaidUntil = new Date(Date.now() + 20 * 24 * 3600 * 1000).toISOString();
+    const calls: string[] = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith('/billing/cancel')) {
+        return new Response(
+          JSON.stringify({
+            accountType: 'company',
+            planId: 'free',
+            planName: 'Company Free Trial',
+            status: 'active',
+            scopeKey: 'company:tenant-99',
+            tenantId: 'tenant-99',
+            canManageBilling: true,
+            priceMonthlyUsd: 0,
+            priceMonthlyPhp: 0,
+            paidCredit: {
+              planId: 'business_pro',
+              planName: 'Business Pro',
+              paidUntil: futurePaidUntil,
+              lastTransactionId: 'cs_pm_99',
+            },
+            invoices: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      if (url.endsWith('/billing/resume')) {
+        return new Response(
+          JSON.stringify({
+            restored: true,
+            amountChargedUsd: 0,
+            message: 'Business Pro restored with $0 due.',
+            subscription: {
+              accountType: 'company',
+              planId: 'business_pro',
+              planName: 'Business Pro',
+              status: 'active',
+              scopeKey: 'company:tenant-99',
+              tenantId: 'tenant-99',
+              canManageBilling: true,
+              priceMonthlyUsd: 29,
+              priceMonthlyPhp: 1690,
+              paidCredit: null,
+              invoices: [],
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      const downgraded = await BillingService.cancelSubscription(
+        'live-jwt-admin',
+        'company',
+        'admin@acme.test',
+      );
+      assert.ok(downgraded);
+      assert.equal(downgraded.planId, 'free');
+      assert.equal(downgraded.paidCredit?.planId, 'business_pro');
+      assert.equal(BillingService.canRestorePlanWithoutCharge(downgraded, 'business_pro'), true);
+      assert.equal(BillingService.canRestorePlanWithoutCharge(downgraded, 'enterprise'), false);
+
+      const expiredCopy = {
+        ...downgraded,
+        paidCredit: {
+          ...downgraded.paidCredit!,
+          paidUntil: new Date(Date.now() - 60_000).toISOString(),
+        },
+      };
+      assert.equal(BillingService.canRestorePlanWithoutCharge(expiredCopy, 'business_pro'), false);
+
+      const resumed = await BillingService.resumeSubscription(
+        'live-jwt-admin',
+        'business_pro',
+        'company',
+        'admin@acme.test',
+      );
+      assert.equal(resumed.subscription?.planId, 'business_pro');
+      assert.equal(resumed.subscription?.paidCredit, null);
+      assert.ok(calls.some((u) => u.endsWith('/billing/cancel')));
+      assert.ok(calls.some((u) => u.endsWith('/billing/resume')));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  await t.test('6. Resends official Vanguard receipt strictly to registered account email', async () => {
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          receiptNumber: 'VG-RCPT-20261115-7741',
+          sentTo: 'alt-registered@vanguard.test',
+          message: 'Vanguard receipt VG-RCPT-20261115-7741 sent directly to registered email alt-registered@vanguard.test.',
+          subscription: {
+            accountType: 'individual',
+            planId: 'personal_pro',
+            planName: 'Personal Pro',
+            status: 'active',
+            scopeKey: 'individual:ind-alt',
+            tenantId: null,
+            canManageBilling: true,
+            priceMonthlyUsd: 5,
+            priceMonthlyPhp: 290,
+            invoices: [
+              {
+                id: 'inv_7741',
+                receiptNumber: 'VG-RCPT-20261115-7741',
+                planId: 'personal_pro',
+                planName: 'Personal Pro',
+                amountUsd: 5,
+                amountPhp: 290,
+                status: 'paid',
+                date: '2026-11-15',
+                transactionId: 'cs_pm_7741',
+                receiptSentTo: 'alt-registered@vanguard.test',
+                gatewayPayerEmail: 'personal.gmail@gmail.com',
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )) as typeof fetch;
+
+    try {
+      const res = await BillingService.resendReceipt(
+        'live-jwt-ind',
+        'individual',
+        'inv_7741',
+        'alt-registered@vanguard.test',
+      );
+      assert.equal(res.sentTo, 'alt-registered@vanguard.test');
+      assert.equal(res.receiptNumber, 'VG-RCPT-20261115-7741');
+      assert.equal(res.subscription?.invoices[0]?.gatewayPayerEmail, 'personal.gmail@gmail.com');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

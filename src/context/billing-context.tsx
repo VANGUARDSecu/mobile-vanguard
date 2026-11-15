@@ -49,7 +49,10 @@ export interface BillingContextType {
   refreshSubscription: () => Promise<BillingSubscriptionState>;
   checkAppQuota: (currentAppCount: number) => { allowed: boolean; reason?: string };
   checkTotpQuota: (currentTotpCount: number) => { allowed: boolean; reason?: string };
+  canRestorePlanWithoutCharge: (planId: BillingPlanId) => boolean;
   startPaymongoCheckout: (planId: 'personal_pro' | 'business_pro' | 'enterprise') => Promise<boolean>;
+  resumeSubscription: (planId: 'personal_pro' | 'business_pro' | 'enterprise') => Promise<boolean>;
+  resendReceipt: (invoiceId?: string) => Promise<boolean>;
   cancelSubscription: () => Promise<void>;
 }
 
@@ -270,7 +273,12 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       } else {
         await refreshSubscription();
       }
-      setBillingNotice('Subscription reverted to Free tier across Web & Mobile.');
+      const creditUntil = updated?.paidCredit?.paidUntil?.split('T')[0];
+      setBillingNotice(
+        creditUntil
+          ? `Downgraded to Free tier. Restore your paid plan for $0 anytime before ${creditUntil}.`
+          : 'Subscription reverted to Free tier across Web & Mobile.',
+      );
       await syncCoordinatorService.checkOnce(true);
     } catch (err: any) {
       setBillingError(err?.message || 'Failed to cancel subscription.');
@@ -284,6 +292,98 @@ export function BillingProvider({ children }: { children: ReactNode }) {
     isIndividual,
     refreshSubscription,
   ]);
+
+  const canRestorePlanWithoutCharge = useCallback(
+    (planId: BillingPlanId) => BillingService.canRestorePlanWithoutCharge(subscription, planId),
+    [subscription],
+  );
+
+  const resumeSubscription = useCallback(
+    async (planId: 'personal_pro' | 'business_pro' | 'enterprise'): Promise<boolean> => {
+      setBillingError(null);
+      setBillingNotice(null);
+      if (!canManageBilling) {
+        setBillingError('Only your Company Administrator can restore the organization subscription.');
+        return false;
+      }
+
+      const token =
+        currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      if (!isLiveBackendToken(token)) {
+        setBillingError('Sign in with a live Vanguard account to restore a paid plan.');
+        return false;
+      }
+
+      setIsProcessingCheckout(true);
+      try {
+        const res = await BillingService.resumeSubscription(
+          token,
+          planId,
+          isIndividual ? 'individual' : 'company',
+          currentUser?.email,
+        );
+        if (res.subscription) {
+          setSubscription(res.subscription);
+        } else {
+          await refreshSubscription();
+        }
+        setBillingNotice(res.message);
+        await syncCoordinatorService.checkOnce(true);
+        return true;
+      } catch (err: any) {
+        setBillingError(err?.message || 'Unable to restore paid subscription at $0.');
+        return false;
+      } finally {
+        setIsProcessingCheckout(false);
+      }
+    },
+    [
+      canManageBilling,
+      currentUser?.accessToken,
+      currentUser?.email,
+      isIndividual,
+      refreshSubscription,
+    ],
+  );
+
+  const resendReceipt = useCallback(
+    async (invoiceId?: string): Promise<boolean> => {
+      setBillingError(null);
+      setBillingNotice(null);
+      if (!canManageBilling) {
+        setBillingError('Only your Company Administrator can send organization billing receipts.');
+        return false;
+      }
+
+      const token =
+        currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      if (!isLiveBackendToken(token)) {
+        setBillingError('Sign in with a live Vanguard account to email receipts.');
+        return false;
+      }
+
+      setIsLoadingBilling(true);
+      try {
+        const res = await BillingService.resendReceipt(
+          token,
+          isIndividual ? 'individual' : 'company',
+          invoiceId,
+          currentUser?.email,
+        );
+        if (res.subscription) {
+          setSubscription(res.subscription);
+        }
+        setBillingNotice(res.message);
+        return true;
+      } catch (err: any) {
+        setBillingError(err?.message || 'Failed to dispatch Vanguard receipt email.');
+        return false;
+      } finally {
+        setIsLoadingBilling(false);
+      }
+    },
+    [canManageBilling, currentUser?.accessToken, currentUser?.email, isIndividual],
+  );
 
   const value = useMemo<BillingContextType>(
     () => ({
@@ -314,7 +414,10 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       refreshSubscription,
       checkAppQuota,
       checkTotpQuota,
+      canRestorePlanWithoutCharge,
       startPaymongoCheckout,
+      resumeSubscription,
+      resendReceipt,
       cancelSubscription,
     }),
     [
@@ -336,7 +439,10 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       refreshSubscription,
       checkAppQuota,
       checkTotpQuota,
+      canRestorePlanWithoutCharge,
       startPaymongoCheckout,
+      resumeSubscription,
+      resendReceipt,
       cancelSubscription,
     ],
   );

@@ -176,6 +176,36 @@ function decodeBase64UrlJson(segment: string): Record<string, any> | null {
 }
 
 /**
+ * Extracts an OAuth error message from a callback URL (`#error=...` or `?error=...`).
+ */
+export function extractGoogleOAuthCallbackError(callbackUrl: string): string | null {
+  if (!callbackUrl || typeof callbackUrl !== 'string') {
+    return null;
+  }
+
+  const hashIdx = callbackUrl.indexOf('#');
+  const queryIdx = callbackUrl.indexOf('?');
+  const rawParams =
+    hashIdx >= 0
+      ? callbackUrl.slice(hashIdx + 1)
+      : queryIdx >= 0
+      ? callbackUrl.slice(queryIdx + 1)
+      : '';
+
+  if (!rawParams) {
+    return null;
+  }
+
+  const params = new URLSearchParams(rawParams);
+  const errorDesc = params.get('error_description');
+  const error = params.get('error');
+  if (!error && !errorDesc) {
+    return null;
+  }
+  return (errorDesc || error || 'Google OAuth failed.').trim();
+}
+
+/**
  * Extracts Google OAuth user claims and tokens from a callback URL containing
  * `#access_token=...` or `?access_token=...`.
  */

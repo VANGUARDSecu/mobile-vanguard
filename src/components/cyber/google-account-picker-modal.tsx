@@ -15,8 +15,19 @@ import {
   AuthService,
   type GoogleAccountProfile,
 } from '@/services/auth.service';
-import { parseGoogleOAuthCallbackUrl } from '@/utils/registration-wizard';
+import {
+  extractGoogleOAuthCallbackError,
+  parseGoogleOAuthCallbackUrl,
+} from '@/utils/registration-wizard';
 import { GoogleLogo } from './google-logo';
+
+if (typeof WebBrowser.maybeCompleteAuthSession === 'function') {
+  WebBrowser.maybeCompleteAuthSession();
+}
+
+export function buildGoogleOAuthRedirectUri(): string {
+  return Linking.createURL('login', { scheme: 'mobilevanguard' });
+}
 
 export interface GoogleAccountPickerModalProps {
   visible: boolean;
@@ -31,11 +42,15 @@ export interface GoogleAccountPickerModalProps {
  * Never permits unverified manual email entry.
  */
 export async function launchGoogleBrowserOAuthSession(): Promise<GoogleAccountProfile | null> {
-  const redirectUri = Linking.createURL('login');
+  const redirectUri = buildGoogleOAuthRedirectUri();
   const oauthUrl = await AuthService.getGoogleOAuthUrl(redirectUri);
   const result = await WebBrowser.openAuthSessionAsync(oauthUrl, redirectUri);
 
   if (result.type === 'success' && result.url) {
+    const oauthError = extractGoogleOAuthCallbackError(result.url);
+    if (oauthError) {
+      throw new Error(oauthError);
+    }
     const parsed = parseGoogleOAuthCallbackUrl(result.url);
     if (!parsed || !parsed.accessToken) {
       throw new Error(

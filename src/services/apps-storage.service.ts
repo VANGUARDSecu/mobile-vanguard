@@ -7,7 +7,10 @@ import type {
   PersonalAppInput,
   AppItemCategory,
 } from '../models/apps.models.ts';
-import { BillingLimitError, isBillingLimitError } from '../models/billing.models.ts';
+import {
+  isBillingLimitError,
+  parseBillingLimitResponse,
+} from '../models/billing.models.ts';
 
 const STORAGE_KEYS = {
   PERSONAL_APPS: '@vanguard_personal_apps',
@@ -397,16 +400,15 @@ export class AppsStorageService {
         });
         if (response.status === 403) {
           const errBody = await response.json().catch(() => ({}));
-          if (
-            errBody?.error === 'billing_limit_reached' ||
-            errBody?.code === 'PAYWALL_REQUIRED' ||
-            errBody?.upgradeRequired
-          ) {
+          const limitErr = parseBillingLimitResponse(
+            response.status,
+            errBody,
+            'integrated_apps',
+            'Free plan integrated app limit reached. Upgrade via PayMongo to unlock unlimited apps.',
+          );
+          if (limitErr) {
             await this.savePersonalApps(apps, email);
-            throw new BillingLimitError(
-              errBody?.message || 'Free plan integrated app limit reached. Upgrade via PayMongo to unlock unlimited apps.',
-              'integrated_apps',
-            );
+            throw limitErr;
           }
         }
       } catch (err) {
@@ -957,7 +959,7 @@ export class AppsStorageService {
     if (this.isLiveToken(token)) {
       try {
         const baseUrl = this.getBackendApiUrl();
-        fetch(`${baseUrl}/apps/access-requests`, {
+        const response = await fetch(`${baseUrl}/apps/access-requests`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -971,9 +973,25 @@ export class AppsStorageService {
             protocol: 'SAML 2.0',
             deliveryMode: 'sso',
           }),
-        }).catch(() => {});
-      } catch {
-        // Non-blocking
+        });
+        if (response.status === 403) {
+          const errBody = await response.json().catch(() => ({}));
+          const limitErr = parseBillingLimitResponse(
+            response.status,
+            errBody,
+            'integrated_apps',
+            'Free plan integrated app limit reached. Upgrade via PayMongo to unlock unlimited apps.',
+          );
+          if (limitErr) {
+            await this.saveAccessRequests(requests, input.userEmail);
+            throw limitErr;
+          }
+        }
+      } catch (err) {
+        if (isBillingLimitError(err)) {
+          throw err;
+        }
+        // Non-blocking network fallback
       }
     }
 
@@ -1006,19 +1024,35 @@ export class AppsStorageService {
       await this.saveAccessRequests(updated, email);
     }
 
-    if (token) {
+    if (this.isLiveToken(token)) {
       try {
         const baseUrl = this.getBackendApiUrl();
-        fetch(`${baseUrl}/apps/access-requests/${encodeURIComponent(id)}/approve`, {
+        const response = await fetch(`${baseUrl}/apps/access-requests/${encodeURIComponent(id)}/approve`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({ adminNotes: notes }),
-        }).catch(() => {});
-      } catch {
-        // Non-blocking
+        });
+        if (response.status === 403) {
+          const errBody = await response.json().catch(() => ({}));
+          const limitErr = parseBillingLimitResponse(
+            response.status,
+            errBody,
+            'integrated_apps',
+            'Free plan integrated app limit reached. Upgrade via PayMongo to unlock unlimited apps.',
+          );
+          if (limitErr) {
+            await this.saveAccessRequests(requests, email);
+            throw limitErr;
+          }
+        }
+      } catch (err) {
+        if (isBillingLimitError(err)) {
+          throw err;
+        }
+        // Non-blocking network fallback
       }
     }
 

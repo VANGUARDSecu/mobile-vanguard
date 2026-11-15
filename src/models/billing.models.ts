@@ -98,3 +98,26 @@ export function isBillingLimitError(err: unknown): err is BillingLimitError {
         (err as any).name === 'BillingLimitError'))
   );
 }
+
+/**
+ * Parses a backend HTTP 403 payload into a BillingLimitError whenever any
+ * structured paywall field or free-tier/upgrade message is present.
+ */
+export function parseBillingLimitResponse(
+  status: number,
+  errBody: any,
+  feature: string,
+  fallbackMessage: string,
+): BillingLimitError | null {
+  if (status !== 403) return null;
+  const msg = typeof errBody?.message === 'string' ? errBody.message : '';
+  if (
+    errBody?.error === 'billing_limit_reached' ||
+    errBody?.code === 'PAYWALL_REQUIRED' ||
+    Boolean(errBody?.upgradeRequired) ||
+    /free\s*(tier|trial|plan)|plan\s*(limit|is\s*limited)|limited\s+to\s+\d+|upgrade|paymongo/i.test(msg)
+  ) {
+    return new BillingLimitError(msg || fallbackMessage, errBody?.feature || feature);
+  }
+  return null;
+}

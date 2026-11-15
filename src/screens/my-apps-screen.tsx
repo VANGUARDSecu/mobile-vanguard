@@ -54,6 +54,7 @@ export default function MyAppsScreen() {
     selectedCategory,
     setSelectedCategory,
     activeAppsList,
+    totalIntegratedAppsCount,
     filteredApps,
     activeConnectedApps,
     findCredentialsForDomain,
@@ -188,7 +189,7 @@ export default function MyAppsScreen() {
   const handleActionPress = () => {
     if (isPersonalWorkspace) {
       if (billing) {
-        const quota = billing.checkAppQuota(activeAppsList.length);
+        const quota = billing.checkAppQuota(totalIntegratedAppsCount);
         if (!quota.allowed) {
           billing.openBillingModal(quota.reason);
           return;
@@ -196,6 +197,13 @@ export default function MyAppsScreen() {
       }
       setShowAddPersonalAppModal(true);
     } else {
+      if (billing) {
+        const quota = billing.checkAppQuota(totalIntegratedAppsCount);
+        if (!quota.allowed) {
+          billing.openBillingModal(quota.reason);
+          return;
+        }
+      }
       setShowRequestAppModal(true);
     }
   };
@@ -214,7 +222,16 @@ export default function MyAppsScreen() {
   };
 
   const handleRequestApp = async (input: RequestAppInput) => {
-    await submitAppRequest(input);
+    try {
+      await submitAppRequest(input);
+    } catch (err) {
+      if (isBillingLimitError(err)) {
+        setShowRequestAppModal(false);
+        billing?.openBillingModal(err.message);
+        return;
+      }
+      throw err;
+    }
   };
 
   const handleLaunchApprovedRequest = async (request: AppAccessRequest) => {
@@ -390,8 +407,8 @@ export default function MyAppsScreen() {
                   >
                     {billing.isFreeTier
                       ? billing.isTenantMember
-                        ? `⏳ ${billing.subscription.planName} • ${activeAppsList.length}/1 App (Admin)`
-                        : `⚡ ${billing.subscription.planName} • ${activeAppsList.length}/1 App Max`
+                        ? `⏳ ${billing.subscription.planName} • ${totalIntegratedAppsCount}/1 App (Admin)`
+                        : `⚡ ${billing.subscription.planName} • ${totalIntegratedAppsCount}/1 App Max`
                       : `💎 ${billing.subscription.planName} • Unlimited Apps Synced`}
                   </Text>
                   <Text style={{ color: CyberColors.cyan, fontSize: 11.5, fontWeight: '800', flexShrink: 0 }}>
@@ -417,7 +434,7 @@ export default function MyAppsScreen() {
                   ]}
                   onPress={() => {
                     if (billing) {
-                      const quota = billing.checkAppQuota(activeAppsList.length);
+                      const quota = billing.checkAppQuota(totalIntegratedAppsCount);
                       if (!quota.allowed) {
                         billing.openBillingModal(quota.reason);
                         return;
@@ -442,7 +459,16 @@ export default function MyAppsScreen() {
                       !responsive.stackActionButtons && styles.splitActionBtn,
                       pressed && styles.secondaryActionBtnPressed,
                     ]}
-                    onPress={() => setShowRequestAppModal(true)}
+                    onPress={() => {
+                      if (billing) {
+                        const quota = billing.checkAppQuota(totalIntegratedAppsCount);
+                        if (!quota.allowed) {
+                          billing.openBillingModal(quota.reason);
+                          return;
+                        }
+                      }
+                      setShowRequestAppModal(true);
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel="Request Enterprise Access"
                     testID="action-request-enterprise-app"
@@ -475,48 +501,52 @@ export default function MyAppsScreen() {
             isSyncing={syncingSso}
           />
 
-          {/* Category Filter Bar */}
-          <CategoryFilterBar
-            selectedCategory={selectedCategory}
-            onSelectCategory={setSelectedCategory}
-            totalAppsCount={activeAppsList.length}
-          />
+          {/* Category Filter Bar & Applications Grid (hidden when all active apps are already shown in ConnectedAppsSection) */}
+          {!(activeAppsList.length === 0 && activeConnectedApps.length > 0) && (
+            <>
+              <CategoryFilterBar
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+                totalAppsCount={activeAppsList.length}
+              />
 
-          {/* Applications Grid / List */}
-          <View
-            style={[
-              styles.appsList,
-              responsive.gridColumns === 2 && {
-                flexDirection: 'row',
-                flexWrap: 'wrap',
-                gap: responsive.cardGap,
-              },
-            ]}
-          >
-            {filteredApps.length === 0 ? (
-              <View style={{ width: '100%' }}>
-                <EmptyAppsState
-                  isPersonalWorkspace={isPersonalWorkspace}
-                  onActionPress={handleActionPress}
-                />
+              {/* Applications Grid / List */}
+              <View
+                style={[
+                  styles.appsList,
+                  responsive.gridColumns === 2 && {
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    gap: responsive.cardGap,
+                  },
+                ]}
+              >
+                {filteredApps.length === 0 ? (
+                  <View style={{ width: '100%' }}>
+                    <EmptyAppsState
+                      isPersonalWorkspace={isPersonalWorkspace}
+                      onActionPress={handleActionPress}
+                    />
+                  </View>
+                ) : (
+                  filteredApps.map((app) => (
+                    <View
+                      key={app.id}
+                      style={responsive.gridColumns === 2 ? { width: '48.8%' } : { width: '100%' }}
+                    >
+                      <AppCard
+                        app={app}
+                        isPersonalWorkspace={isPersonalWorkspace}
+                        matchingVaultCredentials={findCredentialsForDomain(app.launchUrl || app.name)}
+                        onLaunch={handleLaunchApp}
+                        onDelete={deletePersonalApp}
+                      />
+                    </View>
+                  ))
+                )}
               </View>
-            ) : (
-              filteredApps.map((app) => (
-                <View
-                  key={app.id}
-                  style={responsive.gridColumns === 2 ? { width: '48.8%' } : { width: '100%' }}
-                >
-                  <AppCard
-                    app={app}
-                    isPersonalWorkspace={isPersonalWorkspace}
-                    matchingVaultCredentials={findCredentialsForDomain(app.launchUrl || app.name)}
-                    onLaunch={handleLaunchApp}
-                    onDelete={deletePersonalApp}
-                  />
-                </View>
-              ))
-            )}
-          </View>
+            </>
+          )}
 
           {/* Requested Applications & Zero-Trust Governance Queue (SCRUM-67) */}
           {!isPersonalWorkspace && accessRequests.length > 0 && (

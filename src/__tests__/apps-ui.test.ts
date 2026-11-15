@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { SaaSApp, PersonalVaultItem } from '../models/apps.models.ts';
+import {
+  countUnifiedIntegratedApps,
+  isAppMatchedConnectedApp,
+  isIntegratedAppSlotTaken,
+  type SaaSApp,
+  type PersonalVaultItem,
+  type UserConnectedApp,
+} from '../models/apps.models.ts';
 
 test('Apps UI Components & Presentation Logic', async (t) => {
   await t.test('Category options format accurately with dynamic total counts', () => {
@@ -102,5 +109,59 @@ test('Apps UI Components & Presentation Logic', async (t) => {
     const enterpriseBtn = false ? '+ Add Application' : '+ Request Application';
     assert.equal(enterpriseTitle, 'No applications assigned');
     assert.equal(enterpriseBtn, '+ Request Application');
+  });
+
+  await t.test('SCRUM-201: excludes connected SSO apps from My Apps list and counts unified integrated slots', () => {
+    const connected: UserConnectedApp[] = [
+      {
+        id: 'conn-1',
+        clientId: 'vanguard-dummy-portal',
+        clientName: 'Acme Dummy Web',
+        originUrl: 'http://localhost:4201',
+        redirectUri: 'http://localhost:4201/callback',
+        protocol: 'OIDC 1.0 PKCE',
+        scopes: ['openid'],
+        status: 'Connected',
+        connectedAt: '2026-11-15',
+      },
+    ];
+    const tenantApps: SaaSApp[] = [
+      {
+        id: 'vanguard-dummy-portal',
+        name: 'Acme Dummy Web',
+        category: 'cloud',
+        description: 'Connected SSO app',
+        icon: '🏢',
+        protocol: 'OIDC',
+        launchUrl: 'http://localhost:4201',
+        assigned: true,
+      },
+      {
+        id: 'app-github',
+        name: 'GitHub Enterprise',
+        category: 'developer',
+        description: 'GitHub',
+        icon: '🐙',
+        protocol: 'Extension Autofill',
+        launchUrl: 'https://github.com/login',
+        assigned: true,
+      },
+    ];
+
+    const filteredMyApps = tenantApps.filter((a) => !isAppMatchedConnectedApp(a, connected));
+    assert.deepEqual(
+      filteredMyApps.map((a) => a.name),
+      ['GitHub Enterprise'],
+    );
+    assert.equal(countUnifiedIntegratedApps(filteredMyApps, connected), 2);
+    assert.equal(countUnifiedIntegratedApps([], connected), 1);
+    assert.equal(
+      isIntegratedAppSlotTaken('Acme Dummy Web', 'http://localhost:4201', [], connected),
+      true,
+    );
+    assert.equal(
+      isIntegratedAppSlotTaken('Figma', 'https://figma.com', [], connected),
+      false,
+    );
   });
 });

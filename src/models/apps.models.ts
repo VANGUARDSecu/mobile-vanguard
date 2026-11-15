@@ -92,3 +92,87 @@ export const ENTERPRISE_APP_SUGGESTIONS = [
   { name: 'Datadog APM', category: 'developer' as const, icon: '🐶' },
   { name: 'Splunk Enterprise', category: 'cloud' as const, icon: '🔍' },
 ];
+
+export function normalizeIntegratedAppKey(value?: string | null): string {
+  return (value || '').trim().toLowerCase().replace(/\/+$/, '');
+}
+
+function getNormalizedOrigin(rawUrl?: string | null): string {
+  const norm = normalizeIntegratedAppKey(rawUrl);
+  if (!norm) return '';
+  try {
+    return new URL(norm.startsWith('http') ? norm : `https://${norm}`).origin.toLowerCase();
+  } catch {
+    return norm;
+  }
+}
+
+export function isAppMatchedConnectedApp(
+  app: Pick<SaaSApp, 'id' | 'name' | 'launchUrl'>,
+  connectedApps: readonly Pick<UserConnectedApp, 'clientId' | 'clientName' | 'originUrl'>[],
+): boolean {
+  const appId = normalizeIntegratedAppKey(app.id);
+  const appName = normalizeIntegratedAppKey(app.name);
+  const appUrl = normalizeIntegratedAppKey(app.launchUrl);
+  const appOrigin = getNormalizedOrigin(app.launchUrl);
+
+  return connectedApps.some((conn) => {
+    const cId = normalizeIntegratedAppKey(conn.clientId);
+    const cName = normalizeIntegratedAppKey(conn.clientName);
+    const cUrl = normalizeIntegratedAppKey(conn.originUrl);
+    const cOrigin = getNormalizedOrigin(conn.originUrl);
+    return Boolean(
+      (appId && cId && appId === cId) ||
+        (appName && cName && appName === cName) ||
+        (appUrl && cUrl && appUrl === cUrl) ||
+        (appOrigin && cOrigin && appOrigin === cOrigin),
+    );
+  });
+}
+
+function collectUnifiedSlotKeys(
+  activeApps: readonly Pick<SaaSApp, 'id' | 'name' | 'launchUrl'>[],
+  connectedApps: readonly Pick<UserConnectedApp, 'clientId' | 'clientName' | 'originUrl'>[],
+): Set<string> {
+  const keys = new Set<string>();
+  for (const conn of connectedApps) {
+    const key =
+      normalizeIntegratedAppKey(conn.clientName) ||
+      getNormalizedOrigin(conn.originUrl) ||
+      normalizeIntegratedAppKey(conn.clientId);
+    if (key) keys.add(key);
+  }
+  for (const app of activeApps) {
+    if (isAppMatchedConnectedApp(app, connectedApps)) continue;
+    const key =
+      normalizeIntegratedAppKey(app.name) ||
+      getNormalizedOrigin(app.launchUrl) ||
+      normalizeIntegratedAppKey(app.id);
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
+export function countUnifiedIntegratedApps(
+  activeApps: readonly Pick<SaaSApp, 'id' | 'name' | 'launchUrl'>[],
+  connectedApps: readonly Pick<UserConnectedApp, 'clientId' | 'clientName' | 'originUrl'>[],
+): number {
+  return collectUnifiedSlotKeys(activeApps, connectedApps).size;
+}
+
+export function isIntegratedAppSlotTaken(
+  appName: string | undefined,
+  launchUrl: string | undefined,
+  activeApps: readonly Pick<SaaSApp, 'id' | 'name' | 'launchUrl'>[],
+  connectedApps: readonly Pick<UserConnectedApp, 'clientId' | 'clientName' | 'originUrl'>[],
+): boolean {
+  if (isAppMatchedConnectedApp({ id: '', name: appName || '', launchUrl: launchUrl || '' }, connectedApps)) {
+    return true;
+  }
+  const slots = collectUnifiedSlotKeys(activeApps, connectedApps);
+  const normName = normalizeIntegratedAppKey(appName);
+  if (normName && slots.has(normName)) return true;
+  const origin = getNormalizedOrigin(launchUrl);
+  if (origin && slots.has(origin)) return true;
+  return false;
+}

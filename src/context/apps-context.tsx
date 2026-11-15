@@ -502,14 +502,17 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [vaultCredentials]
   );
 
-  // Add Personal Application (SCRUM-178 & SCRUM-185: enforce Free-tier limit synced with backend)
+  // Add Personal Application (SCRUM-178, SCRUM-185 & SCRUM-201: enforce Free-tier unified slot limit)
   const addPersonalApp = useCallback(
     async (input: PersonalAppInput): Promise<SaaSApp> => {
-      const existingSameName = activeAppsList.some(
-        (a) => a.name.toLowerCase().trim() === input.name.toLowerCase().trim(),
+      const slotAlreadyCounted = isIntegratedAppSlotTaken(
+        input.name,
+        input.launchUrl,
+        activeAppsList,
+        activeConnectedApps,
       );
-      if (billing && !existingSameName) {
-        const quota = billing.checkAppQuota(activeAppsList.length);
+      if (billing && !slotAlreadyCounted) {
+        const quota = billing.checkAppQuota(totalIntegratedAppsCount);
         if (!quota.allowed) {
           billing.openBillingModal(quota.reason);
           throw new BillingLimitError(
@@ -536,7 +539,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [activeAppsList, billing, currentUser, refreshBilling, userEmail],
+    [activeAppsList, activeConnectedApps, billing, currentUser, refreshBilling, totalIntegratedAppsCount, userEmail],
   );
 
   // Delete Personal Application (SCRUM-178)
@@ -551,7 +554,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [currentUser, userEmail]
   );
 
-  // Submit Enterprise App Access Request (dynamic active user info)
+  // Submit Enterprise App Access Request (dynamic active user info + SCRUM-201 quota parity)
   const submitAppRequest = useCallback(
     async (input: {
       appName: string;
@@ -559,26 +562,48 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       category?: AppItemCategory;
       icon?: string;
     }): Promise<AppAccessRequest> => {
+      if (
+        billing &&
+        !isIntegratedAppSlotTaken(input.appName, undefined, activeAppsList, activeConnectedApps)
+      ) {
+        const quota = billing.checkAppQuota(totalIntegratedAppsCount);
+        if (!quota.allowed) {
+          billing.openBillingModal(quota.reason);
+          throw new BillingLimitError(
+            quota.reason || 'Free plan application limit reached.',
+            'integrated_apps',
+          );
+        }
+      }
+
       const token = (await AuthService.ensureValidAccessToken(currentUser?.accessToken)) || undefined;
-      const created = await AppsStorageService.submitAccessRequest(
-        {
-          ...input,
-          userName:
-            currentUser?.name ||
-            (currentUser?.email ? currentUser.email.split('@')[0] : 'Authenticated User'),
-          userEmail: currentUser?.email || '',
-          department:
-            currentUser?.department ||
-            (currentUser?.user_metadata as any)?.['department'] ||
-            'Engineering',
-          role: currentUser?.role || 'user',
-        },
-        token
-      );
-      setAccessRequests((prev) => [created, ...prev]);
-      return created;
+      try {
+        const created = await AppsStorageService.submitAccessRequest(
+          {
+            ...input,
+            userName:
+              currentUser?.name ||
+              (currentUser?.email ? currentUser.email.split('@')[0] : 'Authenticated User'),
+            userEmail: currentUser?.email || '',
+            department:
+              currentUser?.department ||
+              (currentUser?.user_metadata as any)?.['department'] ||
+              'Engineering',
+            role: currentUser?.role || 'user',
+          },
+          token
+        );
+        setAccessRequests((prev) => [created, ...prev]);
+        return created;
+      } catch (err) {
+        if (isBillingLimitError(err)) {
+          await refreshBilling?.();
+          billing?.openBillingModal(err.message);
+        }
+        throw err;
+      }
     },
-    [currentUser]
+    [activeAppsList, activeConnectedApps, billing, currentUser, refreshBilling, totalIntegratedAppsCount]
   );
 
   // Disconnect Connected SSO Application

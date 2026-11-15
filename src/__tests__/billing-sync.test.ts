@@ -339,4 +339,74 @@ test('Mobile Billing Parity, Isolation & Web-Mobile Sync (SCRUM-185)', async (t)
       globalThis.fetch = originalFetch;
     }
   });
+
+  await t.test('7. SCRUM-201: submitAccessRequest & approveAccessRequest roll back local cache on HTTP 403 billing limit', async () => {
+    const originalFetch = globalThis.fetch;
+    const empEmail = 'emp-403@acme.test';
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          statusCode: 403,
+          message: 'Company Free Trial plan is limited to 1 integrated application (1/1 used).',
+        }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } },
+      )) as typeof fetch;
+
+    try {
+      await AppsStorageService.saveAccessRequests([], empEmail);
+      await assert.rejects(
+        () =>
+          AppsStorageService.submitAccessRequest(
+            {
+              appName: 'GitHub',
+              justification: 'Need repo access',
+              userEmail: empEmail,
+              userName: 'Emp',
+              department: 'Engineering',
+              role: 'user',
+            },
+            'live-jwt-emp-403',
+          ),
+        (err) => isBillingLimitError(err),
+      );
+      const afterSubmit = await AppsStorageService.getAccessRequests(empEmail);
+      assert.equal(afterSubmit.length, 0);
+
+      await AppsStorageService.saveAccessRequests(
+        [
+          {
+            id: 'req-403-1',
+            userId: 'u-1',
+            userName: 'Emp',
+            userEmail: empEmail,
+            department: 'Eng',
+            role: 'user',
+            appName: 'GitHub',
+            protocol: 'SAML 2.0',
+            category: 'developer',
+            justification: 'Code',
+            status: 'Pending Approval',
+            submittedAt: new Date().toISOString(),
+          },
+        ],
+        empEmail,
+      );
+      await assert.rejects(
+        () =>
+          AppsStorageService.approveAccessRequest(
+            'req-403-1',
+            'Admin',
+            'live-jwt-admin-403',
+            'Approved',
+            empEmail,
+          ),
+        (err) => isBillingLimitError(err),
+      );
+      const afterApprove = await AppsStorageService.getAccessRequests(empEmail);
+      assert.equal(afterApprove[0].status, 'Pending Approval');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

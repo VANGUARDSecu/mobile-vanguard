@@ -1,5 +1,8 @@
 import type { TotpAccount } from '../models/vault.models.ts';
-import { BillingLimitError } from '../models/billing.models.ts';
+import {
+  BillingLimitError,
+  parseBillingLimitResponse,
+} from '../models/billing.models.ts';
 import { AppsStorageService } from './apps-storage.service.ts';
 
 export interface RemoteTotpListResponse {
@@ -96,16 +99,13 @@ export class TotpSyncService {
       if (!response.ok) {
         if (response.status === 403) {
           const errBody = await response.json().catch(() => ({}));
-          if (
-            errBody?.error === 'billing_limit_reached' ||
-            errBody?.code === 'PAYWALL_REQUIRED' ||
-            errBody?.upgradeRequired
-          ) {
-            throw new BillingLimitError(
-              errBody?.message || 'Free plan TOTP limit reached. Upgrade via PayMongo to unlock unlimited 2FA.',
-              'totp_accounts',
-            );
-          }
+          const limitErr = parseBillingLimitResponse(
+            response.status,
+            errBody,
+            'totp_accounts',
+            'Free plan TOTP limit reached. Upgrade via PayMongo to unlock unlimited 2FA.',
+          );
+          if (limitErr) throw limitErr;
         }
         return null;
       }
@@ -154,16 +154,13 @@ export class TotpSyncService {
       if (!response.ok) {
         if (response.status === 403) {
           const errBody = await response.json().catch(() => ({}));
-          if (
-            errBody?.error === 'billing_limit_reached' ||
-            errBody?.code === 'PAYWALL_REQUIRED' ||
-            errBody?.upgradeRequired
-          ) {
-            throw new BillingLimitError(
-              errBody?.message || 'Free plan TOTP limit reached. Upgrade via PayMongo to unlock unlimited 2FA.',
-              'totp_accounts',
-            );
-          }
+          const limitErr = parseBillingLimitResponse(
+            response.status,
+            errBody,
+            'totp_accounts',
+            'Free plan TOTP limit reached. Upgrade via PayMongo to unlock unlimited 2FA.',
+          );
+          if (limitErr) throw limitErr;
         }
         return null;
       }

@@ -146,8 +146,8 @@ export function AddPersonalAppModal({
         password: appPassword || undefined,
       });
       handleClose();
-    } catch {
-      setErrorMessage('Failed to save application. Please try again.');
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to save application. Please try again.');
       setIsSubmitting(false);
     }
   };

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,10 +24,14 @@ import {
   ManualEntryModal,
 } from '@/components/cyber';
 import { TotpAccount } from '@/models/vault.models';
+import { PersonalVaultItem } from '@/models/apps.models';
+import { useOptionalApps } from '@/context/apps-context';
 import { useOptionalBilling } from '@/context/billing-context';
 import vaultService from '@/services/vault.service';
 import { TotpEngine } from '@/services/totp-engine.service';
 import { AuthService } from '@/services/auth.service';
+import { credentialVaultSyncService } from '@/services/credential-vault-sync.service';
+import { syncCoordinatorService } from '@/services/sync-coordinator.service';
 
 export interface VaultScreenProps {
   onSelectAccount?: (account: TotpAccount) => void;
@@ -42,6 +47,8 @@ export function VaultScreen({
   testID = 'vault-screen',
 }: VaultScreenProps) {
   const billing = useOptionalBilling();
+  const appsCtx = useOptionalApps();
+  const [activeSegment, setActiveSegment] = useState<'totp' | 'passwords'>('totp');
   const [accounts, setAccounts] = useState<TotpAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,6 +57,19 @@ export function VaultScreen({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showManualModal, setShowManualModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Zero-Knowledge Passwords & Logins state (/vault)
+  const [vaultPassInput, setVaultPassInput] = useState('');
+  const [vaultUnlockError, setVaultUnlockError] = useState<string | null>(null);
+  const [unlockingVault, setUnlockingVault] = useState(false);
+  const [revealedPasswordIds, setRevealedPasswordIds] = useState<Record<string, boolean>>({});
+  const [showAddCredModal, setShowAddCredModal] = useState(false);
+  const [newCredTitle, setNewCredTitle] = useState('');
+  const [newCredUser, setNewCredUser] = useState('');
+  const [newCredPass, setNewCredPass] = useState('');
+  const [newCredUrl, setNewCredUrl] = useState('');
+  const [savingCred, setSavingCred] = useState(false);
+  const [credCategoryFilter, setCredCategoryFilter] = useState<'all' | 'Login' | 'Favorites'>('all');
 
   const readLocalVault = useCallback(async () => {
     try {
@@ -89,6 +109,8 @@ export function VaultScreen({
       const user = await AuthService.getCurrentUser();
       await Promise.all([
         vaultService.syncWithBackend(user?.accessToken || undefined),
+        credentialVaultSyncService.syncIfUnlocked(user?.accessToken || undefined),
+        syncCoordinatorService.checkOnce(true),
         billing?.refreshSubscription ? billing.refreshSubscription() : Promise.resolve(),
       ]);
       await readLocalVault();
@@ -98,6 +120,79 @@ export function VaultScreen({
       setRefreshing(false);
     }
   }, [billing, readLocalVault]);
+
+  const showTimedToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 2500);
+  };
+
+  const handleCopyPlaintext = async (value: string, label: string) => {
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        await Clipboard.setStringAsync(value);
+      }
+      showTimedToast(`${label} copied`);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleUnlockPasswordVault = async () => {
+    if (!vaultPassInput.trim()) {
+      setVaultUnlockError('Enter your Vanguard Vault password to decrypt saved logins.');
+      return;
+    }
+    setUnlockingVault(true);
+    setVaultUnlockError(null);
+    try {
+      if (appsCtx) {
+        await appsCtx.unlockCredentialVault(vaultPassInput);
+      } else {
+        const tok = await AuthService.getAccessToken();
+        await credentialVaultSyncService.unlockWithPassword(vaultPassInput, tok);
+      }
+      setVaultPassInput('');
+      showTimedToast('Password Vault unlocked');
+    } catch (err: any) {
+      setVaultUnlockError(err?.message || 'Unable to decrypt Password Vault.');
+    } finally {
+      setUnlockingVault(false);
+    }
+  };
+
+  const handleSaveCredential = async () => {
+    if (!newCredTitle.trim() || !newCredUser.trim()) return;
+    setSavingCred(true);
+    try {
+      const payload = {
+        title: newCredTitle.trim(),
+        category: 'Login' as const,
+        username: newCredUser.trim(),
+        password: newCredPass,
+        url: newCredUrl.trim() || undefined,
+      };
+      if (appsCtx) {
+        await appsCtx.upsertCredential(payload);
+      } else {
+        const tok = await AuthService.getAccessToken();
+        await credentialVaultSyncService.upsertItem(payload, tok);
+      }
+      setNewCredTitle('');
+      setNewCredUser('');
+      setNewCredPass('');
+      setNewCredUrl('');
+      setShowAddCredModal(false);
+      showTimedToast('Saved to encrypted cloud vault');
+    } catch (err: any) {
+      setVaultUnlockError(err?.message || 'Failed to save credential.');
+    } finally {
+      setSavingCred(false);
+    }
+  };
 
   useEffect(() => {
     void loadAccounts();
@@ -143,6 +238,28 @@ export function VaultScreen({
     }
   };
 
+  const vaultItemsList: PersonalVaultItem[] = appsCtx
+    ? appsCtx.vaultCredentials
+    : credentialVaultSyncService.getSnapshot().items;
+  const isPasswordVaultUnlocked = appsCtx
+    ? appsCtx.vaultUnlocked
+    : credentialVaultSyncService.getSnapshot().unlocked;
+  const hasRemoteEncryptedVault = appsCtx
+    ? appsCtx.hasRemoteVault
+    : credentialVaultSyncService.getSnapshot().hasRemoteEnvelope;
+
+  const filteredVaultCredentials = vaultItemsList.filter((item) => {
+    if (credCategoryFilter === 'Favorites' && !item.favorite) return false;
+    if (credCategoryFilter === 'Login' && item.category !== 'Login') return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      item.title.toLowerCase().includes(q) ||
+      item.username.toLowerCase().includes(q) ||
+      (item.url && item.url.toLowerCase().includes(q))
+    );
+  });
+
   const filteredAccounts = accounts.filter((acc) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
@@ -184,13 +301,48 @@ export function VaultScreen({
                 testID="vault-status"
               />
             </View>
-            <Text style={styles.pageTitle}>Authenticator Tokens</Text>
-            <Text style={styles.pageSubtitle}>
-              Air-gapped 2FA TOTP codes with local hardware attestation
+            <Text style={styles.pageTitle}>
+              {activeSegment === 'totp' ? 'Authenticator Tokens' : 'Zero-Knowledge Passwords'}
             </Text>
+            <Text style={styles.pageSubtitle}>
+              {activeSegment === 'totp'
+                ? 'Air-gapped 2FA TOTP codes synchronized with Web & Browser Extension'
+                : 'End-to-end AES-GCM encrypted logins synced across Web, Extension & Mobile'}
+            </Text>
+
+            {/* Segmented Vault Switcher */}
+            <View style={styles.segmentRow}>
+              <TouchableOpacity
+                style={[styles.segmentPill, activeSegment === 'totp' && styles.segmentPillActive]}
+                onPress={() => setActiveSegment('totp')}
+                activeOpacity={0.8}
+                testID="vault-segment-totp"
+              >
+                <Text style={[styles.segmentText, activeSegment === 'totp' && styles.segmentTextActive]}>
+                  🔐 2FA Codes ({accounts.length})
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.segmentPill, activeSegment === 'passwords' && styles.segmentPillActive]}
+                onPress={() => setActiveSegment('passwords')}
+                activeOpacity={0.8}
+                testID="vault-segment-passwords"
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    activeSegment === 'passwords' && styles.segmentTextActive,
+                  ]}
+                >
+                  🗝️ Passwords ({isPasswordVaultUnlocked ? vaultItemsList.length : 'Locked'})
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Countdown & Action Bar */}
+          {activeSegment === 'totp' ? (
+            <>
+              {/* Countdown & Action Bar */}
           <CyberCard variant="glass" style={styles.timerCard}>
             <View style={styles.timerRow}>
               <View style={styles.timerLeft}>
@@ -456,7 +608,244 @@ export function VaultScreen({
               })}
             </View>
           )}
+            </>
+          ) : (
+            <View style={{ gap: 12 }}>
+              {!isPasswordVaultUnlocked ? (
+                <CyberCard variant="glass" style={{ padding: 16 }}>
+                  <Text style={styles.vaultCardHeading}>🔒 Unlock Zero-Knowledge Password Vault</Text>
+                  <Text style={styles.vaultCardDesc}>
+                    {hasRemoteEncryptedVault
+                      ? 'An encrypted vault synced from Vanguard Web / Extension was found. Enter your Vanguard master password to decrypt it in RAM.'
+                      : 'Enter your Vanguard password to initialize or unlock your cloud-synced Password Vault.'}
+                  </Text>
+                  {vaultUnlockError ? (
+                    <Text style={styles.vaultErrorText}>⚠️ {vaultUnlockError}</Text>
+                  ) : null}
+                  <TextInput
+                    style={styles.vaultInput}
+                    value={vaultPassInput}
+                    onChangeText={(t) => {
+                      setVaultPassInput(t);
+                      if (vaultUnlockError) setVaultUnlockError(null);
+                    }}
+                    placeholder="Enter Vault / Account Password"
+                    placeholderTextColor={CyberColors.textMuted}
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                  <CyberButton
+                    title={unlockingVault ? 'Decrypting PBKDF2-SHA256...' : 'Unlock Password Vault'}
+                    variant="primary"
+                    size="md"
+                    disabled={unlockingVault}
+                    onPress={() => void handleUnlockPasswordVault()}
+                  />
+                </CyberCard>
+              ) : (
+                <>
+                  <CyberCard variant="glass" style={{ padding: 12 }}>
+                    <View style={styles.credToolbarRow}>
+                      <View style={styles.filterPillsRow}>
+                        {(['all', 'Login', 'Favorites'] as const).map((cat) => (
+                          <TouchableOpacity
+                            key={cat}
+                            style={[
+                              styles.filterPill,
+                              credCategoryFilter === cat && styles.filterPillActive,
+                            ]}
+                            onPress={() => setCredCategoryFilter(cat)}
+                          >
+                            <Text
+                              style={[
+                                styles.filterPillText,
+                                credCategoryFilter === cat && styles.filterPillTextActive,
+                              ]}
+                            >
+                              {cat === 'all' ? 'All' : cat}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          style={styles.smallActionBtn}
+                          onPress={() => setShowAddCredModal(true)}
+                        >
+                          <Text style={styles.smallActionBtnText}>+ Add</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.smallActionBtn, styles.lockSmallBtn]}
+                          onPress={() =>
+                            appsCtx ? appsCtx.lockCredentialVault() : credentialVaultSyncService.lock()
+                          }
+                        >
+                          <Text style={[styles.smallActionBtnText, { color: '#fca5a5' }]}>🔒 Lock</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </CyberCard>
+
+                  {filteredVaultCredentials.length === 0 ? (
+                    <CyberCard variant="glass" style={{ padding: 24, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 28, marginBottom: 8 }}>🗝️</Text>
+                      <Text style={styles.vaultCardHeading}>No Saved Logins Yet</Text>
+                      <Text style={[styles.vaultCardDesc, { textAlign: 'center', marginBottom: 12 }]}>
+                        Passwords saved via Vanguard Web Dashboard, Chrome Extension, or Mobile appear here automatically.
+                      </Text>
+                      <CyberButton
+                        title="+ Save Login Credential"
+                        variant="primary"
+                        size="sm"
+                        onPress={() => setShowAddCredModal(true)}
+                      />
+                    </CyberCard>
+                  ) : (
+                    filteredVaultCredentials.map((cred) => {
+                      const revealed = Boolean(revealedPasswordIds[cred.id]);
+                      return (
+                        <CyberCard key={cred.id} variant="default" style={{ padding: 14 }}>
+                          <View style={styles.credHeaderRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.credTitle}>{cred.title}</Text>
+                              <Text style={styles.credUser}>{cred.username || 'No username'}</Text>
+                              {cred.url ? (
+                                <Text style={styles.credUrl} numberOfLines={1}>
+                                  {cred.url}
+                                </Text>
+                              ) : null}
+                            </View>
+                            <Badge label={cred.category} variant="cyan" size="sm" />
+                          </View>
+
+                          {cred.password ? (
+                            <View style={styles.credSecretRow}>
+                              <Text style={styles.credSecretText}>
+                                {revealed ? cred.password : '••••••••••••'}
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() =>
+                                  setRevealedPasswordIds((prev) => ({
+                                    ...prev,
+                                    [cred.id]: !prev[cred.id],
+                                  }))
+                                }
+                              >
+                                <Text style={styles.credLinkBtn}>{revealed ? 'Hide' : 'Reveal'}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : null}
+
+                          <View style={styles.credActionsRow}>
+                            <TouchableOpacity
+                              style={styles.copyButton}
+                              onPress={() => void handleCopyPlaintext(cred.username, 'Username')}
+                            >
+                              <Text style={styles.copyButtonText}>Copy User</Text>
+                            </TouchableOpacity>
+                            {cred.password ? (
+                              <TouchableOpacity
+                                style={styles.copyButton}
+                                onPress={() => void handleCopyPlaintext(cred.password!, 'Password')}
+                              >
+                                <Text style={styles.copyButtonText}>Copy Pass</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            {appsCtx ? (
+                              <TouchableOpacity
+                                style={styles.copyButton}
+                                onPress={() => {
+                                  void appsCtx
+                                    .pinVaultCredentialToApps(cred)
+                                    .then(() => showTimedToast('Pinned to Apps launcher'))
+                                    .catch((e) => showTimedToast(e?.message || 'Unable to pin app'));
+                                }}
+                              >
+                                <Text style={styles.copyButtonText}>📌 Pin</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            <TouchableOpacity
+                              style={[styles.copyButton, { borderColor: 'rgba(239,68,68,0.4)' }]}
+                              onPress={() => {
+                                void (appsCtx
+                                  ? appsCtx.deleteCredential(cred.id)
+                                  : credentialVaultSyncService.deleteItem(cred.id)
+                                ).then(() => showTimedToast('Credential removed'));
+                              }}
+                            >
+                              <Text style={[styles.copyButtonText, { color: '#f87171' }]}>Delete</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </CyberCard>
+                      );
+                    })
+                  )}
+                </>
+              )}
+            </View>
+          )}
         </ScrollView>
+
+        {/* Manual Code Entry Modal */}
+        <Modal
+          visible={showAddCredModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowAddCredModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.vaultCardHeading}>Add Zero-Knowledge Login</Text>
+              <TextInput
+                style={styles.vaultInput}
+                value={newCredTitle}
+                onChangeText={setNewCredTitle}
+                placeholder="Application / Site Title (e.g. GitHub)"
+                placeholderTextColor={CyberColors.textMuted}
+              />
+              <TextInput
+                style={styles.vaultInput}
+                value={newCredUser}
+                onChangeText={setNewCredUser}
+                placeholder="Username or Email"
+                placeholderTextColor={CyberColors.textMuted}
+                autoCapitalize="none"
+              />
+              <TextInput
+                style={styles.vaultInput}
+                value={newCredPass}
+                onChangeText={setNewCredPass}
+                placeholder="Password"
+                placeholderTextColor={CyberColors.textMuted}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+              <TextInput
+                style={styles.vaultInput}
+                value={newCredUrl}
+                onChangeText={setNewCredUrl}
+                placeholder="URL (https://example.com)"
+                placeholderTextColor={CyberColors.textMuted}
+                autoCapitalize="none"
+              />
+              <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
+                <CyberButton
+                  title="Cancel"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => setShowAddCredModal(false)}
+                />
+                <CyberButton
+                  title={savingCred ? 'Encrypting...' : 'Save to Cloud Vault'}
+                  variant="primary"
+                  size="sm"
+                  disabled={savingCred}
+                  onPress={() => void handleSaveCredential()}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {/* Floating Toast Notification */}
         {toastMessage && (
@@ -797,5 +1186,172 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  segmentPill: {
+    flex: 1,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: CyberRadius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.25)',
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    alignItems: 'center',
+  },
+  segmentPillActive: {
+    borderColor: CyberColors.cyan,
+    backgroundColor: 'rgba(0, 229, 255, 0.14)',
+  },
+  segmentText: {
+    color: CyberColors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  segmentTextActive: {
+    color: CyberColors.cyan,
+  },
+  vaultCardHeading: {
+    color: CyberColors.textPrimary,
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  vaultCardDesc: {
+    color: CyberColors.textSecondary,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  vaultErrorText: {
+    color: '#f87171',
+    fontSize: 12,
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  vaultInput: {
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: CyberColors.textPrimary,
+    fontSize: 13.5,
+    marginBottom: 10,
+  },
+  credToolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  filterPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  filterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: CyberRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.25)',
+  },
+  filterPillActive: {
+    borderColor: CyberColors.cyan,
+    backgroundColor: 'rgba(0, 229, 255, 0.14)',
+  },
+  filterPillText: {
+    color: CyberColors.textSecondary,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  filterPillTextActive: {
+    color: CyberColors.cyan,
+  },
+  smallActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: CyberRadius.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.45)',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+  },
+  lockSmallBtn: {
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
+  smallActionBtnText: {
+    color: CyberColors.cyan,
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  credHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+  },
+  credTitle: {
+    color: CyberColors.textPrimary,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  credUser: {
+    color: CyberColors.cyan,
+    fontSize: 12.5,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  credUrl: {
+    color: CyberColors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  credSecretRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    borderRadius: CyberRadius.xs,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 10,
+  },
+  credSecretText: {
+    color: CyberColors.textPrimary,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12.5,
+  },
+  credLinkBtn: {
+    color: CyberColors.cyan,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  credActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 10, 20, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: CyberColors.cardBg,
+    borderColor: CyberColors.borderHighlight,
+    borderWidth: 1,
+    borderRadius: CyberRadius.lg,
+    padding: 18,
   },
 });

@@ -252,6 +252,7 @@ export class VaultService {
     await this.ensureInitialized();
     this.isLockedState = false;
     this.resetAutoLock();
+    void this.syncWithBackend();
     return true;
   }
 

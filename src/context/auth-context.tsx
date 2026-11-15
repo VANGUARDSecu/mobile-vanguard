@@ -22,6 +22,7 @@ import {
   AuthService,
   type GoogleAccountProfile,
 } from '../services/auth.service.ts';
+import { credentialVaultSyncService } from '../services/credential-vault-sync.service.ts';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
@@ -69,11 +70,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (credentials: LoginCredentials): Promise<LoginResult> => {
     setIsLoading(true);
     try {
+      if (credentials.password) {
+        credentialVaultSyncService.setSessionPassphrase(credentials.password);
+      }
       const result = await AuthService.login(credentials);
       if (!result.requireMfa) {
         setCurrentUser(result.user);
+        if (result.user?.accessToken) {
+          void credentialVaultSyncService.tryAutoUnlock(result.user.accessToken);
+        }
       }
       return result;
+    } catch (err) {
+      credentialVaultSyncService.setSessionPassphrase(null);
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -93,6 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const user = await AuthService.verifyOtp(request);
       setCurrentUser(user);
+      if (user?.accessToken && credentialVaultSyncService.hasSessionPassphrase()) {
+        void credentialVaultSyncService.tryAutoUnlock(user.accessToken);
+      }
       return user;
     } finally {
       setIsLoading(false);
@@ -104,6 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const user = await AuthService.verifyTotp(request);
       setCurrentUser(user);
+      if (user?.accessToken && credentialVaultSyncService.hasSessionPassphrase()) {
+        void credentialVaultSyncService.tryAutoUnlock(user.accessToken);
+      }
       return user;
     } finally {
       setIsLoading(false);
@@ -144,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     try {
+      credentialVaultSyncService.resetSession();
       await AuthService.logout();
       setCurrentUser(null);
     } finally {

@@ -385,6 +385,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
           true
         );
         assert.equal(denyRes.success, true);
+        await new Promise((resolve) => setTimeout(resolve, 15));
         assert.equal(dispatchedCalls.length, 2);
         assert.equal(
           dispatchedCalls[1].challengeId,
@@ -451,7 +452,7 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
 
   await t.test(
     '13. startPolling and stopPolling manage lifecycle without leaks (SCRUM-85)',
-    () => {
+    async () => {
       initService();
       let pollCount = 0;
       const originalFetch = globalThis.fetch;
@@ -466,11 +467,13 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
       try {
         service.startPolling('test@vanguard.security', 5000);
         assert.equal(Boolean((service as any).pollInterval), true);
+        await new Promise((resolve) => setTimeout(resolve, 15));
         assert.equal(pollCount, 1); // Immediate fetch
 
         service.stopPolling();
         assert.equal((service as any).pollInterval, null);
       } finally {
+        service.stopPolling();
         globalThis.fetch = originalFetch;
       }
     }

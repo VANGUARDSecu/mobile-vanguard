@@ -16,11 +16,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/context/auth-context';
+import { useOptionalApps } from '@/context/apps-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { PushApprovalModal } from '@/components/cyber/push-approval-modal';
 import { QrCameraScanner } from '@/components/cyber/qr-camera-scanner';
 import { PushApprovalRequest } from '@/models/push-mfa.models';
 import pushMfaService from '@/services/push-mfa.service';
+import { syncCoordinatorService } from '@/services/sync-coordinator.service';
+import type { MobileEnrolledDevice } from '@/services/security-activity.service';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
 import { parseDevicePairingQrPayload } from '@/utils/pairing-qr';
 
@@ -40,6 +43,7 @@ export interface PairedDeviceMetadata {
 
 export default function DevicesScreen() {
   const { currentUser } = useAuth();
+  const appsCtx = useOptionalApps();
 
   // Biometrics and Hardware Attestation State
   const [biometricInfo, setBiometricInfo] = useState<{
@@ -60,6 +64,7 @@ export default function DevicesScreen() {
   const [pairingSuccess, setPairingSuccess] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [pairedDevice, setPairedDevice] = useState<PairedDeviceMetadata | null>(null);
+  const [fleetDevicesList, setFleetDevicesList] = useState<MobileEnrolledDevice[]>([]);
   const [showQrScannerModal, setShowQrScannerModal] = useState(false);
 
   // Push MFA State
@@ -97,15 +102,30 @@ export default function DevicesScreen() {
     if (currentUser?.email) {
       pushMfaService.listPairedDevices(currentUser.email).then((res) => {
         if (!isMounted || !res.ok) return;
-        if (res.devices.length > 0) {
-          const d = res.devices[0];
+        const mappedList: MobileEnrolledDevice[] = res.devices.map((d: any) => ({
+          id: String(d.id),
+          name: String(d.name || 'Vanguard Companion'),
+          model: d.model ? String(d.model) : undefined,
+          type: String(d.type || 'ios'),
+          osVersion: String(d.osVersion || d.os_version || `${Platform.OS.toUpperCase()}`),
+          biometricType: String(d.biometricType || biometricInfo.biometricType),
+          pairingKey: d.pairingKey || 'PAIRED',
+          complianceStatus: String(d.complianceStatus || 'Compliant'),
+          pairedAt: String(d.enrolledAt || d.pairedAt || new Date().toISOString()),
+          lastSeenAt: String(d.lastSeenAt || d.lastSync || new Date().toISOString()),
+          lastSeen: d.lastSeen ? String(d.lastSeen) : undefined,
+        }));
+        setFleetDevicesList(mappedList);
+
+        if (mappedList.length > 0) {
+          const d = mappedList[0];
           const synced: PairedDeviceMetadata = {
             id: d.id,
             pairingKey: d.pairingKey || 'PAIRED',
-            pairedAt: d.enrolledAt || new Date().toISOString(),
-            deviceName: d.name || 'Vanguard Companion',
-            platform: d.osVersion || `${Platform.OS.toUpperCase()}`,
-            biometricType: d.biometricType || biometricInfo.biometricType,
+            pairedAt: d.pairedAt,
+            deviceName: d.name,
+            platform: d.osVersion,
+            biometricType: d.biometricType,
           };
           setPairedDevice(synced);
           void AsyncStorage.setItem(storageKey, JSON.stringify(synced));
@@ -137,6 +157,30 @@ export default function DevicesScreen() {
       pushMfaService.stopPolling();
     };
   }, [currentUser?.email]);
+
+  // Keep DevicesScreen synchronized with AppsContext background /sync/state updates
+  useEffect(() => {
+    const ctxDevices = appsCtx?.enrolledDevices;
+    if (!ctxDevices) return;
+    setFleetDevicesList(ctxDevices);
+    const storageKey = getPairedDeviceStorageKey(currentUser?.email);
+    if (ctxDevices.length > 0) {
+      const first = ctxDevices[0];
+      const synced: PairedDeviceMetadata = {
+        id: first.id,
+        pairingKey: first.pairingKey || 'PAIRED',
+        pairedAt: first.pairedAt,
+        deviceName: first.name,
+        platform: first.osVersion,
+        biometricType: first.biometricType,
+      };
+      setPairedDevice(synced);
+      void AsyncStorage.setItem(storageKey, JSON.stringify(synced));
+    } else if (currentUser?.email && appsCtx && !appsCtx.isLoading) {
+      setPairedDevice(null);
+      void AsyncStorage.removeItem(storageKey);
+    }
+  }, [appsCtx?.enrolledDevices, appsCtx?.isLoading, currentUser?.email]);
 
   const handleRefreshAttestation = async () => {
     setIsRefreshingAttestation(true);
@@ -226,8 +270,25 @@ export default function DevicesScreen() {
 
       await AsyncStorage.setItem(getPairedDeviceStorageKey(currentUser?.email), JSON.stringify(deviceMeta));
       setPairedDevice(deviceMeta);
+      setFleetDevicesList((prev) => [
+        {
+          id: res.device.id,
+          name: deviceMeta.deviceName,
+          model: res.device.model || 'Vanguard Mobile Authenticator',
+          type: res.device.type || defaultType,
+          osVersion: deviceMeta.platform,
+          biometricType: deviceMeta.biometricType,
+          pairingKey: rawKey,
+          complianceStatus: 'Compliant',
+          pairedAt: deviceMeta.pairedAt,
+          lastSeenAt: deviceMeta.pairedAt,
+        },
+        ...prev.filter((item) => item.id !== res.device.id && item.name.toLowerCase() !== deviceMeta.deviceName.toLowerCase()),
+      ]);
       setPairingKeyInput('');
       setPairingSuccess('Mobile device successfully paired with Vanguard Dashboard!');
+      void appsCtx?.refreshDevices?.();
+      void syncCoordinatorService.checkOnce(true);
     } catch {
       setPairingError('Failed to complete device pairing. Please check your connection.');
     } finally {
@@ -270,6 +331,7 @@ export default function DevicesScreen() {
         try {
           if (pairedDevice?.id) {
             await pushMfaService.unlinkPairedDevice(pairedDevice.id, currentUser?.email);
+            setFleetDevicesList((prev) => prev.filter((item) => item.id !== pairedDevice.id));
           }
           await AsyncStorage.removeItem(getPairedDeviceStorageKey(currentUser?.email));
           setPairedDevice(null);
@@ -277,6 +339,8 @@ export default function DevicesScreen() {
           if (currentUser?.email) {
             await pushMfaService.syncPreference(currentUser.email, false).catch(() => {});
           }
+          void appsCtx?.refreshDevices?.();
+          void syncCoordinatorService.checkOnce(true);
         } catch {
           // Non-blocking
         }
@@ -552,6 +616,85 @@ export default function DevicesScreen() {
                     <Text style={styles.pairActionBtnText}>Pair with Web Dashboard</Text>
                   )}
                 </Pressable>
+              </View>
+            )}
+          </View>
+
+          {/* Synced Enrolled Fleet (Web & Mobile Parity) */}
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardLabel}>REGISTERED DEVICES FLEET ({fleetDevicesList.length})</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  void appsCtx?.refreshDevices?.();
+                  if (currentUser?.email) {
+                    void pushMfaService.listPairedDevices(currentUser.email).then((res) => {
+                      if (res.ok) {
+                        setFleetDevicesList(
+                          res.devices.map((d: any) => ({
+                            id: String(d.id),
+                            name: String(d.name || 'Vanguard Companion'),
+                            model: d.model ? String(d.model) : undefined,
+                            type: String(d.type || 'ios'),
+                            osVersion: String(d.osVersion || d.os_version || 'Mobile OS'),
+                            biometricType: String(d.biometricType || 'Biometric Push MFA'),
+                            pairingKey: d.pairingKey || 'PAIRED',
+                            complianceStatus: String(d.complianceStatus || 'Compliant'),
+                            pairedAt: String(d.enrolledAt || d.pairedAt || new Date().toISOString()),
+                            lastSeenAt: String(d.lastSeenAt || d.lastSync || new Date().toISOString()),
+                          })),
+                        );
+                      }
+                    });
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: CyberColors.cyan, fontSize: 11, fontWeight: '800' }}>↻ Sync</Text>
+              </TouchableOpacity>
+            </View>
+            {fleetDevicesList.length === 0 ? (
+              <Text style={styles.emptyHistoryText}>
+                No devices persisted to your Vanguard account yet. Pair this phone above to sync across Web Dashboard and Mobile.
+              </Text>
+            ) : (
+              <View style={styles.historyList}>
+                {fleetDevicesList.map((dev) => (
+                  <View key={dev.id} style={styles.historyItem}>
+                    <View style={styles.historyRow}>
+                      <Text style={styles.historyApp}>
+                        {String(dev.type).toLowerCase().includes('desktop') ? '💻' : '📱'} {dev.name}
+                      </Text>
+                      <View style={[styles.historyBadge, styles.badgeApproved]}>
+                        <Text style={styles.historyBadgeText}>{dev.complianceStatus || 'Compliant'}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.historyDetails}>
+                      {dev.osVersion} • {dev.biometricType}
+                    </Text>
+                    <View style={[styles.historyRow, { marginTop: 4 }]}>
+                      <Text style={styles.historyTime}>
+                        Enrolled {new Date(dev.pairedAt).toLocaleString()}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          void (async () => {
+                            await pushMfaService.unlinkPairedDevice(dev.id, currentUser?.email);
+                            setFleetDevicesList((prev) => prev.filter((item) => item.id !== dev.id));
+                            if (pairedDevice?.id === dev.id) {
+                              setPairedDevice(null);
+                              await AsyncStorage.removeItem(getPairedDeviceStorageKey(currentUser?.email));
+                            }
+                            void appsCtx?.refreshDevices?.();
+                          })();
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={{ color: '#f87171', fontSize: 11, fontWeight: '700' }}>Unlink</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
               </View>
             )}
           </View>

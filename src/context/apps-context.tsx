@@ -22,6 +22,14 @@ import { AppLauncherService } from '@/services/app-launcher.service';
 import { AuthService } from '@/services/auth.service';
 import vaultService from '@/services/vault.service';
 import { syncCoordinatorService } from '@/services/sync-coordinator.service';
+import { credentialVaultSyncService } from '@/services/credential-vault-sync.service';
+import {
+  SecurityActivityService,
+  type AdminDirectorySnapshot,
+  type MobileAuditLogEvent,
+  type MobileEnrolledDevice,
+  type SecurityPostureSnapshot,
+} from '@/services/security-activity.service';
 import { BillingLimitError, isBillingLimitError } from '@/models/billing.models';
 import { AuthContext } from './auth-context';
 import { useOptionalBilling } from './billing-context';
@@ -44,6 +52,29 @@ interface AppsContextType {
   approveAccessRequest: (id: string) => Promise<void>;
   rejectAccessRequest: (id: string, notes?: string) => Promise<void>;
   vaultCredentials: PersonalVaultItem[];
+  vaultUnlocked: boolean;
+  hasRemoteVault: boolean;
+  vaultRevision: number;
+  unlockCredentialVault: (password: string) => Promise<PersonalVaultItem[]>;
+  lockCredentialVault: () => void;
+  upsertCredential: (input: {
+    id?: string;
+    title: string;
+    category?: PersonalVaultItem['category'];
+    username: string;
+    password?: string;
+    url?: string;
+    notes?: string;
+    favorite?: boolean;
+  }) => Promise<PersonalVaultItem[]>;
+  deleteCredential: (id: string) => Promise<PersonalVaultItem[]>;
+  pinVaultCredentialToApps: (item: PersonalVaultItem) => Promise<SaaSApp>;
+  enrolledDevices: MobileEnrolledDevice[];
+  refreshDevices: () => Promise<void>;
+  auditEvents: MobileAuditLogEvent[];
+  securityPosture: SecurityPostureSnapshot | null;
+  adminSnapshot: AdminDirectorySnapshot | null;
+  refreshSecurityData: () => Promise<void>;
   findCredentialsForDomain: (domainOrUrl: string) => PersonalVaultItem[];
   addPersonalApp: (input: PersonalAppInput) => Promise<SaaSApp>;
   deletePersonalApp: (id: string) => Promise<void>;
@@ -74,7 +105,60 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   const [connectedApps, setConnectedApps] = useState<UserConnectedApp[]>([]);
   const [accessRequests, setAccessRequests] = useState<AppAccessRequest[]>([]);
   const [vaultCredentials, setVaultCredentials] = useState<PersonalVaultItem[]>([]);
+  const [vaultUnlocked, setVaultUnlocked] = useState<boolean>(false);
+  const [hasRemoteVault, setHasRemoteVault] = useState<boolean>(false);
+  const [vaultRevision, setVaultRevision] = useState<number>(0);
+  const [enrolledDevices, setEnrolledDevices] = useState<MobileEnrolledDevice[]>([]);
+  const [auditEvents, setAuditEvents] = useState<MobileAuditLogEvent[]>([]);
+  const [securityPosture, setSecurityPosture] = useState<SecurityPostureSnapshot | null>(null);
+  const [adminSnapshot, setAdminSnapshot] = useState<AdminDirectorySnapshot | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const isCompanyAdminUser =
+    currentUser?.accountType === 'company' &&
+    (currentUser?.role === 'admin' || currentUser?.role === 'security_officer');
+
+  // Keep React state synced with in-memory Zero-Knowledge Credential Vault
+  useEffect(() => {
+    return credentialVaultSyncService.subscribe((snap) => {
+      setVaultUnlocked(snap.unlocked);
+      setHasRemoteVault(snap.hasRemoteEnvelope);
+      setVaultRevision(snap.revision);
+      if (snap.unlocked) {
+        setVaultCredentials(snap.items);
+      } else {
+        setVaultCredentials([]);
+      }
+    });
+  }, []);
+
+  const refreshDevices = useCallback(async () => {
+    const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+    if (!AppsStorageService.isLiveToken(token)) return;
+    const res = await SecurityActivityService.fetchEnrolledDevices(token, userEmail);
+    if (res.ok) {
+      setEnrolledDevices(res.devices);
+    }
+  }, [currentUser, userEmail]);
+
+  const refreshSecurityData = useCallback(async () => {
+    const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+    if (!AppsStorageService.isLiveToken(token)) return;
+    const [logs, posture, admin] = await Promise.all([
+      SecurityActivityService.fetchAuditLogs(token, { limit: 50 }),
+      SecurityActivityService.fetchSecurityPosture(token, userEmail),
+      isCompanyAdminUser
+        ? SecurityActivityService.fetchAdminSnapshot(token)
+        : Promise.resolve(null),
+    ]);
+    setAuditEvents(logs);
+    if (posture) setSecurityPosture(posture);
+    if (isCompanyAdminUser) {
+      setAdminSnapshot(admin);
+    } else {
+      setAdminSnapshot(null);
+    }
+  }, [currentUser, isCompanyAdminUser, userEmail]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -87,44 +171,62 @@ export function AppsProvider({ children }: { children: ReactNode }) {
         vaultService.setCurrentUserEmail(userEmail);
       }
 
-      const [entApps, pApps, cApps, requests, vault] = await Promise.all([
+      const [entApps, pApps, cApps, requests] = await Promise.all([
         AppsStorageService.getEnterpriseApps(userEmail),
         AppsStorageService.getPersonalApps(userEmail),
         AppsStorageService.getConnectedApps(),
         AppsStorageService.getAccessRequests(userEmail),
-        AppsStorageService.getVaultItems(userEmail),
       ]);
 
       setApps(entApps);
       setPersonalApps(pApps);
       setConnectedApps(cApps);
       setAccessRequests(requests);
-      setVaultCredentials(vault);
 
-      // SCRUM-178 & SCRUM-182: Authoritative backend sync across TOTP, Personal Apps, Enterprise Apps, Connected Apps & Requests
+      // SCRUM-178, SCRUM-182 & SCRUM-199: Authoritative backend sync across TOTP, Vault, Apps, Devices, Audit & Posture
       if (AppsStorageService.isLiveToken(token)) {
         try {
-          const [syncedPersonal, syncedApps, syncedRequests, syncedConnected] = await Promise.all([
-            AppsStorageService.syncPersonalAppsWithBackend(token, userEmail),
-            AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail),
-            AppsStorageService.syncAccessRequestsWithBackend(token, userEmail),
-            AppsStorageService.syncConnectedAppsWithBackend(userEmail, token),
-            vaultService.syncWithBackend(token),
-          ]);
+          const [syncedPersonal, syncedApps, syncedRequests, syncedConnected, devRes, logs, posture, admin] =
+            await Promise.all([
+              AppsStorageService.syncPersonalAppsWithBackend(token, userEmail),
+              AppsStorageService.syncEnterpriseAppsWithBackend(token, userEmail),
+              AppsStorageService.syncAccessRequestsWithBackend(token, userEmail),
+              AppsStorageService.syncConnectedAppsWithBackend(userEmail, token),
+              SecurityActivityService.fetchEnrolledDevices(token, userEmail),
+              SecurityActivityService.fetchAuditLogs(token, { limit: 50 }),
+              SecurityActivityService.fetchSecurityPosture(token, userEmail),
+              isCompanyAdminUser
+                ? SecurityActivityService.fetchAdminSnapshot(token)
+                : Promise.resolve(null),
+              vaultService.syncWithBackend(token),
+              credentialVaultSyncService.hasSessionPassphrase() &&
+              !credentialVaultSyncService.getSnapshot().unlocked
+                ? credentialVaultSyncService.tryAutoUnlock(token)
+                : credentialVaultSyncService.syncIfUnlocked(token),
+            ]);
           setPersonalApps(syncedPersonal);
           setApps(syncedApps);
           setAccessRequests(syncedRequests);
           setConnectedApps(syncedConnected);
+          if (devRes.ok) setEnrolledDevices(devRes.devices);
+          setAuditEvents(logs);
+          if (posture) setSecurityPosture(posture);
+          setAdminSnapshot(isCompanyAdminUser ? admin : null);
         } catch {
           // Graceful offline fallback
         }
+      } else {
+        setEnrolledDevices([]);
+        setAuditEvents([]);
+        setSecurityPosture(null);
+        setAdminSnapshot(null);
       }
     } catch {
       // Ignored
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, userEmail]);
+  }, [currentUser, isCompanyAdminUser, userEmail]);
 
   const syncConnectedApps = useCallback(async () => {
     try {
@@ -157,6 +259,8 @@ export function AppsProvider({ children }: { children: ReactNode }) {
           domains.map(async (domain) => {
             if (domain === 'totp') {
               await vaultService.syncWithBackend(token);
+            } else if (domain === 'vault') {
+              await credentialVaultSyncService.syncIfUnlocked(token);
             } else if (domain === 'personalApps') {
               setPersonalApps(
                 await AppsStorageService.syncPersonalAppsWithBackend(token, userEmail),
@@ -173,6 +277,8 @@ export function AppsProvider({ children }: { children: ReactNode }) {
               );
             } else if (domain === 'billing' && refreshBilling) {
               await refreshBilling();
+            } else if (domain === 'devices') {
+              await refreshDevices();
             }
           }),
         );
@@ -438,8 +544,67 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [currentUser, userEmail],
   );
 
+  const unlockCredentialVault = useCallback(
+    async (password: string): Promise<PersonalVaultItem[]> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      return credentialVaultSyncService.unlockWithPassword(password, token);
+    },
+    [currentUser],
+  );
+
+  const lockCredentialVault = useCallback(() => {
+    credentialVaultSyncService.lock();
+  }, []);
+
+  const upsertCredential = useCallback(
+    async (input: {
+      id?: string;
+      title: string;
+      category?: PersonalVaultItem['category'];
+      username: string;
+      password?: string;
+      url?: string;
+      notes?: string;
+      favorite?: boolean;
+    }): Promise<PersonalVaultItem[]> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      return credentialVaultSyncService.upsertItem(input, token);
+    },
+    [currentUser],
+  );
+
+  const deleteCredential = useCallback(
+    async (id: string): Promise<PersonalVaultItem[]> => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
+      return credentialVaultSyncService.deleteItem(id, token);
+    },
+    [currentUser],
+  );
+
+  const pinVaultCredentialToApps = useCallback(
+    async (item: PersonalVaultItem): Promise<SaaSApp> => {
+      const rawUrl = (item.url || '').trim();
+      const launchUrl = rawUrl
+        ? /^https?:\/\//i.test(rawUrl)
+          ? rawUrl
+          : `https://${rawUrl}`
+        : 'https://vanguard.security';
+      return addPersonalApp({
+        name: item.title || 'Saved Application',
+        category: 'collaboration',
+        launchUrl,
+        description: `Pinned from Zero-Knowledge Vault (${item.username || 'Saved login'})`,
+        icon: '🔑',
+        username: item.username,
+        password: item.password,
+      });
+    },
+    [addPersonalApp],
+  );
+
   const refreshApps = useCallback(async () => {
     await Promise.all([
+      syncCoordinatorService.checkOnce(true),
       loadData(),
       refreshBilling ? refreshBilling() : Promise.resolve(),
     ]);
@@ -464,6 +629,20 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       approveAccessRequest,
       rejectAccessRequest,
       vaultCredentials,
+      vaultUnlocked,
+      hasRemoteVault,
+      vaultRevision,
+      unlockCredentialVault,
+      lockCredentialVault,
+      upsertCredential,
+      deleteCredential,
+      pinVaultCredentialToApps,
+      enrolledDevices,
+      refreshDevices,
+      auditEvents,
+      securityPosture,
+      adminSnapshot,
+      refreshSecurityData,
       findCredentialsForDomain,
       addPersonalApp,
       deletePersonalApp,
@@ -490,6 +669,20 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       approveAccessRequest,
       rejectAccessRequest,
       vaultCredentials,
+      vaultUnlocked,
+      hasRemoteVault,
+      vaultRevision,
+      unlockCredentialVault,
+      lockCredentialVault,
+      upsertCredential,
+      deleteCredential,
+      pinVaultCredentialToApps,
+      enrolledDevices,
+      refreshDevices,
+      auditEvents,
+      securityPosture,
+      adminSnapshot,
+      refreshSecurityData,
       findCredentialsForDomain,
       addPersonalApp,
       deletePersonalApp,
@@ -497,11 +690,15 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       disconnectConnectedApp,
       syncConnectedApps,
       isLoading,
-      loadData,
+      refreshApps,
     ]
   );
 
   return <AppsContext.Provider value={value}>{children}</AppsContext.Provider>;
+}
+
+export function useOptionalApps(): AppsContextType | undefined {
+  return useContext(AppsContext);
 }
 
 export function useApps(): AppsContextType {

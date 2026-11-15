@@ -14,6 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppLauncherService } from '@/services/app-launcher.service';
+import { AuthService } from '@/services/auth.service';
+import { SecurityActivityService } from '@/services/security-activity.service';
 import { useAuth } from '@/context/auth-context';
 import { useApps } from '@/context/apps-context';
 import { useOptionalBilling } from '@/context/billing-context';
@@ -119,10 +121,32 @@ export default function MyAppsScreen() {
   };
 
   const handleLaunchApp = async (app: SaaSApp) => {
+    void (async () => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken());
+      if (token) {
+        await SecurityActivityService.recordMovement(token, {
+          movementType: 'APP_LAUNCH',
+          action: `Launched ${app.name} from Mobile App`,
+          applicationName: app.name,
+          protocol: app.protocol,
+        });
+      }
+    })();
     await AppLauncherService.launchApp(app);
   };
 
   const handleLaunchConnectedApp = async (app: UserConnectedApp) => {
+    void (async () => {
+      const token = currentUser?.accessToken || (await AuthService.getAccessToken());
+      if (token) {
+        await SecurityActivityService.recordMovement(token, {
+          movementType: 'APP_LAUNCH',
+          action: `Launched connected app ${app.clientName} from Mobile App`,
+          applicationName: app.clientName,
+          protocol: app.protocol,
+        });
+      }
+    })();
     await AppLauncherService.launchConnectedApp(app);
   };
 

@@ -3,20 +3,25 @@ import { isLiveBackendToken } from './totp-sync.service.ts';
 
 export interface SyncWatermarks {
   totpUpdatedAt: string | null;
+  vaultUpdatedAt?: string | null;
+  vaultRevision?: number;
   personalAppsUpdatedAt: string | null;
   enterpriseAppsUpdatedAt: string | null;
   connectedAppsUpdatedAt: string | null;
   accessRequestsUpdatedAt: string | null;
   billingUpdatedAt?: string | null;
+  devicesUpdatedAt?: string | null;
 }
 
 export type SyncDomainKey =
   | 'totp'
+  | 'vault'
   | 'personalApps'
   | 'enterpriseApps'
   | 'connectedApps'
   | 'accessRequests'
-  | 'billing';
+  | 'billing'
+  | 'devices';
 
 export interface SyncCoordinatorCallbacks {
   getToken: () => Promise<string | null>;
@@ -93,11 +98,13 @@ export class SyncCoordinatorService {
         }
         const all: SyncDomainKey[] = [
           'totp',
+          'vault',
           'personalApps',
           'enterpriseApps',
           'connectedApps',
           'accessRequests',
           'billing',
+          'devices',
         ];
         await this.callbacks.onDomainsChanged(all);
         return all;
@@ -105,11 +112,18 @@ export class SyncCoordinatorService {
 
       const changed: SyncDomainKey[] = [];
       if (next.totpUpdatedAt !== prev.totpUpdatedAt) changed.push('totp');
+      if (
+        (next.vaultUpdatedAt ?? null) !== (prev.vaultUpdatedAt ?? null) ||
+        (next.vaultRevision ?? 0) !== (prev.vaultRevision ?? 0)
+      ) {
+        changed.push('vault');
+      }
       if (next.personalAppsUpdatedAt !== prev.personalAppsUpdatedAt) changed.push('personalApps');
       if (next.enterpriseAppsUpdatedAt !== prev.enterpriseAppsUpdatedAt) changed.push('enterpriseApps');
       if (next.connectedAppsUpdatedAt !== prev.connectedAppsUpdatedAt) changed.push('connectedApps');
       if (next.accessRequestsUpdatedAt !== prev.accessRequestsUpdatedAt) changed.push('accessRequests');
       if ((next.billingUpdatedAt ?? null) !== (prev.billingUpdatedAt ?? null)) changed.push('billing');
+      if ((next.devicesUpdatedAt ?? null) !== (prev.devicesUpdatedAt ?? null)) changed.push('devices');
 
       if (changed.length > 0) {
         await this.callbacks.onDomainsChanged(changed);

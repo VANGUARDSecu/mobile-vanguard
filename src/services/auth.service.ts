@@ -12,6 +12,7 @@ import type {
   SignupResult,
 } from '../models/auth.models.ts';
 import { AppsStorageService } from './apps-storage.service.ts';
+import type { OAuthAuthorizeDeepLinkParams } from '../utils/oauth-deeplink.ts';
 
 const AUTH_STORAGE_KEYS = {
   CURRENT_USER: '@vanguard_auth_user',
@@ -945,5 +946,78 @@ export class AuthService {
     } catch {
       // Non-blocking fallback
     }
+  }
+
+  /**
+   * Approves an incoming OAuth/OIDC authorization deep-link request (e.g. from StockPulse Inventory)
+   * on behalf of the currently authenticated Vanguard mobile user via POST /oauth/approve.
+   */
+  static async approveOAuthAuthorization(
+    params: OAuthAuthorizeDeepLinkParams,
+    options?: {
+      token?: string;
+      user?: AuthUser;
+      backendUrl?: string;
+    },
+  ): Promise<{ code?: string; redirectUrl: string; message?: string }> {
+    const token = options?.token ?? (await AuthService.getAccessToken());
+    const user = options?.user ?? (await AuthService.getCurrentUser());
+
+    if (!token || !user?.email) {
+      throw new Error('Sign in to Vanguard Mobile before approving external SSO requests.');
+    }
+
+    const baseUrl = (options?.backendUrl ?? AppsStorageService.getBackendApiUrl()).replace(/\/+$/, '');
+    const payload: Record<string, unknown> = {
+      client_id: params.client_id,
+      redirect_uri: params.redirect_uri,
+      response_type: params.response_type || 'code',
+      scope: params.scope || 'openid profile email',
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      roles: user.role ? [user.role] : undefined,
+      department: user.department,
+      userId: user.id,
+    };
+
+    if (params.state) payload.state = params.state;
+    if (params.nonce) payload.nonce = params.nonce;
+    if (params.code_challenge) payload.code_challenge = params.code_challenge;
+    if (params.code_challenge_method) payload.code_challenge_method = params.code_challenge_method;
+
+    const cleanBody = Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== undefined && value !== ''),
+    );
+
+    const response = await fetch(`${baseUrl}/oauth/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(cleanBody),
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      code?: string;
+      redirectUrl?: string;
+      message?: string | string[];
+      error?: string;
+    };
+
+    if (!response.ok || !data.redirectUrl) {
+      const msg = Array.isArray(data.message)
+        ? data.message.join(', ')
+        : data.message || data.error || `Vanguard SSO approval failed (${response.status})`;
+      throw new Error(msg);
+    }
+
+    return {
+      code: data.code,
+      redirectUrl: data.redirectUrl,
+      message: typeof data.message === 'string' ? data.message : undefined,
+    };
   }
 }

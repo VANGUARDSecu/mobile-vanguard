@@ -15,6 +15,8 @@ import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 
 import { useAuth } from '@/context/auth-context';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
+import { computeOtpDigitMetrics } from '@/utils/responsive-layout';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 
 export interface VerifyOtpScreenProps {
@@ -31,6 +33,7 @@ export default function VerifyOtpScreen({
   onBack,
 }: VerifyOtpScreenProps) {
   const { verifyOtp, verifyTotp, resendOtp, isLoading } = useAuth();
+  const responsive = useResponsiveLayout();
 
   const [email, setEmail] = useState<string>(initialEmail || '');
   const [method, setMethod] = useState<'email_otp' | 'totp'>(initialHasTotp ? 'totp' : 'email_otp');
@@ -45,6 +48,13 @@ export default function VerifyOtpScreen({
 
   // Dynamic code length: 6 digits for TOTP/SSO, 8 digits for direct Email OTP (also accepts 6 digits)
   const codeLength = method === 'totp' ? 6 : 8;
+  const otpCardPadding = responsive.cardPadding + 4;
+  const otpMetrics = computeOtpDigitMetrics(
+    responsive.width,
+    codeLength,
+    otpCardPadding * 2,
+    responsive.horizontalPadding * 2,
+  );
   const [digits, setDigits] = useState<string[]>(new Array(codeLength).fill(''));
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -221,11 +231,17 @@ export default function VerifyOtpScreen({
           style={styles.keyboardAvoid}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingHorizontal: responsive.horizontalPadding,
+                paddingTop: responsive.isShortScreen ? 10 : 18,
+              },
+            ]}
             keyboardShouldPersistTaps="handled"
           >
             {/* Brand Header */}
-            <View style={styles.brandContainer}>
+            <View style={[styles.brandContainer, responsive.isShortScreen && { marginBottom: 12 }]}>
               <View style={styles.shieldBadge}>
                 <Text style={styles.shieldIcon}>🛡️</Text>
               </View>
@@ -234,7 +250,12 @@ export default function VerifyOtpScreen({
             </View>
 
             {/* Verification Card */}
-            <View style={styles.card}>
+            <View
+              style={[
+                styles.card,
+                { maxWidth: responsive.authCardMaxWidth, padding: otpCardPadding },
+              ]}
+            >
               <View style={styles.badgeWrapper}>
                 <Text style={styles.cardBadgeIcon}>{method === 'totp' ? '📱' : '🔒'}</Text>
               </View>
@@ -269,9 +290,7 @@ export default function VerifyOtpScreen({
               <View
                 style={[
                   styles.digitsRow,
-                  method === 'email_otp'
-                    ? styles.digitsRowEmail
-                    : styles.digitsRowTotp,
+                  { gap: otpMetrics.gap },
                 ]}
               >
                 {digits.map((digit, index) => {
@@ -284,9 +303,14 @@ export default function VerifyOtpScreen({
                         }}
                         style={[
                           styles.digitBox,
-                          method === 'totp'
-                            ? styles.digitBoxTotp
-                            : styles.digitBoxEmail,
+                          {
+                            width: otpMetrics.boxWidth,
+                            height: otpMetrics.boxHeight,
+                            fontSize: otpMetrics.fontSize,
+                            ...(Platform.OS === 'web'
+                              ? { lineHeight: `${otpMetrics.boxHeight}px` as any }
+                              : {}),
+                          },
                           digit ? styles.digitBoxFilled : null,
                           index === 0 && !digit ? styles.digitBoxActive : null,
                         ]}

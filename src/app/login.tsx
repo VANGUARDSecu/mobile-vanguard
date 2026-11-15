@@ -17,6 +17,7 @@ import * as Linking from 'expo-linking';
 
 import { useAuth } from '@/context/auth-context';
 import { useOptionalGuide } from '@/context/guide-context';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { launchGoogleBrowserOAuthSession } from '@/components/cyber/google-account-picker-modal';
 import { GoogleLogo } from '@/components/cyber/google-logo';
@@ -33,6 +34,7 @@ const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
 export default function LoginScreen() {
   const { login, loginWithGoogle } = useAuth();
   const guide = useOptionalGuide();
+  const responsive = useResponsiveLayout();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -213,11 +215,17 @@ export default function LoginScreen() {
           style={styles.keyboardAvoid}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingHorizontal: responsive.horizontalPadding,
+                paddingTop: responsive.isShortScreen ? 10 : 16,
+              },
+            ]}
             keyboardShouldPersistTaps="handled"
           >
             {guide ? (
-              <View style={styles.guideHeaderRow}>
+              <View style={[styles.guideHeaderRow, { maxWidth: responsive.authCardMaxWidth }]}>
                 <Pressable
                   onPress={() => guide.openFromLogin('company-admin')}
                   style={({ pressed }) => [
@@ -246,7 +254,15 @@ export default function LoginScreen() {
             </View>
 
             {/* Login Card */}
-            <View style={styles.card}>
+            <View
+              style={[
+                styles.card,
+                {
+                  maxWidth: responsive.authCardMaxWidth,
+                  padding: responsive.cardPadding + 4,
+                },
+              ]}
+            >
               <View style={styles.modeDescriptionWrap}>
                 <Text style={styles.cardTitle}>Sign In to Vanguard</Text>
                 <Text style={styles.cardSubtitle}>

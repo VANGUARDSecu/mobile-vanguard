@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { useAuth } from '@/context/auth-context';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { launchGoogleBrowserOAuthSession } from '@/components/cyber/google-account-picker-modal';
 import { GoogleLogo } from '@/components/cyber/google-logo';
@@ -30,6 +31,7 @@ import {
 
 export default function RegisterScreen() {
   const { signup, loginWithGoogle } = useAuth();
+  const responsive = useResponsiveLayout();
 
   const [currentPage, setCurrentPage] =
     useState<RegistrationPageKey>('identity');
@@ -225,11 +227,17 @@ export default function RegisterScreen() {
           style={styles.keyboardAvoid}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingHorizontal: responsive.horizontalPadding,
+                paddingTop: responsive.isShortScreen ? 10 : 16,
+              },
+            ]}
             keyboardShouldPersistTaps="handled"
           >
             {/* Brand Header */}
-            <View style={styles.brandContainer}>
+            <View style={[styles.brandContainer, responsive.isShortScreen && { marginBottom: 12 }]}>
               <View style={styles.shieldBadge}>
                 <Text style={styles.shieldIcon}>🛡️</Text>
               </View>
@@ -241,7 +249,15 @@ export default function RegisterScreen() {
             </View>
 
             {/* Multi-Page Registration Card */}
-            <View style={styles.card}>
+            <View
+              style={[
+                styles.card,
+                {
+                  maxWidth: responsive.authCardMaxWidth,
+                  padding: responsive.cardPadding + 4,
+                },
+              ]}
+            >
               {/* Page Step Indicator */}
               <View style={styles.stepperHeader}>
                 <Text style={styles.pageCounterBadge}>

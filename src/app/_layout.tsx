@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   DarkTheme,
-  DefaultTheme,
   ThemeProvider,
   usePathname,
   useRouter,
 } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
-import { useColorScheme, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 
 import AppTabs from '@/components/app-tabs';
 import { AuthProvider, useAuth } from '@/context/auth-context';
@@ -172,20 +174,38 @@ function RootNavigator() {
   );
 }
 
+const VanguardDarkTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: CyberColors.background,
+    card: CyberColors.cardBg,
+    border: CyberColors.border,
+    text: CyberColors.textPrimary,
+    primary: CyberColors.cyan,
+  },
+};
+
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(CyberColors.background).catch(() => {});
+  }, []);
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AuthProvider>
-        <BillingProvider>
-          <GuideProvider>
-            <AppsProvider>
-              <RootNavigator />
-            </AppsProvider>
-          </GuideProvider>
-        </BillingProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider value={VanguardDarkTheme}>
+        <StatusBar style="light" />
+        <AuthProvider>
+          <BillingProvider>
+            <GuideProvider>
+              <AppsProvider>
+                <RootNavigator />
+              </AppsProvider>
+            </GuideProvider>
+          </BillingProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 

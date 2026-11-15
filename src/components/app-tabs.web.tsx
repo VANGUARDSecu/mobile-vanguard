@@ -12,6 +12,7 @@ import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { MaxContentWidth } from '@/constants/theme';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { shouldHideAppTabBar } from '@/utils/navigation-guard';
 
 export default function AppTabs() {
@@ -72,22 +73,45 @@ export function CustomTabList({
   hidden,
   ...props
 }: TabListProps & { hidden?: boolean }) {
+  const responsive = useResponsiveLayout();
+  const showBrand = responsive.width >= 640;
+
   if (hidden) {
     return <View {...props} style={{ display: 'none' }} />;
   }
   return (
-    <View {...props} style={styles.tabListContainer}>
-      <View style={styles.innerContainer}>
-        <View style={styles.brandWrap}>
-          <Text style={styles.brandShield}>🛡️</Text>
-          <Text style={styles.brandText}>VANGUARD</Text>
-          <View style={styles.statusBadge}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>ZERO-TRUST</Text>
+    <View
+      {...props}
+      style={[
+        styles.tabListContainer,
+        {
+          paddingHorizontal: responsive.isCompact ? 8 : 16,
+          paddingVertical: responsive.isCompact ? 6 : 10,
+        },
+      ]}>
+      <View
+        style={[
+          styles.innerContainer,
+          !showBrand && styles.innerContainerCompact,
+        ]}>
+        {showBrand ? (
+          <View style={styles.brandWrap}>
+            <Text style={styles.brandShield}>🛡️</Text>
+            <Text style={styles.brandText}>VANGUARD</Text>
+            <View style={styles.statusBadge}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>ZERO-TRUST</Text>
+            </View>
           </View>
-        </View>
+        ) : null}
 
-        <View style={styles.tabsWrap}>{props.children}</View>
+        <View
+          style={[
+            styles.tabsWrap,
+            !showBrand && styles.tabsWrapCompact,
+          ]}>
+          {props.children}
+        </View>
       </View>
     </View>
   );
@@ -127,6 +151,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
+  },
+  innerContainerCompact: {
+    paddingHorizontal: 6,
+    justifyContent: 'center',
   },
   brandWrap: {
     flexDirection: 'row',
@@ -170,6 +198,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  tabsWrapCompact: {
+    flex: 1,
+    justifyContent: 'space-around',
+    gap: 4,
   },
   tabButtonView: {
     flexDirection: 'row',

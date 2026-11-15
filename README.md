@@ -594,6 +594,15 @@ The Authenticator Vault implements production-grade mobile security standards al
    - `DevicesScreen` and `PushMfaService` connect directly to the backend pairing APIs (`POST /oauth/devices/pair`, `GET /oauth/devices`, `DELETE /oauth/devices/:deviceId`, `POST /oauth/mfa/push/test`) scoped per signed-in user email and authenticated with `Authorization: Bearer <token>`.
    - QR scans and manual pairing reject mismatched accounts immediately (displaying an Alert dialog + inline error on QR mismatch and enforcing `401`/`403` verification on the backend), unlinking removes the device from the backend directory, and test pushes dispatch real number-matching challenges only when the phone is paired.
 
+---
+
+## 📱 Responsive Multi-Device Layout & Dark System Chrome (SCRUM-200)
+
+`mobile-vanguard` adapts dynamically across compact phones (`< 360dp`), standard smartphones (`360–414dp`), large phones (`415–599dp`), and tablets/foldables (`>= 600dp`):
+
+- **Locked Dark System Chrome**: [app.json](file:///C:/Users/User/VSCode_Programming/Vanguard/mobile-vanguard/app.json) (`"userInterfaceStyle": "dark"`, `androidNavigationBar`) and [\_layout.tsx](file:///C:/Users/User/VSCode_Programming/Vanguard/mobile-vanguard/src/app/_layout.tsx) (`SafeAreaProvider`, `DarkTheme`, light `StatusBar`, `expo-system-ui`) prevent OS light-mode navigation bar scrims from washing out the bottom tab bar on Android.
+- **Safe-Area Tab & Screen Scaling**: [app-tabs.tsx](file:///C:/Users/User/VSCode_Programming/Vanguard/mobile-vanguard/src/components/app-tabs.tsx) and [use-responsive-layout.ts](file:///C:/Users/User/VSCode_Programming/Vanguard/mobile-vanguard/src/hooks/use-responsive-layout.ts) adjust bottom tab height for system 3-button and gesture bars (`useSafeAreaInsets().bottom`), fit 6/8-digit OTP inputs dynamically via `computeOtpDigitMetrics`, pair dashboard CTAs side-by-side (`>= 360dp`), and switch to a 2-column centered layout on screens `>= 600dp`.
+
 
 
 

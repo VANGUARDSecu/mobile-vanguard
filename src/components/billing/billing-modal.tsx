@@ -11,11 +11,13 @@ import {
 
 import { useOptionalBilling } from '@/context/billing-context';
 import { useAuth } from '@/context/auth-context';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 
 export function BillingModal() {
   const billing = useOptionalBilling();
   const { currentUser } = useAuth();
+  const responsive = useResponsiveLayout();
 
   if (!billing || !billing.showBillingModal) {
     return null;
@@ -56,7 +58,19 @@ export function BillingModal() {
       onRequestClose={closeBillingModal}
     >
       <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+        <View
+          style={[
+            styles.sheet,
+            {
+              maxHeight: responsive.modalMaxHeight,
+              paddingHorizontal: responsive.horizontalPadding + 2,
+              paddingBottom: Math.max(24, responsive.bottomInset + 16),
+              ...(responsive.isTablet
+                ? { maxWidth: 560, alignSelf: 'center', width: '100%', borderRadius: 20 }
+                : {}),
+            },
+          ]}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTextWrap}>

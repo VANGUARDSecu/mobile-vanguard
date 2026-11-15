@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { PersonalAppInput } from '@/models/apps.models';
 
 export type PersonalAppPreset =
@@ -33,6 +34,7 @@ export function AddPersonalAppModal({
   onClose,
   onAdd,
 }: AddPersonalAppModalProps) {
+  const responsive = useResponsiveLayout();
   const [appName, setAppName] = useState('');
   const [appUrl, setAppUrl] = useState('');
   const [appCategory, setAppCategory] = useState<'collaboration' | 'developer' | 'cloud'>('collaboration');
@@ -161,9 +163,20 @@ export function AddPersonalAppModal({
       <View style={styles.modalOverlay}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.keyboardAvoid}
+          style={[
+            styles.keyboardAvoid,
+            {
+              maxWidth: responsive.modalMaxWidth,
+              maxHeight: responsive.modalMaxHeight,
+            },
+          ]}
         >
-          <View style={styles.modalCard}>
+          <View
+            style={[
+              styles.modalCard,
+              { paddingBottom: Math.max(12, responsive.bottomInset) },
+            ]}
+          >
             {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={styles.headerTitleWrap}>

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import {
   AppItemCategory,
   AppAccessRequest,
@@ -39,6 +40,7 @@ export function RequestAppModal({
   onClose,
   onSubmit,
 }: RequestAppModalProps) {
+  const responsive = useResponsiveLayout();
   const [appName, setAppName] = useState('');
   const [category, setCategory] = useState<AppItemCategory>('collaboration');
   const [icon, setIcon] = useState('🚀');
@@ -125,7 +127,16 @@ export function RequestAppModal({
           accessibilityLabel="Dismiss modal backdrop"
         />
 
-        <View style={styles.modalCard}>
+        <View
+          style={[
+            styles.modalCard,
+            {
+              maxWidth: responsive.modalMaxWidth,
+              maxHeight: responsive.modalMaxHeight,
+              paddingBottom: Math.max(12, responsive.bottomInset),
+            },
+          ]}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTitleWrap}>

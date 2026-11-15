@@ -32,6 +32,7 @@ import { TotpEngine } from '@/services/totp-engine.service';
 import { AuthService } from '@/services/auth.service';
 import { credentialVaultSyncService } from '@/services/credential-vault-sync.service';
 import { syncCoordinatorService } from '@/services/sync-coordinator.service';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 
 export interface VaultScreenProps {
   onSelectAccount?: (account: TotpAccount) => void;
@@ -46,6 +47,7 @@ export function VaultScreen({
   onOpenSettings,
   testID = 'vault-screen',
 }: VaultScreenProps) {
+  const responsive = useResponsiveLayout();
   const billing = useOptionalBilling();
   const appsCtx = useOptionalApps();
   const [activeSegment, setActiveSegment] = useState<'totp' | 'passwords'>('totp');
@@ -273,9 +275,16 @@ export function VaultScreen({
 
   return (
     <View style={styles.screen} testID={testID}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingHorizontal: responsive.horizontalPadding,
+              paddingTop: responsive.verticalPadding,
+              paddingBottom: responsive.scrollBottomPadding,
+            },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -286,9 +295,10 @@ export function VaultScreen({
             />
           }
         >
+          <View style={responsive.centeredContainerStyle}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.brandRow}>
+            <View style={[styles.brandRow, { flexWrap: 'wrap', gap: 8 }]}>
               <View style={styles.brandBadge}>
                 <Text style={styles.brandIcon}>🛡️</Text>
                 <Text style={styles.brandTitle}>VANGUARD VAULT</Text>
@@ -301,7 +311,7 @@ export function VaultScreen({
                 testID="vault-status"
               />
             </View>
-            <Text style={styles.pageTitle}>
+            <Text style={[styles.pageTitle, { fontSize: responsive.headerTitleSize }]}>
               {activeSegment === 'totp' ? 'Authenticator Tokens' : 'Zero-Knowledge Passwords'}
             </Text>
             <Text style={styles.pageSubtitle}>
@@ -784,6 +794,7 @@ export function VaultScreen({
               )}
             </View>
           )}
+          </View>
         </ScrollView>
 
         {/* Manual Code Entry Modal */}

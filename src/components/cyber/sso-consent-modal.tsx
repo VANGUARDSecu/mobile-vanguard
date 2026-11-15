@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import type { AuthUser } from '@/models/auth.models';
 import type { OAuthAuthorizeDeepLinkParams } from '@/utils/oauth-deeplink';
 import { CyberButton } from './cyber-button';
@@ -39,6 +40,7 @@ export function SsoConsentModal({
   onSignInFirst,
   onOpenWebPortal,
 }: SsoConsentModalProps) {
+  const responsive = useResponsiveLayout();
   if (!visible || !request) {
     return null;
   }
@@ -56,9 +58,12 @@ export function SsoConsentModal({
       animationType="fade"
       onRequestClose={onDeny}
     >
-      <SafeAreaView style={styles.backdrop}>
+      <SafeAreaView style={[styles.backdrop, { paddingHorizontal: responsive.horizontalPadding }]}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { maxWidth: responsive.modalMaxWidth, alignSelf: 'center', width: '100%' },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           <CyberCard variant="glow" style={styles.card}>

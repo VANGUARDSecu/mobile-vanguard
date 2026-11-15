@@ -73,19 +73,19 @@ export function CategoryFilterBar({
 
 const styles = StyleSheet.create({
   scrollWrap: {
-    maxHeight: 52,
-    marginBottom: 16,
+    maxHeight: 46,
+    marginBottom: 10,
   },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
   pill: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
     borderRadius: CyberRadius.full,
     borderWidth: 1,
     flexDirection: 'row',

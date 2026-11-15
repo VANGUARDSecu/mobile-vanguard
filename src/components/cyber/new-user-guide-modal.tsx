@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { useOptionalGuide } from '@/context/guide-context';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { CyberCard } from './cyber-card';
 
 /**
@@ -18,6 +19,7 @@ import { CyberCard } from './cyber-card';
  */
 export function NewUserGuideModal() {
   const guide = useOptionalGuide();
+  const responsive = useResponsiveLayout();
 
   if (!guide || !guide.isOpen) {
     return null;
@@ -42,9 +44,17 @@ export function NewUserGuideModal() {
       animationType="fade"
       onRequestClose={() => void close(true)}
     >
-      <SafeAreaView style={styles.backdrop}>
-        <View style={styles.centerWrap}>
-          <CyberCard variant="glow" style={styles.card}>
+      <SafeAreaView style={[styles.backdrop, { padding: responsive.horizontalPadding }]}>
+        <View
+          style={[
+            styles.centerWrap,
+            { maxWidth: responsive.modalMaxWidth, maxHeight: responsive.modalMaxHeight },
+          ]}
+        >
+          <CyberCard
+            variant="glow"
+            style={[styles.card, { padding: responsive.cardPadding }]}
+          >
             {/* Header Row */}
             <View style={styles.headerRow}>
               <View style={styles.eyebrowPill}>

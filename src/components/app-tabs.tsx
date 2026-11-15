@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors } from '@/constants/cyber-theme';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { shouldHideAppTabBar } from '@/utils/navigation-guard';
 
 const HIDDEN_TAB_STYLE = { display: 'none' as const };
@@ -11,6 +12,7 @@ const HIDDEN_TAB_STYLE = { display: 'none' as const };
 export default function AppTabs() {
   const { currentUser, isAuthenticated } = useAuth();
   const pathname = usePathname();
+  const responsive = useResponsiveLayout();
   const isIndividual = currentUser?.accountType === 'individual';
   const hideTabBar = shouldHideAppTabBar(isAuthenticated, pathname);
 
@@ -18,20 +20,28 @@ export default function AppTabs() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        sceneStyle: { backgroundColor: CyberColors.background },
         tabBarActiveTintColor: CyberColors.cyan,
         tabBarInactiveTintColor: CyberColors.textSecondary,
+        tabBarHideOnKeyboard: true,
+        tabBarAllowFontScaling: false,
         tabBarStyle: hideTabBar
           ? HIDDEN_TAB_STYLE
           : {
               backgroundColor: CyberColors.cardBg,
               borderTopColor: CyberColors.border,
               borderTopWidth: 1,
-              height: 64,
-              paddingBottom: 8,
-              paddingTop: 6,
+              height: responsive.tabBar.height,
+              paddingBottom: responsive.tabBar.paddingBottom,
+              paddingTop: responsive.tabBar.paddingTop,
+              elevation: 8,
             },
+        tabBarItemStyle: {
+          paddingHorizontal: 2,
+          justifyContent: 'center',
+        },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: responsive.tabBar.labelFontSize,
           fontWeight: '700',
         },
       }}>
@@ -39,10 +49,10 @@ export default function AppTabs() {
         name="index"
         options={{
           title: isIndividual ? 'Bookmarks' : 'Apps',
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'apps' : 'apps-outline'}
-              size={size}
+              size={responsive.tabBar.iconSize}
               color={color}
             />
           ),
@@ -52,11 +62,11 @@ export default function AppTabs() {
       <Tabs.Screen
         name="vault"
         options={{
-          title: isIndividual ? 'Vault' : 'Authenticator',
-          tabBarIcon: ({ color, size, focused }) => (
+          title: isIndividual ? 'Vault' : responsive.tabBar.authenticatorLabel,
+          tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'key' : 'key-outline'}
-              size={size}
+              size={responsive.tabBar.iconSize}
               color={color}
             />
           ),
@@ -67,10 +77,10 @@ export default function AppTabs() {
         name="devices"
         options={{
           title: 'Devices',
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'phone-portrait' : 'phone-portrait-outline'}
-              size={size}
+              size={responsive.tabBar.iconSize}
               color={color}
             />
           ),
@@ -81,10 +91,10 @@ export default function AppTabs() {
         name="explore"
         options={{
           title: 'Security',
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'shield-checkmark' : 'shield-checkmark-outline'}
-              size={size}
+              size={responsive.tabBar.iconSize}
               color={color}
             />
           ),

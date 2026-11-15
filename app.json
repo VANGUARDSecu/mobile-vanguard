@@ -10,7 +10,12 @@
       "vanguard-auth",
       "vanguard-enroll"
     ],
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0e17",
+    "androidNavigationBar": {
+      "backgroundColor": "#0f172a",
+      "barStyle": "light-content"
+    },
     "ios": {
       "icon": "./assets/expo.icon",
       "infoPlist": {

@@ -20,9 +20,11 @@ import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { AuthService } from '@/services/auth.service';
 import pushMfaService from '@/services/push-mfa.service';
 import { SecurityActivityService } from '@/services/security-activity.service';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 
 export default function SecurityScreen() {
   const { currentUser, logout } = useAuth();
+  const responsive = useResponsiveLayout();
   const appsCtx = useOptionalApps();
   const billing = useOptionalBilling();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -155,9 +157,16 @@ export default function SecurityScreen() {
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingHorizontal: responsive.horizontalPadding,
+              paddingTop: responsive.verticalPadding,
+              paddingBottom: responsive.scrollBottomPadding,
+            },
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -167,13 +176,16 @@ export default function SecurityScreen() {
             />
           }
         >
+          <View style={responsive.centeredContainerStyle}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.brandBadge}>
               <Text style={styles.brandShield}>🛡️</Text>
               <Text style={styles.brandTitle}>VANGUARD SECURITY</Text>
             </View>
-            <Text style={styles.pageTitle}>Zero-Trust Identity Posture</Text>
+            <Text style={[styles.pageTitle, { fontSize: responsive.headerTitleSize }]}>
+              Zero-Trust Identity Posture
+            </Text>
             <Text style={styles.pageSubtitle}>
               Continuous verification, session tokens, and identity authorization status
             </Text>
@@ -532,6 +544,7 @@ export default function SecurityScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
           </View>
         </ScrollView>
 

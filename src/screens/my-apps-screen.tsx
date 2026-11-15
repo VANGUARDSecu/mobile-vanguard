@@ -21,6 +21,7 @@ import { useApps } from '@/context/apps-context';
 import { useOptionalBilling } from '@/context/billing-context';
 import { useOptionalGuide } from '@/context/guide-context';
 import { resolveGuideRoleFromUser } from '@/utils/new-user-guide';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 import { isBillingLimitError } from '@/models/billing.models';
 import LoginScreen from '@/app/login';
 import {
@@ -44,6 +45,7 @@ import {
 
 export default function MyAppsScreen() {
   const { currentUser, isAuthenticated, isInitializing: authInitializing, logout } = useAuth();
+  const responsive = useResponsiveLayout();
   const billing = useOptionalBilling();
   const guide = useOptionalGuide();
   const {
@@ -221,10 +223,15 @@ export default function MyAppsScreen() {
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         {/* Pinned Authenticated User Session Status Bar */}
-        <View style={styles.sessionHeaderContainer}>
-          <View style={styles.userSessionBar}>
+        <View
+          style={[
+            styles.sessionHeaderContainer,
+            { paddingHorizontal: responsive.horizontalPadding },
+          ]}
+        >
+          <View style={[styles.userSessionBar, responsive.centeredContainerStyle]}>
             <View style={styles.userInfoWrap}>
               <View style={styles.userAvatar}>
                 <Text style={styles.userAvatarText}>
@@ -252,7 +259,9 @@ export default function MyAppsScreen() {
                   accessibilityLabel="Open Quick Start Guide"
                   testID="dashboard-guide-btn"
                 >
-                  <Text style={styles.guideHeaderBtnText}>? Guide</Text>
+                  <Text style={styles.guideHeaderBtnText}>
+                    {responsive.isCompact ? '?' : '? Guide'}
+                  </Text>
                 </TouchableOpacity>
               ) : null}
 
@@ -271,7 +280,9 @@ export default function MyAppsScreen() {
                 {isLoggingOut ? (
                   <ActivityIndicator size="small" color="#f87171" />
                 ) : (
-                  <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
+                  <Text style={styles.logoutBtnText} numberOfLines={1}>
+                    {responsive.isCompact ? 'Exit ⎋' : 'Sign Out ⎋'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -280,7 +291,13 @@ export default function MyAppsScreen() {
 
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingHorizontal: responsive.horizontalPadding,
+              paddingBottom: responsive.scrollBottomPadding,
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
@@ -291,126 +308,152 @@ export default function MyAppsScreen() {
             />
           }
         >
-          {/* Top Brand & Workspace Mode Bar */}
-          <View style={styles.topHeader}>
+          <View style={responsive.centeredContainerStyle}>
+            {/* Top Brand & Workspace Mode Bar */}
+            <View style={styles.topHeader}>
+              <View style={styles.brandRow}>
+                <View style={styles.brandBadge}>
+                  <Text style={styles.brandShield}>🛡️</Text>
+                  <Text style={styles.brandTitle}>VANGUARD</Text>
+                </View>
 
-            <View style={styles.brandRow}>
-              <View style={styles.brandBadge}>
-                <Text style={styles.brandShield}>🛡️</Text>
-                <Text style={styles.brandTitle}>VANGUARD</Text>
+                {/* Immutable Workspace Mode Badge (SCRUM-84: Non-switchable) */}
+                <View style={styles.workspaceBadge}>
+                  <Text style={styles.workspaceBadgeText} numberOfLines={1}>
+                    {isPersonalWorkspace ? '👤 Personal' : '🏢 Org'}
+                  </Text>
+                  <View style={styles.workspaceBadgeDot} />
+                  <Text style={styles.workspaceBadgeOrg} numberOfLines={1} ellipsizeMode="tail">
+                    {isPersonalWorkspace
+                      ? 'INDIVIDUAL'
+                      : (currentUser?.companyName ? currentUser.companyName.toUpperCase() : 'ENTERPRISE')}
+                  </Text>
+                </View>
               </View>
 
-              {/* Immutable Workspace Mode Badge (SCRUM-84: Non-switchable) */}
-              <View style={styles.workspaceBadge}>
-                <Text style={styles.workspaceBadgeText} numberOfLines={1}>
-                  {isPersonalWorkspace ? '👤 Personal Mode' : '🏢 Company Org'}
-                </Text>
-                <View style={styles.workspaceBadgeDot} />
-                <Text style={styles.workspaceBadgeOrg} numberOfLines={1}>
-                  {isPersonalWorkspace
-                    ? 'INDIVIDUAL'
-                    : (currentUser?.companyName ? currentUser.companyName.toUpperCase() : 'ENTERPRISE')}
-                </Text>
-              </View>
-            </View>
-
-            {/* Title & Subtitle */}
-            <View style={styles.titleWrap}>
-              <Text style={styles.mainTitle}>
-                {isPersonalWorkspace
-                  ? 'Personal Applications & Bookmarks'
-                  : 'My Applications (Single Sign-On)'}
-              </Text>
-              <Text style={styles.subtitle}>
-                {isPersonalWorkspace
-                  ? 'Personal web app shortcuts configured for dynamic autofill via browser extension.'
-                  : 'Launch your assigned enterprise SaaS apps with zero-trust credentials.'}
-              </Text>
-            </View>
-
-            {/* SCRUM-185: Synced Plan Status & Quota Strip */}
-            {billing ? (
-              <TouchableOpacity
-                onPress={() => billing.openBillingModal()}
-                activeOpacity={0.8}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: billing.isFreeTier
-                    ? 'rgba(245, 158, 11, 0.12)'
-                    : 'rgba(16, 185, 129, 0.12)',
-                  borderColor: billing.isFreeTier
-                    ? 'rgba(245, 158, 11, 0.35)'
-                    : 'rgba(16, 185, 129, 0.35)',
-                  borderWidth: 1,
-                  borderRadius: CyberRadius.sm,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  marginBottom: 12,
-                }}
-              >
+              {/* Title & Subtitle */}
+              <View style={styles.titleWrap}>
                 <Text
+                  style={[
+                    styles.mainTitle,
+                    { fontSize: responsive.headerTitleSize },
+                  ]}
+                >
+                  {isPersonalWorkspace
+                    ? 'Personal Apps & Bookmarks'
+                    : 'My Applications (SSO)'}
+                </Text>
+                <Text
+                  style={[
+                    styles.subtitle,
+                    { fontSize: responsive.subtitleSize },
+                  ]}
+                >
+                  {isPersonalWorkspace
+                    ? 'Personal web app shortcuts configured for dynamic autofill via browser extension.'
+                    : 'Launch your assigned enterprise SaaS apps with zero-trust credentials.'}
+                </Text>
+              </View>
+
+              {/* SCRUM-185: Synced Plan Status & Quota Strip */}
+              {billing ? (
+                <TouchableOpacity
+                  onPress={() => billing.openBillingModal()}
+                  activeOpacity={0.8}
                   style={{
-                    color: billing.isFreeTier ? '#fcd34d' : '#6ee7b7',
-                    fontSize: 12,
-                    fontWeight: '700',
-                    flex: 1,
+                    flexDirection: 'row',
+                    flexWrap: responsive.isCompact ? 'wrap' : 'nowrap',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    backgroundColor: billing.isFreeTier
+                      ? 'rgba(245, 158, 11, 0.12)'
+                      : 'rgba(16, 185, 129, 0.12)',
+                    borderColor: billing.isFreeTier
+                      ? 'rgba(245, 158, 11, 0.35)'
+                      : 'rgba(16, 185, 129, 0.35)',
+                    borderWidth: 1,
+                    borderRadius: CyberRadius.sm,
+                    paddingHorizontal: 10,
+                    paddingVertical: 7,
+                    marginBottom: 10,
                   }}
                 >
-                  {billing.isFreeTier
-                    ? billing.isTenantMember
-                      ? `⏳ ${billing.subscription.planName} • ${activeAppsList.length}/1 App (Managed by Admin)`
-                      : `⚡ ${billing.subscription.planName} • ${activeAppsList.length}/1 App Max (Free)`
-                    : `💎 ${billing.subscription.planName} • Unlimited Apps Synced`}
-                </Text>
-                <Text style={{ color: CyberColors.cyan, fontSize: 11.5, fontWeight: '800', marginLeft: 8 }}>
-                  {billing.isFreeTier && billing.canManageBilling ? 'Upgrade →' : 'View Plan →'}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
+                  <Text
+                    numberOfLines={2}
+                    style={{
+                      color: billing.isFreeTier ? '#fcd34d' : '#6ee7b7',
+                      fontSize: responsive.isCompact ? 11 : 11.5,
+                      fontWeight: '700',
+                      flex: 1,
+                    }}
+                  >
+                    {billing.isFreeTier
+                      ? billing.isTenantMember
+                        ? `⏳ ${billing.subscription.planName} • ${activeAppsList.length}/1 App (Admin)`
+                        : `⚡ ${billing.subscription.planName} • ${activeAppsList.length}/1 App Max`
+                      : `💎 ${billing.subscription.planName} • Unlimited Apps Synced`}
+                  </Text>
+                  <Text style={{ color: CyberColors.cyan, fontSize: 11.5, fontWeight: '800', flexShrink: 0 }}>
+                    {billing.isFreeTier && billing.canManageBilling ? 'Upgrade →' : 'View Plan →'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
 
-            {/* Action Buttons Row */}
-            <View style={styles.actionButtonsRow}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.primaryActionBtn,
-                  pressed && styles.primaryActionBtnPressed,
+              {/* Action Buttons Row */}
+              <View
+                style={[
+                  styles.actionButtonsRow,
+                  {
+                    flexDirection: responsive.stackActionButtons ? 'column' : 'row',
+                  },
                 ]}
-                onPress={() => {
-                  if (billing) {
-                    const quota = billing.checkAppQuota(activeAppsList.length);
-                    if (!quota.allowed) {
-                      billing.openBillingModal(quota.reason);
-                      return;
-                    }
-                  }
-                  setShowAddPersonalAppModal(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Add Application"
-                testID="action-add-app"
               >
-                <Text style={styles.primaryActionBtnPlus}>+</Text>
-                <Text style={styles.primaryActionBtnText}>Add Application</Text>
-              </Pressable>
-
-              {!isPersonalWorkspace ? (
                 <Pressable
                   style={({ pressed }) => [
-                    styles.secondaryActionBtn,
-                    pressed && styles.secondaryActionBtnPressed,
+                    styles.primaryActionBtn,
+                    !responsive.stackActionButtons && styles.splitActionBtn,
+                    pressed && styles.primaryActionBtnPressed,
                   ]}
-                  onPress={() => setShowRequestAppModal(true)}
+                  onPress={() => {
+                    if (billing) {
+                      const quota = billing.checkAppQuota(activeAppsList.length);
+                      if (!quota.allowed) {
+                        billing.openBillingModal(quota.reason);
+                        return;
+                      }
+                    }
+                    setShowAddPersonalAppModal(true);
+                  }}
                   accessibilityRole="button"
-                  accessibilityLabel="Request Enterprise Access"
-                  testID="action-request-enterprise-app"
+                  accessibilityLabel="Add Application"
+                  testID="action-add-app"
                 >
-                  <Text style={styles.secondaryActionBtnText}>Request Enterprise Access</Text>
+                  <Text style={styles.primaryActionBtnPlus}>+</Text>
+                  <Text style={styles.primaryActionBtnText} numberOfLines={1}>
+                    {isPersonalWorkspace || responsive.stackActionButtons ? 'Add Application' : 'Add App'}
+                  </Text>
                 </Pressable>
-              ) : null}
+
+                {!isPersonalWorkspace ? (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.secondaryActionBtn,
+                      !responsive.stackActionButtons && styles.splitActionBtn,
+                      pressed && styles.secondaryActionBtnPressed,
+                    ]}
+                    onPress={() => setShowRequestAppModal(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Request Enterprise Access"
+                    testID="action-request-enterprise-app"
+                  >
+                    <Text style={styles.secondaryActionBtnText} numberOfLines={1}>
+                      {responsive.stackActionButtons ? 'Request Enterprise Access' : 'Request Access'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
-          </View>
 
           {/* Company Admin Governance Console & Review Banner (SCRUM-84) */}
           {isCompanyAdmin && (
@@ -440,22 +483,37 @@ export default function MyAppsScreen() {
           />
 
           {/* Applications Grid / List */}
-          <View style={styles.appsList}>
+          <View
+            style={[
+              styles.appsList,
+              responsive.gridColumns === 2 && {
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: responsive.cardGap,
+              },
+            ]}
+          >
             {filteredApps.length === 0 ? (
-              <EmptyAppsState
-                isPersonalWorkspace={isPersonalWorkspace}
-                onActionPress={handleActionPress}
-              />
+              <View style={{ width: '100%' }}>
+                <EmptyAppsState
+                  isPersonalWorkspace={isPersonalWorkspace}
+                  onActionPress={handleActionPress}
+                />
+              </View>
             ) : (
               filteredApps.map((app) => (
-                <AppCard
+                <View
                   key={app.id}
-                  app={app}
-                  isPersonalWorkspace={isPersonalWorkspace}
-                  matchingVaultCredentials={findCredentialsForDomain(app.launchUrl || app.name)}
-                  onLaunch={handleLaunchApp}
-                  onDelete={deletePersonalApp}
-                />
+                  style={responsive.gridColumns === 2 ? { width: '48.8%' } : { width: '100%' }}
+                >
+                  <AppCard
+                    app={app}
+                    isPersonalWorkspace={isPersonalWorkspace}
+                    matchingVaultCredentials={findCredentialsForDomain(app.launchUrl || app.name)}
+                    onLaunch={handleLaunchApp}
+                    onDelete={deletePersonalApp}
+                  />
+                </View>
               ))
             )}
           </View>
@@ -468,6 +526,7 @@ export default function MyAppsScreen() {
               onLaunch={handleLaunchApprovedRequest}
             />
           )}
+          </View>
         </ScrollView>
       </SafeAreaView>
 
@@ -505,28 +564,30 @@ const styles = StyleSheet.create({
     paddingBottom: 85,
   },
   topHeader: {
-    marginBottom: 20,
+    marginBottom: 12,
   },
   brandRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    gap: 8,
+    marginBottom: 10,
   },
   brandBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     flexShrink: 0,
   },
   brandShield: {
-    fontSize: 20,
+    fontSize: 18,
   },
   brandTitle: {
     color: CyberColors.cyan,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
-    letterSpacing: 1.5,
+    letterSpacing: 1.4,
   },
   workspaceBadge: {
     flexDirection: 'row',
@@ -534,16 +595,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderColor: 'rgba(59, 130, 246, 0.35)',
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: CyberRadius.full,
-    gap: 6,
+    gap: 5,
     flexShrink: 1,
-    maxWidth: '65%',
+    maxWidth: '64%',
   },
   workspaceBadgeText: {
     color: CyberColors.cyan,
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
     flexShrink: 0,
   },
@@ -558,28 +619,32 @@ const styles = StyleSheet.create({
     color: CyberColors.textSecondary,
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     flexShrink: 1,
   },
   titleWrap: {
-    marginBottom: 16,
+    marginBottom: 10,
   },
   mainTitle: {
-    fontSize: 24,
+    fontSize: 21,
     fontWeight: '800',
     color: CyberColors.textPrimary,
-    letterSpacing: 0.3,
-    marginBottom: 6,
+    letterSpacing: 0.2,
+    marginBottom: 3,
   },
   subtitle: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
     color: CyberColors.textSecondary,
   },
   actionButtonsRow: {
-    flexDirection: 'column',
+    flexDirection: 'row',
     gap: 8,
     width: '100%',
+  },
+  splitActionBtn: {
+    flex: 1,
+    width: undefined,
   },
   primaryActionBtn: {
     flexDirection: 'row',
@@ -587,9 +652,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: CyberColors.cyan,
     borderRadius: CyberRadius.md,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 6,
+    minHeight: 42,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 5,
     width: '100%',
     shadowColor: CyberColors.cyan,
     shadowOffset: { width: 0, height: 2 },
@@ -602,15 +668,15 @@ const styles = StyleSheet.create({
   },
   primaryActionBtnPlus: {
     color: CyberColors.textDark,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
     lineHeight: 18,
   },
   primaryActionBtnText: {
     color: CyberColors.textDark,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   secondaryActionBtn: {
     flexDirection: 'row',
@@ -620,8 +686,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(148, 163, 184, 0.3)',
     borderWidth: 1,
     borderRadius: CyberRadius.md,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
+    minHeight: 42,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     width: '100%',
   },
   secondaryActionBtnPressed: {
@@ -648,9 +715,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   sessionHeaderContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 4,
     backgroundColor: CyberColors.background,
     zIndex: 100,
   },
@@ -658,33 +725,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
     borderColor: 'rgba(59, 130, 246, 0.3)',
     borderWidth: 1,
     borderRadius: CyberRadius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   userInfoWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 10,
-    gap: 10,
+    marginRight: 8,
+    gap: 8,
   },
   userAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: 'rgba(0, 229, 255, 0.15)',
     borderColor: CyberColors.cyan,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   userAvatarText: {
     color: CyberColors.cyan,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
   },
   userMetaWrap: {
@@ -692,45 +760,45 @@ const styles = StyleSheet.create({
   },
   userNameText: {
     color: CyberColors.textPrimary,
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
   },
   userEmailText: {
     color: CyberColors.textMuted,
-    fontSize: 11,
+    fontSize: 10.5,
     marginTop: 1,
   },
   sessionActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   guideHeaderBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     borderRadius: CyberRadius.sm,
     backgroundColor: CyberColors.cyanGlow,
     borderColor: CyberColors.cyanMuted,
     borderWidth: 1,
-    minHeight: 32,
+    minHeight: 30,
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer' as any,
   },
   guideHeaderBtnText: {
     color: CyberColors.cyan,
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
   },
   logoutBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: CyberRadius.sm,
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderColor: 'rgba(239, 68, 68, 0.35)',
     borderWidth: 1,
-    minHeight: 32,
-    minWidth: 84,
+    minHeight: 30,
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer' as any,

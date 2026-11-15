@@ -26,6 +26,7 @@ import { syncCoordinatorService } from '@/services/sync-coordinator.service';
 import type { MobileEnrolledDevice } from '@/services/security-activity.service';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
 import { parseDevicePairingQrPayload } from '@/utils/pairing-qr';
+import { useResponsiveLayout } from '@/hooks/use-responsive-layout';
 
 const getPairedDeviceStorageKey = (email?: string | null): string => {
   const clean = email?.trim().toLowerCase();
@@ -43,6 +44,7 @@ export interface PairedDeviceMetadata {
 
 export default function DevicesScreen() {
   const { currentUser } = useAuth();
+  const responsive = useResponsiveLayout();
   const appsCtx = useOptionalApps();
 
   // Biometrics and Hardware Attestation State
@@ -405,15 +407,27 @@ export default function DevicesScreen() {
 
   return (
     <View style={styles.screen}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingHorizontal: responsive.horizontalPadding,
+              paddingTop: responsive.verticalPadding,
+              paddingBottom: responsive.scrollBottomPadding,
+            },
+          ]}
+        >
+          <View style={responsive.centeredContainerStyle}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.brandBadge}>
               <Text style={styles.brandShield}>🛡️</Text>
               <Text style={styles.brandTitle}>VANGUARD IDENTITY</Text>
             </View>
-            <Text style={styles.pageTitle}>Mobile & Devices</Text>
+            <Text style={[styles.pageTitle, { fontSize: responsive.headerTitleSize }]}>
+              Mobile & Devices
+            </Text>
             <Text style={styles.pageSubtitle}>
               Hardware biometric attestation, desktop device pairing, and real-time Push MFA verification
             </Text>
@@ -774,6 +788,7 @@ export default function DevicesScreen() {
                 </View>
               )}
             </View>
+          </View>
           </View>
         </ScrollView>
       </SafeAreaView>

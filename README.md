@@ -90,6 +90,10 @@ The application is configured to connect directly to the live deployed Vanguard 
   - Free accounts (`Individual Free Starter` and `Company Free Trial`) enforce max **1 integrated application** and max **3 third-party 2FA accounts**, rolling back `403 billing_limit_reached` server rejections cleanly.
   - **Individual** users see Personal plans (`Free Starter`, `Personal Pro $5/mo`), **Company Admins** see Organization plans (`Company Free Trial`, `Business Pro $29/mo`, `Enterprise $79/mo`), and **Tenant Employees** see a read-only **Managed by Company Administrator** status panel that unlocks automatically when their Admin upgrades.
 
+### 7. Native Relying-Party SSO Handoff (`vanguard-auth://oauth/authorize`, SCRUM-188)
+- **Incoming Deep-Link Interception**: `RootNavigator` (`src/app/_layout.tsx`) listens for `vanguard-auth://oauth/authorize?...` and `mobilevanguard://oauth/authorize?...` deep links via `expo-linking` (`Linking.getInitialURL` and `Linking.addEventListener('url', ...)`) using `parseOAuthAuthorizeDeepLink` (`src/utils/oauth-deeplink.ts`).
+- **Consent & Approval Modal**: `SsoConsentModal` (`src/components/cyber/sso-consent-modal.tsx`) shows the requesting app's name, `client_id`, `redirect_uri`, and scopes. Signed-in users can approve natively (`AuthService.approveOAuthAuthorization` -> `POST /oauth/approve` on `https://backend-vanguard.onrender.com`) and redirect back to the calling app (e.g., `vanguard-dummy://oauth/callback?code=...&state=...`), sign in on mobile first, deny (`error=access_denied`), or continue in the deployed Vanguard Web Portal (`https://vanguard-security.pages.dev/login`).
+
 ---
 
 ## 📦 Installation & Setup

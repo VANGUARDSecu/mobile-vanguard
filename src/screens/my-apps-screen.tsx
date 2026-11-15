@@ -32,15 +32,12 @@ import {
   AddPersonalAppModal,
   RequestAppModal,
   RequestAppInput,
-  RequestedAppsSection,
-  CompanyAdminBanner,
 } from '@/components/apps';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import {
   SaaSApp,
   UserConnectedApp,
   PersonalAppInput,
-  AppAccessRequest,
 } from '@/models/apps.models';
 
 export default function MyAppsScreen() {
@@ -63,12 +60,6 @@ export default function MyAppsScreen() {
     disconnectConnectedApp,
     syncConnectedApps,
     submitAppRequest,
-    apps,
-    accessRequests,
-    pendingRequestsCount,
-    pendingAdminRequests,
-    approveAccessRequest,
-    rejectAccessRequest,
     refreshApps,
   } = useApps();
 
@@ -232,10 +223,6 @@ export default function MyAppsScreen() {
       }
       throw err;
     }
-  };
-
-  const handleLaunchApprovedRequest = async (request: AppAccessRequest) => {
-    await AppLauncherService.launchApprovedRequest(request, apps);
   };
 
   return (
@@ -481,17 +468,6 @@ export default function MyAppsScreen() {
               </View>
             </View>
 
-          {/* Company Admin Governance Console & Review Banner (SCRUM-84) */}
-          {isCompanyAdmin && (
-            <CompanyAdminBanner
-              companyName={currentUser?.companyName || 'Enterprise Organization'}
-              adminName={currentUser?.name || 'Security Administrator'}
-              pendingRequests={pendingAdminRequests}
-              onApprove={approveAccessRequest}
-              onReject={rejectAccessRequest}
-            />
-          )}
-
           {/* Active SSO Integrations & Connected Applications (SCRUM-64) */}
           <ConnectedAppsSection
             connectedApps={activeConnectedApps}
@@ -546,15 +522,6 @@ export default function MyAppsScreen() {
                 )}
               </View>
             </>
-          )}
-
-          {/* Requested Applications & Zero-Trust Governance Queue (SCRUM-67) */}
-          {!isPersonalWorkspace && accessRequests.length > 0 && (
-            <RequestedAppsSection
-              requests={accessRequests}
-              pendingCount={pendingRequestsCount}
-              onLaunch={handleLaunchApprovedRequest}
-            />
           )}
           </View>
         </ScrollView>

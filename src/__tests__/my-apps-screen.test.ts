@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 test('Main Applications Screen Integration & App Tabs (SCRUM-69)', async (t) => {
   await t.test('formats dynamic header titles by workspace mode', () => {
@@ -65,5 +68,15 @@ test('Main Applications Screen Integration & App Tabs (SCRUM-69)', async (t) => 
     await onRefresh(mockRefreshFn);
     assert.equal(refreshing, false);
     assert.equal(refreshed, true);
+  });
+
+  await t.test('does not render CompanyAdminBanner or RequestedAppsSection on MyAppsScreen', () => {
+    const testDir = path.dirname(fileURLToPath(import.meta.url));
+    const screenSource = readFileSync(
+      path.resolve(testDir, '../screens/my-apps-screen.tsx'),
+      'utf8',
+    );
+    assert.equal(screenSource.includes('CompanyAdminBanner'), false);
+    assert.equal(screenSource.includes('RequestedAppsSection'), false);
   });
 });

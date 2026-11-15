@@ -82,6 +82,14 @@ The application is configured to connect directly to the live deployed Vanguard 
 - **Deployed Backend Integration**: Every authentication challenge, device pairing verification, and push MFA response is securely submitted to `https://backend-vanguard.onrender.com`.
 - **Extended Warm-Up Tolerance**: Network timeout handlers allocate 30 seconds to gracefully accommodate cloud spin-up latency on server cold starts without aborting verification requests prematurely.
 
+### 6. Billing Isolation, Free-Tier Quotas & Web-Mobile Sync (SCRUM-185)
+- **Bidirectional Subscription Synchronization**:
+  - Subscriptions purchased on the Web Dashboard automatically unlock Unlimited Applications and Unlimited 2FA Authenticator accounts on `mobile-vanguard` via `GET /billing/subscription` and `GET /sync/state` (`billingUpdatedAt` watermark + app foreground `AppState` resume).
+  - Subscriptions purchased on Mobile via PayMongo (`expo-web-browser`) trigger backend `SyncService` + Supabase Realtime updates so `frontend-vanguard` reflects Paid features without a manual page reload.
+- **Identical Free-Tier Quotas & 3-Role Isolation**:
+  - Free accounts (`Individual Free Starter` and `Company Free Trial`) enforce max **1 integrated application** and max **3 third-party 2FA accounts**, rolling back `403 billing_limit_reached` server rejections cleanly.
+  - **Individual** users see Personal plans (`Free Starter`, `Personal Pro $5/mo`), **Company Admins** see Organization plans (`Company Free Trial`, `Business Pro $29/mo`, `Enterprise $79/mo`), and **Tenant Employees** see a read-only **Managed by Company Administrator** status panel that unlocks automatically when their Admin upgrades.
+
 ---
 
 ## 📦 Installation & Setup

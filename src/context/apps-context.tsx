@@ -22,7 +22,9 @@ import { AppLauncherService } from '@/services/app-launcher.service';
 import { AuthService } from '@/services/auth.service';
 import vaultService from '@/services/vault.service';
 import { syncCoordinatorService } from '@/services/sync-coordinator.service';
+import { BillingLimitError, isBillingLimitError } from '@/models/billing.models';
 import { AuthContext } from './auth-context';
+import { useOptionalBilling } from './billing-context';
 
 interface AppsContextType {
   isPersonalWorkspace: boolean;
@@ -61,6 +63,8 @@ const AppsContext = createContext<AppsContextType | undefined>(undefined);
 
 export function AppsProvider({ children }: { children: ReactNode }) {
   const authContext = useContext(AuthContext);
+  const billing = useOptionalBilling();
+  const refreshBilling = billing?.refreshSubscription;
   const currentUser = authContext?.currentUser ?? null;
   const userEmail = currentUser?.email;
 
@@ -167,6 +171,8 @@ export function AppsProvider({ children }: { children: ReactNode }) {
               setAccessRequests(
                 await AppsStorageService.syncAccessRequestsWithBackend(token, userEmail),
               );
+            } else if (domain === 'billing' && refreshBilling) {
+              await refreshBilling();
             }
           }),
         );
@@ -343,19 +349,41 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [vaultCredentials]
   );
 
-  // Add Personal Application (SCRUM-178: isolated in personalApps; activeAppsList merges personalApps + enterprise apps)
+  // Add Personal Application (SCRUM-178 & SCRUM-185: enforce Free-tier limit synced with backend)
   const addPersonalApp = useCallback(
     async (input: PersonalAppInput): Promise<SaaSApp> => {
+      const existingSameName = activeAppsList.some(
+        (a) => a.name.toLowerCase().trim() === input.name.toLowerCase().trim(),
+      );
+      if (billing && !existingSameName) {
+        const quota = billing.checkAppQuota(activeAppsList.length);
+        if (!quota.allowed) {
+          billing.openBillingModal(quota.reason);
+          throw new BillingLimitError(
+            quota.reason || 'Free plan application limit reached.',
+            'integrated_apps',
+          );
+        }
+      }
+
       const token = currentUser?.accessToken || (await AuthService.getAccessToken()) || undefined;
       const uid = currentUser?.id;
-      const created = await AppsStorageService.addPersonalApp(input, userEmail, token, uid);
-      setPersonalApps((prev) => [
-        created,
-        ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
-      ]);
-      return created;
+      try {
+        const created = await AppsStorageService.addPersonalApp(input, userEmail, token, uid);
+        setPersonalApps((prev) => [
+          created,
+          ...prev.filter((a) => a.name.toLowerCase().trim() !== created.name.toLowerCase().trim()),
+        ]);
+        return created;
+      } catch (err) {
+        if (isBillingLimitError(err)) {
+          await refreshBilling?.();
+          billing?.openBillingModal(err.message);
+        }
+        throw err;
+      }
     },
-    [currentUser, userEmail]
+    [activeAppsList, billing, currentUser, refreshBilling, userEmail],
   );
 
   // Delete Personal Application (SCRUM-178)
@@ -410,6 +438,13 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     [currentUser, userEmail],
   );
 
+  const refreshApps = useCallback(async () => {
+    await Promise.all([
+      loadData(),
+      refreshBilling ? refreshBilling() : Promise.resolve(),
+    ]);
+  }, [loadData, refreshBilling]);
+
   const value = useMemo(
     () => ({
       isPersonalWorkspace,
@@ -436,7 +471,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       disconnectConnectedApp,
       syncConnectedApps,
       isLoading,
-      refreshApps: loadData,
+      refreshApps,
     }),
     [
       isPersonalWorkspace,

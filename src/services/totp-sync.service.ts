@@ -1,4 +1,5 @@
 import type { TotpAccount } from '../models/vault.models.ts';
+import { BillingLimitError } from '../models/billing.models.ts';
 import { AppsStorageService } from './apps-storage.service.ts';
 
 export interface RemoteTotpListResponse {
@@ -92,10 +93,28 @@ export class TotpSyncService {
       });
       clearTimeout(timeoutId);
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        if (response.status === 403) {
+          const errBody = await response.json().catch(() => ({}));
+          if (
+            errBody?.error === 'billing_limit_reached' ||
+            errBody?.code === 'PAYWALL_REQUIRED' ||
+            errBody?.upgradeRequired
+          ) {
+            throw new BillingLimitError(
+              errBody?.message || 'Free plan TOTP limit reached. Upgrade via PayMongo to unlock unlimited 2FA.',
+              'totp_accounts',
+            );
+          }
+        }
+        return null;
+      }
       const body = await response.json();
       return body?.account ? normalizeRemoteTotp(body.account) : null;
-    } catch {
+    } catch (err) {
+      if (err instanceof BillingLimitError) {
+        throw err;
+      }
       return null;
     }
   }
@@ -132,10 +151,28 @@ export class TotpSyncService {
       });
       clearTimeout(timeoutId);
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        if (response.status === 403) {
+          const errBody = await response.json().catch(() => ({}));
+          if (
+            errBody?.error === 'billing_limit_reached' ||
+            errBody?.code === 'PAYWALL_REQUIRED' ||
+            errBody?.upgradeRequired
+          ) {
+            throw new BillingLimitError(
+              errBody?.message || 'Free plan TOTP limit reached. Upgrade via PayMongo to unlock unlimited 2FA.',
+              'totp_accounts',
+            );
+          }
+        }
+        return null;
+      }
       const body = await response.json();
       return body?.account ? normalizeRemoteTotp(body.account) : null;
-    } catch {
+    } catch (err) {
+      if (err instanceof BillingLimitError) {
+        throw err;
+      }
       return null;
     }
   }

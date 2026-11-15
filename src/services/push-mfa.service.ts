@@ -468,6 +468,8 @@ export class PushMfaService {
       };
     }
 
+    let liveOutcome: { redirectUrl?: string; awaitingAdminApproval?: boolean } | undefined;
+
     if (isLive) {
       const outcome = await this.sendLiveResponse({
         challengeId: id,
@@ -484,6 +486,10 @@ export class PushMfaService {
           error: outcome.error,
         };
       }
+      liveOutcome = {
+        redirectUrl: outcome.redirectUrl,
+        awaitingAdminApproval: outcome.awaitingAdminApproval,
+      };
     } else if (numberMatchingRequired) {
       const expected = this.activeRequest.numberMatchingChallenge?.correctCode;
       if (expected === undefined || options?.selectedCode !== expected) {
@@ -522,6 +528,8 @@ export class PushMfaService {
       action: 'approved',
       biometricVerified: options?.biometricVerified ?? true,
       numberMatched: numberMatchingRequired ? true : undefined,
+      redirectUrl: liveOutcome?.redirectUrl,
+      awaitingAdminApproval: liveOutcome?.awaitingAdminApproval,
     };
   }
 
@@ -531,7 +539,10 @@ export class PushMfaService {
     action: 'approved';
     selectedCode?: number;
     biometricVerified: boolean;
-  }): Promise<{ ok: true } | { ok: false; error: string }> {
+  }): Promise<
+    | { ok: true; redirectUrl?: string; awaitingAdminApproval?: boolean }
+    | { ok: false; error: string }
+  > {
     try {
       const headers = await this.buildAuthHeaders(true);
       const res = await fetch(`${getApiBaseUrl()}/oauth/mfa/push/respond`, {
@@ -540,7 +551,20 @@ export class PushMfaService {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        return { ok: true };
+        let redirectUrl: string | undefined;
+        let awaitingAdminApproval: boolean | undefined;
+        try {
+          const json = await res.json();
+          if (typeof json?.redirectUrl === 'string' && json.redirectUrl.trim().length > 0) {
+            redirectUrl = json.redirectUrl.trim();
+          }
+          if (typeof json?.awaitingAdminApproval === 'boolean') {
+            awaitingAdminApproval = json.awaitingAdminApproval;
+          }
+        } catch {
+          // Body may be empty in mock or legacy responses.
+        }
+        return { ok: true, redirectUrl, awaitingAdminApproval };
       }
       let message = `The server rejected this response (HTTP ${res.status}).`;
       try {

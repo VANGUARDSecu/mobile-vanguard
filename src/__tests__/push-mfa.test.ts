@@ -548,4 +548,56 @@ test('Out-of-Band Push Notification MFA Approval UI (SCRUM-21)', async (t) => {
       }
     }
   );
+
+  await t.test(
+    '16. approveRequest forwards redirectUrl and awaitingAdminApproval from live push respond API (SCRUM-205)',
+    async () => {
+      initService();
+      const originalFetch = globalThis.fetch;
+
+      globalThis.fetch = (async () => {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            action: 'approved',
+            awaitingAdminApproval: false,
+            code: 'vg_code_mob_205',
+            redirectUrl: 'exp://192.168.1.25:8081/--/oauth/callback?code=vg_code_mob_205&state=st_205',
+          }),
+        } as any;
+      }) as any;
+
+      try {
+        (service as any).activeRequest = {
+          id: 'push_mfa_mob_205',
+          appName: 'Dummy Mobile App',
+          appIcon: '📱',
+          category: 'Mobile App',
+          ipAddress: '127.0.0.1',
+          location: { city: 'Local', country: 'Dev', flagEmoji: '🛡️' },
+          device: 'Expo Go on Android',
+          timestamp: new Date().toISOString(),
+          validitySeconds: 60,
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+          numberMatchingChallenge: { enabled: true, options: [12, 45, 78] },
+          status: 'pending',
+        };
+
+        const approveRes = await service.approveRequest('push_mfa_mob_205', {
+          selectedCode: 45,
+          biometricVerified: true,
+        });
+
+        assert.equal(approveRes.success, true);
+        assert.equal(
+          approveRes.redirectUrl,
+          'exp://192.168.1.25:8081/--/oauth/callback?code=vg_code_mob_205&state=st_205'
+        );
+        assert.equal(approveRes.awaitingAdminApproval, false);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
 });

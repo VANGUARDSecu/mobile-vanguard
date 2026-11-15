@@ -40,6 +40,8 @@ export interface PushApprovalResult {
   action: 'approved' | 'denied' | 'fraud_reported' | 'expired' | 'canceled';
   biometricVerified?: boolean;
   numberMatched?: boolean;
+  redirectUrl?: string;
+  awaitingAdminApproval?: boolean;
   error?: string;
 }
 

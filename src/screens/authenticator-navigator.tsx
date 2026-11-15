@@ -26,6 +26,14 @@ import { getAuthenticatorBackScreen } from '@/utils/navigation-guard';
 
 export type { AuthenticatorScreenName };
 
+const ALLOWED_MOBILE_SSO_RETURN_SCHEMES = ['vanguard-dummy://', 'exp://'];
+
+function isCustomMobileSsoCallbackUrl(url: string | undefined): url is string {
+  if (!url) return false;
+  const trimmed = url.trim().toLowerCase();
+  return ALLOWED_MOBILE_SSO_RETURN_SCHEMES.some((prefix) => trimmed.startsWith(prefix));
+}
+
 export interface AuthenticatorNavigatorProps {
   initialScreen?: AuthenticatorScreenName;
   initialAccount?: TotpAccount | null;
@@ -347,6 +355,12 @@ export function AuthenticatorNavigator({
           isLockedRef.current = false;
           setIsLocked(false);
           setAuthError(null);
+          if (
+            !result.awaitingAdminApproval &&
+            isCustomMobileSsoCallbackUrl(result.redirectUrl)
+          ) {
+            void Linking.openURL(result.redirectUrl).catch(() => undefined);
+          }
           return { success: true };
         }}
         onDeny={(isFraud) => {

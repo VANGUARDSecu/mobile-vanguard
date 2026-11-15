@@ -6,6 +6,8 @@ import { useColorScheme, View, Text, ActivityIndicator, StyleSheet } from 'react
 import AppTabs from '@/components/app-tabs';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { AppsProvider } from '@/context/apps-context';
+import { BillingProvider } from '@/context/billing-context';
+import { BillingModal } from '@/components/billing/billing-modal';
 import LoginScreen from './login';
 import { CyberColors } from '@/constants/cyber-theme';
 
@@ -42,9 +44,12 @@ function RootNavigator() {
   }
 
   return (
-    <AppsProvider>
-      <AppTabs />
-    </AppsProvider>
+    <BillingProvider>
+      <AppsProvider>
+        <AppTabs />
+        <BillingModal />
+      </AppsProvider>
+    </BillingProvider>
   );
 }
 

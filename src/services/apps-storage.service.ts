@@ -7,6 +7,7 @@ import type {
   PersonalAppInput,
   AppItemCategory,
 } from '../models/apps.models.ts';
+import { BillingLimitError, isBillingLimitError } from '../models/billing.models.ts';
 
 const STORAGE_KEYS = {
   PERSONAL_APPS: '@vanguard_personal_apps',
@@ -372,11 +373,11 @@ export class AppsStorageService {
       }
     }
 
-    // SCRUM-178: Push personal app to /apps/personal so web frontend receives it
+    // SCRUM-178 & SCRUM-185: Push personal app to /apps/personal and honor Free-tier 403 paywall
     if (this.isLiveToken(token)) {
       try {
         const baseUrl = this.getBackendApiUrl();
-        fetch(`${baseUrl}/apps/personal`, {
+        const response = await fetch(`${baseUrl}/apps/personal`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -393,9 +394,26 @@ export class AppsStorageService {
             assignedUsername: newApp.assignedUsername,
             assignedPassword: newApp.assignedPassword,
           }),
-        }).catch(() => {});
-      } catch {
-        // Non-blocking
+        });
+        if (response.status === 403) {
+          const errBody = await response.json().catch(() => ({}));
+          if (
+            errBody?.error === 'billing_limit_reached' ||
+            errBody?.code === 'PAYWALL_REQUIRED' ||
+            errBody?.upgradeRequired
+          ) {
+            await this.savePersonalApps(apps, email);
+            throw new BillingLimitError(
+              errBody?.message || 'Free plan integrated app limit reached. Upgrade via PayMongo to unlock unlimited apps.',
+              'integrated_apps',
+            );
+          }
+        }
+      } catch (err) {
+        if (isBillingLimitError(err)) {
+          throw err;
+        }
+        // Non-blocking network fallback for offline usage
       }
     }
 

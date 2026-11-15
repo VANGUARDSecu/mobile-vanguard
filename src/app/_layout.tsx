@@ -14,7 +14,9 @@ import AppTabs from '@/components/app-tabs';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { AppsProvider } from '@/context/apps-context';
 import { BillingProvider } from '@/context/billing-context';
+import { GuideProvider } from '@/context/guide-context';
 import { BillingModal } from '@/components/billing/billing-modal';
+import { NewUserGuideModal } from '@/components/cyber/new-user-guide-modal';
 import { SsoConsentModal } from '@/components/cyber/sso-consent-modal';
 import { AuthService } from '@/services/auth.service';
 import {
@@ -147,6 +149,7 @@ function RootNavigator() {
     <View style={styles.rootContainer}>
       <AppTabs />
       <BillingModal />
+      <NewUserGuideModal />
       <SsoConsentModal
         visible={consentModalVisible && pendingOAuthRequest !== null}
         request={pendingOAuthRequest}
@@ -175,9 +178,11 @@ export default function TabLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthProvider>
         <BillingProvider>
-          <AppsProvider>
-            <RootNavigator />
-          </AppsProvider>
+          <GuideProvider>
+            <AppsProvider>
+              <RootNavigator />
+            </AppsProvider>
+          </GuideProvider>
         </BillingProvider>
       </AuthProvider>
     </ThemeProvider>

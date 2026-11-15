@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 
 import { useAuth } from '@/context/auth-context';
+import { useOptionalGuide } from '@/context/guide-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { launchGoogleBrowserOAuthSession } from '@/components/cyber/google-account-picker-modal';
 import { GoogleLogo } from '@/components/cyber/google-logo';
@@ -31,6 +32,7 @@ const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
 
 export default function LoginScreen() {
   const { login, loginWithGoogle } = useAuth();
+  const guide = useOptionalGuide();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -214,6 +216,23 @@ export default function LoginScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
+            {guide ? (
+              <View style={styles.guideHeaderRow}>
+                <Pressable
+                  onPress={() => guide.openFromLogin('company-admin')}
+                  style={({ pressed }) => [
+                    styles.guideTriggerBtn,
+                    pressed && styles.guideTriggerBtnPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open Quick Start Guide"
+                  testID="login-guide-btn"
+                >
+                  <Text style={styles.guideTriggerText}>? Guide</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
             {/* Brand Header */}
             <View style={styles.brandContainer}>
               <View style={styles.shieldBadge}>
@@ -391,6 +410,29 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 40,
     alignItems: 'center',
+  },
+  guideHeaderRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 8,
+  },
+  guideTriggerBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: CyberRadius.full,
+    backgroundColor: CyberColors.cyanGlow,
+    borderColor: CyberColors.cyanMuted,
+    borderWidth: 1,
+    cursor: 'pointer' as any,
+  },
+  guideTriggerBtnPressed: {
+    backgroundColor: 'rgba(0, 229, 255, 0.28)',
+  },
+  guideTriggerText: {
+    color: CyberColors.cyan,
+    fontSize: 12,
+    fontWeight: '800',
   },
   brandContainer: {
     alignItems: 'center',

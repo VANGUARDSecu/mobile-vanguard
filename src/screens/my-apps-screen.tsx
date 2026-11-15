@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import { AppLauncherService } from '@/services/app-launcher.service';
 import { useAuth } from '@/context/auth-context';
 import { useApps } from '@/context/apps-context';
 import { useOptionalBilling } from '@/context/billing-context';
+import { useOptionalGuide } from '@/context/guide-context';
+import { resolveGuideRoleFromUser } from '@/utils/new-user-guide';
 import { isBillingLimitError } from '@/models/billing.models';
 import LoginScreen from '@/app/login';
 import {
@@ -41,6 +43,7 @@ import {
 export default function MyAppsScreen() {
   const { currentUser, isAuthenticated, isInitializing: authInitializing, logout } = useAuth();
   const billing = useOptionalBilling();
+  const guide = useOptionalGuide();
   const {
     isPersonalWorkspace,
     isCompanyAdmin,
@@ -69,6 +72,20 @@ export default function MyAppsScreen() {
   const [showAddPersonalAppModal, setShowAddPersonalAppModal] = useState(false);
   const [showRequestAppModal, setShowRequestAppModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const guideUserKey = currentUser?.email || currentUser?.id || null;
+  const guideRole = resolveGuideRoleFromUser({
+    accountType: isPersonalWorkspace ? 'individual' : 'company',
+    role: isCompanyAdmin ? 'admin' : 'user',
+  });
+  const autoOpenGuide = guide?.autoOpenIfFirstDashboardVisit;
+
+  useEffect(() => {
+    if (!isAuthenticated || authInitializing || !guideUserKey || !autoOpenGuide) {
+      return;
+    }
+    void autoOpenGuide(guideUserKey, guideRole);
+  }, [isAuthenticated, authInitializing, guideUserKey, guideRole, autoOpenGuide]);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -200,24 +217,40 @@ export default function MyAppsScreen() {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.logoutBtn,
-                isLoggingOut && styles.logoutBtnDisabled,
-              ]}
-              onPress={handleLogout}
-              disabled={isLoggingOut}
-              activeOpacity={0.7}
-              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-              accessibilityRole="button"
-              accessibilityLabel="Sign Out"
-            >
-              {isLoggingOut ? (
-                <ActivityIndicator size="small" color="#f87171" />
-              ) : (
-                <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.sessionActionsRow}>
+              {guide ? (
+                <TouchableOpacity
+                  style={styles.guideHeaderBtn}
+                  onPress={() => void guide.openFromDashboard(guideUserKey, guideRole)}
+                  activeOpacity={0.75}
+                  hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open Quick Start Guide"
+                  testID="dashboard-guide-btn"
+                >
+                  <Text style={styles.guideHeaderBtnText}>? Guide</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.logoutBtn,
+                  isLoggingOut && styles.logoutBtnDisabled,
+                ]}
+                onPress={handleLogout}
+                disabled={isLoggingOut}
+                activeOpacity={0.7}
+                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                accessibilityRole="button"
+                accessibilityLabel="Sign Out"
+              >
+                {isLoggingOut ? (
+                  <ActivityIndicator size="small" color="#f87171" />
+                ) : (
+                  <Text style={styles.logoutBtnText}>Sign Out ⎋</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -642,6 +675,28 @@ const styles = StyleSheet.create({
     color: CyberColors.textMuted,
     fontSize: 11,
     marginTop: 1,
+  },
+  sessionActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  guideHeaderBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: CyberRadius.sm,
+    backgroundColor: CyberColors.cyanGlow,
+    borderColor: CyberColors.cyanMuted,
+    borderWidth: 1,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer' as any,
+  },
+  guideHeaderBtnText: {
+    color: CyberColors.cyan,
+    fontSize: 11.5,
+    fontWeight: '800',
   },
   logoutBtn: {
     paddingHorizontal: 12,

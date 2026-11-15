@@ -421,19 +421,25 @@ export class VaultService {
     const liveToken = await this.resolveLiveToken();
     if (liveToken) {
       this.pendingCreateIds.add(newAccount.id);
+      let pushed: TotpAccount | null = null;
       try {
-        await TotpSyncService.pushUpsertTotp(newAccount, liveToken);
+        pushed = await TotpSyncService.pushUpsertTotp(newAccount, liveToken);
       } catch (err) {
         if (isBillingLimitError(err)) {
           // Roll back local optimism so Free tier limit stays aligned with backend & web
+          this.pendingCreateIds.delete(newAccount.id);
           this.memoryCache = this.memoryCache.filter((a) => a.id !== newAccount.id);
           await this.persistEncryptedAccounts(this.memoryCache);
           this.notifyListeners();
           throw err;
         }
-      } finally {
+      }
+      if (pushed) {
         this.pendingCreateIds.delete(newAccount.id);
       }
+    } else {
+      // Offline or awaiting live token: preserve until next syncWithBackend uploads it
+      this.pendingCreateIds.add(newAccount.id);
     }
 
     return { ...newAccount };
@@ -551,9 +557,25 @@ export class VaultService {
       if (
         this.pendingCreateIds.has(localAcc.id) &&
         !this.pendingDeleteIds.has(localAcc.id) &&
+        !remote.deletedIds.includes(localAcc.id) &&
         !reconciled.some((s) => s.id === localAcc.id)
       ) {
+        try {
+          const uploaded = await TotpSyncService.pushUpsertTotp(localAcc, token);
+          if (uploaded) {
+            this.pendingCreateIds.delete(localAcc.id);
+            reconciled.unshift(uploaded);
+            continue;
+          }
+        } catch (err) {
+          if (isBillingLimitError(err)) {
+            this.pendingCreateIds.delete(localAcc.id);
+            continue;
+          }
+        }
         reconciled.unshift(localAcc);
+      } else if (remote.deletedIds.includes(localAcc.id)) {
+        this.pendingCreateIds.delete(localAcc.id);
       }
     }
 

@@ -186,6 +186,8 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       // SCRUM-178, SCRUM-182 & SCRUM-199: Authoritative backend sync across TOTP, Vault, Apps, Devices, Audit & Posture
       if (AppsStorageService.isLiveToken(token)) {
         try {
+          vaultService.setCurrentUserEmail(userEmail || null);
+          vaultService.setAuthTokenProvider(async () => token);
           const [syncedPersonal, syncedApps, syncedRequests, syncedConnected, devRes, logs, posture, admin] =
             await Promise.all([
               AppsStorageService.syncPersonalAppsWithBackend(token, userEmail),
@@ -248,6 +250,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     const getToken = async () =>
       currentUser?.accessToken || (await AuthService.getAccessToken());
 
+    vaultService.setCurrentUserEmail(userEmail || null);
     vaultService.setAuthTokenProvider(getToken);
     syncCoordinatorService.resetWatermarks();
     syncCoordinatorService.configure({

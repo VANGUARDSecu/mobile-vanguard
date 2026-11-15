@@ -41,7 +41,7 @@ export class TotpSyncService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const response = await fetch(`${baseUrl}/totp-accounts`, {
         method: 'GET',
         headers: {
@@ -70,7 +70,7 @@ export class TotpSyncService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const response = await fetch(`${baseUrl}/totp-accounts`, {
         method: 'POST',
         headers: {
@@ -128,7 +128,7 @@ export class TotpSyncService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const accountName = updates.accountName ?? updates.name;
       const response = await fetch(`${baseUrl}/totp-accounts/${encodeURIComponent(id)}`, {
         method: 'PATCH',
@@ -182,7 +182,7 @@ export class TotpSyncService {
     try {
       const baseUrl = AppsStorageService.getBackendApiUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const response = await fetch(`${baseUrl}/totp-accounts/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: {

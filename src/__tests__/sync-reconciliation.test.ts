@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { VaultService } from '../services/vault.service.ts';
-import { MockKeychainProvider } from '../services/secure-storage.provider.ts';
+import { MockKeychainProvider, sanitizeSecureStoreKey } from '../services/secure-storage.provider.ts';
 import { AppsStorageService } from '../services/apps-storage.service.ts';
 import { SyncCoordinatorService } from '../services/sync-coordinator.service.ts';
 
@@ -237,6 +237,70 @@ test('Cross-Platform Sync & Reconciliation (SCRUM-178)', async (t) => {
       const changed = await coordinator.checkOnce(false);
       assert.deepEqual(changed, ['totp', 'connectedApps']);
       assert.deepEqual(observed, [['totp', 'connectedApps']]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  await t.test('4. sanitizes SecureStore keys for Android/iOS character rules', async () => {
+    const validKeyPattern = /^[A-Za-z0-9._-]+$/;
+
+    const masterKey = sanitizeSecureStoreKey('@vanguard:keychain_master_key_v1');
+    const userVaultKey = sanitizeSecureStoreKey('@vanguard:encrypted_totp_vault_user+test@gmail.com');
+    const emptyKey = sanitizeSecureStoreKey('');
+
+    assert.match(masterKey, validKeyPattern);
+    assert.match(userVaultKey, validKeyPattern);
+    assert.match(emptyKey, validKeyPattern);
+    assert.notEqual(masterKey, userVaultKey);
+  });
+
+  await t.test('5. retains pending TOTP create on transient upload failure and retries on syncWithBackend', async () => {
+    const originalFetch = globalThis.fetch;
+
+    let postAttempts = 0;
+    const uploadedIds: string[] = [];
+
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const method = (init?.method || 'GET').toUpperCase();
+
+      if (url.includes('/totp-accounts') && method === 'POST') {
+        postAttempts += 1;
+        if (postAttempts === 1) {
+          return new Response(JSON.stringify({ message: 'temporary failure' }), { status: 500 });
+        }
+        const parsed = JSON.parse(String(init?.body || '{}'));
+        if (parsed.id) uploadedIds.push(parsed.id);
+        return new Response(JSON.stringify({ ...parsed, createdAt: Date.now() }), { status: 201 });
+      }
+
+      if (url.includes('/totp-accounts') && method === 'GET') {
+        return new Response(JSON.stringify({ accounts: [], deletedIds: [] }), { status: 200 });
+      }
+
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const testVault = new VaultService(new MockKeychainProvider());
+      testVault.setCurrentUserEmail('user+sync@example.com');
+      testVault.setAuthTokenProvider(async () => 'live.jwt.token');
+
+      const saved = await testVault.saveAccount({
+        issuer: 'GitHub',
+        accountName: 'user@example.com',
+        secret: 'JBSWY3DPEHPK3PXP',
+      });
+
+      assert.equal(postAttempts, 1);
+
+      // Next sync should retry the pending create instead of dropping it
+      await testVault.syncWithBackend('live.jwt.token');
+      const accounts = await testVault.getAccounts();
+      assert.equal(postAttempts, 2);
+      assert.ok(uploadedIds.includes(saved.id));
+      assert.ok(accounts.some((acc) => acc.id === saved.id));
     } finally {
       globalThis.fetch = originalFetch;
     }

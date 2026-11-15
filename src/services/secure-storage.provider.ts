@@ -10,6 +10,20 @@ export class SecureStorageError extends Error {
 }
 
 /**
+ * Normalizes storage keys to satisfy expo-secure-store's strict character set
+ * requirement on Android & iOS: alphanumeric characters, ".", "-", and "_" only.
+ */
+export function sanitizeSecureStoreKey(rawKey: string): string {
+  const normalized = (rawKey || '')
+    .trim()
+    .replace(/@/g, '_at_')
+    .replace(/:/g, '_')
+    .replace(/\+/g, '_plus_')
+    .replace(/[^A-Za-z0-9._-]/g, '_');
+  return normalized.length > 0 ? normalized : 'vanguard_default_key';
+}
+
+/**
  * MockKeychainProvider
  * Simulates hardware-backed iOS Keychain / Android Keystore for unit tests and headless environments.
  * Must be explicitly selected for testing; never used as a silent production fallback.
@@ -81,28 +95,31 @@ export class ExpoSecureStoreAdapter implements ISecureStorageProvider {
 
   async getItemAsync(key: string): Promise<string | null> {
     const mod = await this.getModule();
+    const safeKey = sanitizeSecureStoreKey(key);
     try {
-      return await mod.getItemAsync(key);
+      return await mod.getItemAsync(safeKey);
     } catch (err: any) {
-      throw new SecureStorageError(`Failed to read key "${key}" from secure storage: ${err?.message}`, err);
+      throw new SecureStorageError(`Failed to read key "${safeKey}" from secure storage: ${err?.message}`, err);
     }
   }
 
   async setItemAsync(key: string, value: string): Promise<void> {
     const mod = await this.getModule();
+    const safeKey = sanitizeSecureStoreKey(key);
     try {
-      await mod.setItemAsync(key, value);
+      await mod.setItemAsync(safeKey, value);
     } catch (err: any) {
-      throw new SecureStorageError(`Failed to write key "${key}" to secure storage: ${err?.message}`, err);
+      throw new SecureStorageError(`Failed to write key "${safeKey}" to secure storage: ${err?.message}`, err);
     }
   }
 
   async deleteItemAsync(key: string): Promise<void> {
     const mod = await this.getModule();
+    const safeKey = sanitizeSecureStoreKey(key);
     try {
-      await mod.deleteItemAsync(key);
+      await mod.deleteItemAsync(safeKey);
     } catch (err: any) {
-      throw new SecureStorageError(`Failed to delete key "${key}" from secure storage: ${err?.message}`, err);
+      throw new SecureStorageError(`Failed to delete key "${safeKey}" from secure storage: ${err?.message}`, err);
     }
   }
 

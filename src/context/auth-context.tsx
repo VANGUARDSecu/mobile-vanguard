@@ -18,7 +18,10 @@ import type {
   SignupPayload,
   SignupResult,
 } from '../models/auth.models.ts';
-import { AuthService } from '../services/auth.service.ts';
+import {
+  AuthService,
+  type GoogleAccountProfile,
+} from '../services/auth.service.ts';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
@@ -31,6 +34,7 @@ interface AuthContextType {
   verifyTotp: (request: VerifyTotpRequest) => Promise<AuthUser>;
   resendOtp: (request: ResendOtpRequest) => Promise<ResendOtpResponse>;
   loginWithSSO: (email?: string) => Promise<AuthUser>;
+  loginWithGoogle: (account: GoogleAccountProfile) => Promise<LoginResult>;
   logout: () => Promise<void>;
 }
 
@@ -121,6 +125,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loginWithGoogle = useCallback(
+    async (account: GoogleAccountProfile): Promise<LoginResult> => {
+      setIsLoading(true);
+      try {
+        const result = await AuthService.signInWithGoogle(account);
+        if (!result.requireMfa) {
+          setCurrentUser(result.user);
+        }
+        return result;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
   const logout = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     try {
@@ -143,9 +163,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyTotp,
       resendOtp,
       loginWithSSO,
+      loginWithGoogle,
       logout,
     }),
-    [currentUser, isLoading, isInitializing, login, signup, verifyOtp, verifyTotp, resendOtp, loginWithSSO, logout]
+    [
+      currentUser,
+      isLoading,
+      isInitializing,
+      login,
+      signup,
+      verifyOtp,
+      verifyTotp,
+      resendOtp,
+      loginWithSSO,
+      loginWithGoogle,
+      logout,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

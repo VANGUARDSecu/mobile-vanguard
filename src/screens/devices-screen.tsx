@@ -14,15 +14,14 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 import { PushApprovalModal } from '@/components/cyber/push-approval-modal';
+import { QrCameraScanner } from '@/components/cyber/qr-camera-scanner';
 import { PushApprovalRequest } from '@/models/push-mfa.models';
 import pushMfaService from '@/services/push-mfa.service';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
-import { AppsStorageService } from '@/services/apps-storage.service';
 import { parseDevicePairingQrPayload } from '@/utils/pairing-qr';
 
 const getPairedDeviceStorageKey = (email?: string | null): string => {
@@ -40,7 +39,7 @@ export interface PairedDeviceMetadata {
 }
 
 export default function DevicesScreen() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser } = useAuth();
 
   // Biometrics and Hardware Attestation State
   const [biometricInfo, setBiometricInfo] = useState<{
@@ -61,9 +60,7 @@ export default function DevicesScreen() {
   const [pairingSuccess, setPairingSuccess] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [pairedDevice, setPairedDevice] = useState<PairedDeviceMetadata | null>(null);
-  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
-  const [hasScannedQr, setHasScannedQr] = useState(false);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [showQrScannerModal, setShowQrScannerModal] = useState(false);
 
   // Push MFA State
   const [activePushRequest, setActivePushRequest] = useState<PushApprovalRequest | null>(null);
@@ -81,13 +78,17 @@ export default function DevicesScreen() {
     });
 
     // Load paired device from user-scoped local storage first
-    setPairedDevice(null);
     AsyncStorage.getItem(storageKey)
       .then((raw) => {
-        if (isMounted && raw) {
+        if (!isMounted) return;
+        if (raw) {
           try {
             setPairedDevice(JSON.parse(raw));
-          } catch {}
+          } catch {
+            setPairedDevice(null);
+          }
+        } else {
+          setPairedDevice(null);
         }
       })
       .catch(() => {});
@@ -234,52 +235,24 @@ export default function DevicesScreen() {
     }
   };
 
-  const handleOpenQrScanner = async () => {
+  const handleQrPairingScanned = async (rawPayload: string) => {
+    setShowQrScannerModal(false);
     setPairingError(null);
     setPairingSuccess(null);
-    setHasScannedQr(false);
 
-    if (!currentUser?.email?.trim()) {
-      setPairingError('Please sign in with your Vanguard account before scanning a pairing QR code.');
-      return;
-    }
-
-    if (!cameraPermission?.granted) {
-      const result = await requestCameraPermission();
-      if (!result.granted) {
-        const message =
-          'Camera access is required to scan the Mobile Integration QR code. You can also enter the VG-XXXX-XXXX key manually.';
-        setPairingError(message);
-        if (!result.canAskAgain && Platform.OS !== 'web') {
-          Alert.alert('Camera Permission Needed', message);
-        }
-        return;
-      }
-    }
-
-    setIsQrScannerOpen(true);
-  };
-
-  const handleBarcodeScanned = (result: BarcodeScanningResult) => {
-    if (hasScannedQr || !result?.data) return;
-    setHasScannedQr(true);
-
-    const parsed = parseDevicePairingQrPayload(result.data);
+    const parsed = parseDevicePairingQrPayload(rawPayload);
     if (!parsed.valid) {
-      setIsQrScannerOpen(false);
       setPairingError(parsed.error || 'Unable to read pairing QR code.');
       return;
     }
 
     const activeEmail = currentUser?.email?.trim().toLowerCase();
     if (!activeEmail) {
-      setIsQrScannerOpen(false);
       setPairingError('Please sign in with your Vanguard account before scanning a pairing QR code.');
       return;
     }
 
     if (parsed.email && parsed.email !== activeEmail) {
-      setIsQrScannerOpen(false);
       const mismatchMsg =
         `This QR code belongs to ${parsed.email}, while your mobile app is signed in as ${currentUser?.email}. Switch accounts or generate a new QR.`;
       notifyAccountMismatch(mismatchMsg);
@@ -288,8 +261,7 @@ export default function DevicesScreen() {
 
     const resolvedKey = parsed.pairingKey || parsed.pairingToken || '';
     setPairingKeyInput(resolvedKey);
-    setIsQrScannerOpen(false);
-    void handlePairDevice(resolvedKey);
+    await handlePairDevice(resolvedKey);
   };
 
   const handleUnlinkDevice = async () => {
@@ -521,19 +493,25 @@ export default function DevicesScreen() {
                   </View>
                 ) : null}
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.scanQrBtn,
-                    pressed && styles.pairActionBtnPressed,
-                    isPairing && styles.pairActionBtnDisabled,
-                  ]}
-                  onPress={() => void handleOpenQrScanner()}
+                <TouchableOpacity
+                  style={styles.scanQrBtn}
+                  onPress={() => {
+                    setPairingError(null);
+                    setPairingSuccess(null);
+                    if (!currentUser?.email?.trim()) {
+                      setPairingError('Please sign in with your Vanguard account before scanning a pairing QR code.');
+                      return;
+                    }
+                    setShowQrScannerModal(true);
+                  }}
                   disabled={isPairing}
+                  activeOpacity={0.8}
                   accessibilityRole="button"
-                  accessibilityLabel="Scan Integration QR Code"
+                  accessibilityLabel="Scan Dashboard Pairing QR Code"
+                  testID="scan-pairing-qr-button"
                 >
                   <Text style={styles.scanQrBtnText}>📷 Scan Mobile Integration QR</Text>
-                </Pressable>
+                </TouchableOpacity>
 
                 <View style={styles.orDividerRow}>
                   <View style={styles.orDividerLine} />
@@ -542,7 +520,7 @@ export default function DevicesScreen() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Dashboard Pairing Key</Text>
+                  <Text style={styles.inputLabel}>Or Enter Dashboard Pairing Key</Text>
                   <TextInput
                     style={styles.input}
                     value={pairingKeyInput}
@@ -666,52 +644,25 @@ export default function DevicesScreen() {
         onClose={() => setActivePushRequest(null)}
       />
 
-      {/* QR Code Scanner Modal for Frontend Mobile Integration */}
+      {/* Live Camera QR Scanner Modal for Web Dashboard Pairing */}
       <Modal
-        visible={isQrScannerOpen}
+        visible={showQrScannerModal}
         animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setIsQrScannerOpen(false)}
+        transparent
+        onRequestClose={() => setShowQrScannerModal(false)}
       >
-        <View style={styles.scannerScreen}>
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={hasScannedQr ? undefined : handleBarcodeScanned}
-          />
-          <SafeAreaView style={styles.scannerOverlay} edges={['top', 'bottom']}>
-            <View style={styles.scannerHeader}>
-              <Text style={styles.scannerBadge}>MOBILE INTEGRATION</Text>
-              <Text style={styles.scannerTitle}>Scan Vanguard Dashboard QR</Text>
-              <Text style={styles.scannerSubtitle}>
-                Point your camera at the Pair Vanguard Mobile Authenticator QR code in Account Security.
-              </Text>
-            </View>
-
-            <View style={styles.scannerFrameContainer}>
-              <View style={styles.scannerFrame}>
-                <View style={[styles.scannerCorner, styles.cornerTopLeft]} />
-                <View style={[styles.scannerCorner, styles.cornerTopRight]} />
-                <View style={[styles.scannerCorner, styles.cornerBottomLeft]} />
-                <View style={[styles.scannerCorner, styles.cornerBottomRight]} />
-              </View>
-            </View>
-
-            <View style={styles.scannerFooter}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.scannerCancelBtn,
-                  pressed && styles.pairActionBtnPressed,
-                ]}
-                onPress={() => setIsQrScannerOpen(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close QR Scanner"
-              >
-                <Text style={styles.scannerCancelText}>Cancel & Enter Key Manually</Text>
-              </Pressable>
-            </View>
-          </SafeAreaView>
+        <View style={styles.qrModalBackdrop}>
+          <View style={styles.qrModalCard}>
+            <QrCameraScanner
+              title="SCAN WEB DASHBOARD PAIRING QR"
+              subtitle="Open Vanguard Web Dashboard → Account Security → Pair Vanguard Mobile Authenticator and scan the QR code."
+              onScan={(data) => {
+                void handleQrPairingScanned(data);
+              }}
+              onCancel={() => setShowQrScannerModal(false)}
+              testID="device-pairing-qr-scanner"
+            />
+          </View>
         </View>
       </Modal>
     </View>
@@ -1124,6 +1075,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 10,
   },
   scanQrBtnText: {
     color: CyberColors.cyan,
@@ -1136,6 +1088,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginVertical: 4,
+    marginBottom: 10,
   },
   orDividerLine: {
     flex: 1,
@@ -1148,103 +1101,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.1,
   },
-  scannerScreen: {
+  qrModalBackdrop: {
     flex: 1,
-    backgroundColor: '#020617',
-  },
-  scannerOverlay: {
-    flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 20,
-    backgroundColor: 'rgba(2, 6, 23, 0.48)',
-  },
-  scannerHeader: {
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  scannerBadge: {
-    color: CyberColors.cyan,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.6,
-    marginBottom: 6,
-  },
-  scannerTitle: {
-    color: CyberColors.textPrimary,
-    fontSize: 20,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  scannerSubtitle: {
-    color: CyberColors.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    maxWidth: 300,
-  },
-  scannerFrameContainer: {
-    alignItems: 'center',
+    backgroundColor: 'rgba(5, 10, 20, 0.88)',
     justifyContent: 'center',
-  },
-  scannerFrame: {
-    width: 240,
-    height: 240,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(6, 182, 212, 0.35)',
-    backgroundColor: 'transparent',
-    position: 'relative',
-  },
-  scannerCorner: {
-    position: 'absolute',
-    width: 28,
-    height: 28,
-    borderColor: CyberColors.cyan,
-  },
-  cornerTopLeft: {
-    top: -2,
-    left: -2,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    borderTopLeftRadius: 14,
-  },
-  cornerTopRight: {
-    top: -2,
-    right: -2,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    borderTopRightRadius: 14,
-  },
-  cornerBottomLeft: {
-    bottom: -2,
-    left: -2,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-    borderBottomLeftRadius: 14,
-  },
-  cornerBottomRight: {
-    bottom: -2,
-    right: -2,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-    borderBottomRightRadius: 14,
-  },
-  scannerFooter: {
-    marginBottom: 16,
-  },
-  scannerCancelBtn: {
-    backgroundColor: 'rgba(15, 23, 42, 0.92)',
-    borderColor: 'rgba(148, 163, 184, 0.4)',
-    borderWidth: 1,
-    borderRadius: CyberRadius.md,
-    paddingVertical: 14,
     alignItems: 'center',
+    padding: 20,
   },
-  scannerCancelText: {
-    color: CyberColors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
+  qrModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: CyberColors.cardBg,
+    borderRadius: CyberRadius.lg,
+    borderWidth: 1,
+    borderColor: CyberColors.borderHighlight,
+    padding: 18,
   },
 });

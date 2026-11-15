@@ -1,5 +1,11 @@
 import React, { useEffect } from 'react';
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+  usePathname,
+  useRouter,
+} from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 
@@ -8,17 +14,17 @@ import { AuthProvider, useAuth } from '@/context/auth-context';
 import { AppsProvider } from '@/context/apps-context';
 import { BillingProvider } from '@/context/billing-context';
 import { BillingModal } from '@/components/billing/billing-modal';
-import LoginScreen from './login';
 import { CyberColors } from '@/constants/cyber-theme';
+import { resolveAuthRedirectPath } from '@/utils/navigation-guard';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootNavigator() {
   const { isAuthenticated, isInitializing } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
-    // Ensure native splash screen hides once session initialization resolves,
-    // with a failsafe timeout to prevent permanent screen freezing in Expo Go.
     const failsafe = setTimeout(() => {
       SplashScreen.hideAsync().catch(() => {});
     }, 2500);
@@ -30,26 +36,28 @@ function RootNavigator() {
     return () => clearTimeout(failsafe);
   }, [isInitializing]);
 
-  if (isInitializing) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={CyberColors.cyan} />
-        <Text style={styles.loadingText}>INITIALIZING VANGUARD SESSION...</Text>
-      </View>
-    );
-  }
+  useEffect(() => {
+    if (isInitializing) {
+      return;
+    }
 
-  if (!isAuthenticated) {
-    return <LoginScreen />;
-  }
+    const redirectTarget = resolveAuthRedirectPath(isAuthenticated, pathname);
+    if (redirectTarget) {
+      router.replace(redirectTarget);
+    }
+  }, [isInitializing, isAuthenticated, pathname, router]);
 
   return (
-    <BillingProvider>
-      <AppsProvider>
-        <AppTabs />
-        <BillingModal />
-      </AppsProvider>
-    </BillingProvider>
+    <View style={styles.rootContainer}>
+      <AppTabs />
+      <BillingModal />
+      {isInitializing ? (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={CyberColors.cyan} />
+          <Text style={styles.loadingText}>INITIALIZING VANGUARD SESSION...</Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -58,19 +66,32 @@ export default function TabLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthProvider>
-        <RootNavigator />
+        <BillingProvider>
+          <AppsProvider>
+            <RootNavigator />
+          </AppsProvider>
+        </BillingProvider>
       </AuthProvider>
     </ThemeProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingScreen: {
+  rootContainer: {
     flex: 1,
+    backgroundColor: CyberColors.background,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: CyberColors.background,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
+    zIndex: 999,
   },
   loadingText: {
     color: CyberColors.cyan,

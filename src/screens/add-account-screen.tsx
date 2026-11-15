@@ -18,6 +18,7 @@ import {
   CyberCard,
   Badge,
   ModalHeader,
+  QrCameraScanner,
 } from '@/components/cyber';
 import { TotpAccount, TotpAlgorithm } from '@/models/vault.models';
 import { isBillingLimitError } from '@/models/billing.models';
@@ -175,15 +176,6 @@ export function AddAccountScreen({
     }
   };
 
-  const handleSimulatedQrScan = (rawUri?: string) => {
-    // Real standard otpauth:// decoding using OtpAuthParser
-    const uriToDecode =
-      typeof rawUri === 'string' && rawUri.trim()
-        ? rawUri.trim()
-        : 'otpauth://totp/Vanguard%20Security:admin%40vanguard.security?secret=JBSWY3DPEHPK3PXP&issuer=Vanguard%20Security&algorithm=SHA1&digits=6&period=30';
-    handleQrDecoded(uriToDecode);
-  };
-
   return (
     <View style={styles.screen} testID={testID}>
       <SafeAreaView style={styles.safeArea}>
@@ -251,26 +243,14 @@ export function AddAccountScreen({
           ) : null}
 
           {mode === 'qr' ? (
-            /* QR Scanner Simulator View */
+            /* Live Camera QR Scanner View */
             <CyberCard variant="glass" style={styles.qrCard}>
-              <View style={styles.viewfinderBox}>
-                <View style={[styles.corner, styles.cornerTL]} />
-                <View style={[styles.corner, styles.cornerTR]} />
-                <View style={[styles.corner, styles.cornerBL]} />
-                <View style={[styles.corner, styles.cornerBR]} />
-                <Text style={styles.viewfinderIcon}>📷</Text>
-                <Text style={styles.viewfinderText}>
-                  Align QR Code within the viewfinder frame
-                </Text>
-              </View>
-
-              <CyberButton
-                title="Simulate Camera QR Scan ⚡"
-                variant="primary"
-                size="md"
-                onPress={handleSimulatedQrScan}
-                style={styles.simulateBtn}
-                testID="simulate-qr-button"
+              <QrCameraScanner
+                title="SCAN AUTHENTICATOR QR CODE"
+                subtitle="Point your camera at an otpauth:// QR code from Vanguard or any 2FA service."
+                onScan={handleQrDecoded}
+                onCancel={() => setMode('manual')}
+                testID="totp-qr-scanner"
               />
             </CyberCard>
           ) : (

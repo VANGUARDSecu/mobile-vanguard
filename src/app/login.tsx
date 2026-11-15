@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,16 +13,21 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
 
 import { useAuth } from '@/context/auth-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
+import { launchGoogleBrowserOAuthSession } from '@/components/cyber/google-account-picker-modal';
+import { GoogleLogo } from '@/components/cyber/google-logo';
 import type { MfaChallengeResponse } from '@/models/auth.models';
+import type { GoogleAccountProfile } from '@/services/auth.service';
+import { parseGoogleOAuthCallbackUrl } from '@/utils/registration-wizard';
 import VerifyOtpScreen from '@/screens/verify-otp-screen';
 
 const REMEMBERED_EMAIL_KEY = 'vanguard_remembered_email';
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -96,6 +101,75 @@ export default function LoginScreen() {
       setSubmitting(false);
     }
   };
+
+  const handleGoogleOAuthVerified = useCallback(
+    async (account: GoogleAccountProfile) => {
+      setSubmitting(true);
+      setErrorMessage(null);
+      try {
+        const result = await loginWithGoogle(account);
+        if (result.requireMfa) {
+          setMfaChallenge(result.mfaChallenge);
+        } else {
+          router.replace('/');
+        }
+      } catch (err: unknown) {
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Google OAuth sign-in failed. Please try again.'
+        );
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [loginWithGoogle]
+  );
+
+  const handleGoogleBrowserSignIn = async () => {
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const oauthAccount = await launchGoogleBrowserOAuthSession();
+      if (oauthAccount) {
+        await handleGoogleOAuthVerified(oauthAccount);
+      }
+    } catch (err: unknown) {
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : 'Could not complete Google Browser OAuth.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Listen for OAuth deep-link callback URLs (#access_token=...) returning from system browser
+  useEffect(() => {
+    let isMounted = true;
+
+    const handleIncomingUrl = (url: string | null) => {
+      if (!isMounted || !url || !url.includes('access_token=')) return;
+      const parsed = parseGoogleOAuthCallbackUrl(url);
+      if (parsed) {
+        void handleGoogleOAuthVerified(parsed);
+      }
+    };
+
+    Linking.getInitialURL()
+      .then((initialUrl) => handleIncomingUrl(initialUrl))
+      .catch(() => {});
+
+    const sub = Linking.addEventListener('url', (event) => {
+      handleIncomingUrl(event.url);
+    });
+
+    return () => {
+      isMounted = false;
+      sub.remove();
+    };
+  }, [handleGoogleOAuthVerified]);
 
   if (mfaChallenge) {
     return (
@@ -228,6 +302,32 @@ export default function LoginScreen() {
                 ) : (
                   <Text style={styles.signInBtnText}>Sign In</Text>
                 )}
+              </Pressable>
+
+              {/* Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Sign In with Google Browser OAuth Button */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.googleBtn,
+                  pressed && styles.googleBtnPressed,
+                  submitting && styles.signInBtnDisabled,
+                ]}
+                onPress={handleGoogleBrowserSignIn}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with Google"
+                testID="google-sign-in-button"
+              >
+                <View style={styles.googleIconCircle}>
+                  <GoogleLogo size={16} />
+                </View>
+                <Text style={styles.googleBtnText}>Sign in with Google</Text>
               </Pressable>
 
               {/* Create Account Prompt */}
@@ -458,6 +558,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  dividerText: {
+    color: CyberColors.textMuted,
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  googleBtnPressed: {
+    backgroundColor: 'rgba(66, 133, 244, 0.15)',
+    borderColor: '#4285F4',
+  },
+  googleIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleIconG: {
+    color: '#4285F4',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  googleBtnText: {
+    color: CyberColors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
   },
   signUpPromptWrap: {
     flexDirection: 'row',

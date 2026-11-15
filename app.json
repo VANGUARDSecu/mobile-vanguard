@@ -53,7 +53,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Vanguard to use the camera to scan Mobile Integration QR codes from your web dashboard."
+          "cameraPermission": "Allow Vanguard to use the camera to scan authenticator and Mobile Integration QR codes."
         }
       ]
     ],

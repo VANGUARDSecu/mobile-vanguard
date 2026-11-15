@@ -11,10 +11,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/context/auth-context';
+import { useOptionalBilling } from '@/context/billing-context';
 import { CyberColors, CyberRadius } from '@/constants/cyber-theme';
 
 export default function SecurityScreen() {
   const { currentUser, logout } = useAuth();
+  const billing = useOptionalBilling();
   const [loggingOut, setLoggingOut] = useState(false);
   const [refreshedTime, setRefreshedTime] = useState<string>('Just now');
 
@@ -121,6 +123,47 @@ export default function SecurityScreen() {
               </View>
             </View>
           </View>
+
+          {/* SCRUM-185: Synced Subscription & Plan Entitlements */}
+          {billing ? (
+            <View style={styles.card}>
+              <Text style={styles.cardLabel}>SUBSCRIPTION &amp; PLAN ENTITLEMENTS</Text>
+              <View style={styles.metricsList}>
+                <View style={styles.metricItem}>
+                  <Text style={styles.metricIcon}>{billing.isFreeTier ? '🔒' : '💎'}</Text>
+                  <View style={styles.metricDetails}>
+                    <Text style={styles.metricTitle}>
+                      {billing.subscription.planName} ({billing.subscription.roleLabel})
+                    </Text>
+                    <Text style={styles.metricDesc}>
+                      Apps: {billing.maxIntegratedApps === -1 ? 'Unlimited' : '1 Max (Free)'} • 2FA: {billing.maxTotpAccounts === -1 ? 'Unlimited' : '3 Tokens Max (Free)'} • {billing.auditRetentionDays}d Audit
+                    </Text>
+                    <Text style={[styles.metricDesc, { marginTop: 2, color: CyberColors.cyan }]}>
+                      {billing.isTenantMember
+                        ? billing.isFreeTier
+                          ? 'Managed by Company Admin — limits unlock automatically when Admin upgrades'
+                          : 'Organization Paid Tier active & synchronized across Web & Mobile'
+                        : 'Synchronized in real time between Vanguard Web & Mobile'}
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.refreshBtn}
+                  onPress={() => billing.openBillingModal()}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.refreshBtnText}>
+                    {billing.isTenantMember
+                      ? '🏢 View Organization Plan & Sync Status'
+                      : billing.isFreeTier
+                        ? '⚡ Upgrade Plan via PayMongo Sandbox'
+                        : '⚙️ Manage Subscription & Sync Plan'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
 
           {/* Security Actions */}
           <View style={styles.card}>

@@ -8,15 +8,18 @@
     "scheme": ["mobilevanguard", "vanguard-auth", "vanguard-enroll"],
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Vanguard to use the camera to scan Mobile Integration QR codes from your web dashboard."
+      }
     },
     "android": {
       "package": "com.vanguard.security.mobile",
       "permissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
-        "android.permission.INTERNET",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.INTERNET"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -50,7 +53,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Vanguard to use the camera to scan authenticator and device pairing QR codes."
+          "cameraPermission": "Allow Vanguard to use the camera to scan authenticator and Mobile Integration QR codes."
         }
       ]
     ],

@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +23,7 @@ import {
   ManualEntryModal,
 } from '@/components/cyber';
 import { TotpAccount } from '@/models/vault.models';
+import { useOptionalBilling } from '@/context/billing-context';
 import vaultService from '@/services/vault.service';
 import { TotpEngine } from '@/services/totp-engine.service';
 import { AuthService } from '@/services/auth.service';
@@ -39,6 +41,7 @@ export function VaultScreen({
   onOpenSettings,
   testID = 'vault-screen',
 }: VaultScreenProps) {
+  const billing = useOptionalBilling();
   const [accounts, setAccounts] = useState<TotpAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,6 +49,16 @@ export function VaultScreen({
   const [copiedAccountId, setCopiedAccountId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showManualModal, setShowManualModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const readLocalVault = useCallback(async () => {
+    try {
+      const data = await vaultService.getAccounts();
+      setAccounts(data);
+    } catch {
+      // Keep existing
+    }
+  }, []);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -53,18 +66,48 @@ export function VaultScreen({
       if (user?.email) {
         vaultService.setCurrentUserEmail(user.email);
       }
-      const data = await vaultService.getAccounts();
-      setAccounts(data);
+      vaultService.setAuthTokenProvider(async () =>
+        user?.accessToken || (await AuthService.getAccessToken()),
+      );
+      await readLocalVault();
+      const updatedFromBackend = await vaultService.syncWithBackend(
+        user?.accessToken || undefined,
+      );
+      if (updatedFromBackend) {
+        await readLocalVault();
+      }
     } catch {
       // Keep existing
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [readLocalVault]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const user = await AuthService.getCurrentUser();
+      await Promise.all([
+        vaultService.syncWithBackend(user?.accessToken || undefined),
+        billing?.refreshSubscription ? billing.refreshSubscription() : Promise.resolve(),
+      ]);
+      await readLocalVault();
+    } catch {
+      // Non-fatal
+    } finally {
+      setRefreshing(false);
+    }
+  }, [billing, readLocalVault]);
 
   useEffect(() => {
-    loadAccounts();
-  }, [loadAccounts]);
+    void loadAccounts();
+    const unsub = vaultService.subscribe(() => {
+      void readLocalVault();
+    });
+    return () => {
+      unsub();
+    };
+  }, [loadAccounts, readLocalVault]);
 
   // Dynamic offline TOTP countdown timer tick with instant cycle rollover
   useEffect(() => {
@@ -117,6 +160,14 @@ export function VaultScreen({
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={CyberColors.cyan}
+              colors={[CyberColors.cyan]}
+            />
+          }
         >
           {/* Header */}
           <View style={styles.header}>
@@ -160,7 +211,16 @@ export function VaultScreen({
               <View style={styles.actionButtons}>
                 <TouchableOpacity
                   style={styles.iconBtn}
-                  onPress={() => setShowManualModal(true)}
+                  onPress={() => {
+                    if (billing) {
+                      const quota = billing.checkTotpQuota(accounts.length);
+                      if (!quota.allowed) {
+                        billing.openBillingModal(quota.reason);
+                        return;
+                      }
+                    }
+                    setShowManualModal(true);
+                  }}
                   activeOpacity={0.7}
                   testID="vault-manual-entry-button"
                   accessibilityLabel="Manual Code Entry"
@@ -200,6 +260,37 @@ export function VaultScreen({
               />
             </View>
 
+            {/* SCRUM-185: 2FA Authenticator Plan Quota Strip */}
+            {billing ? (
+              <TouchableOpacity
+                onPress={() => billing.openBillingModal()}
+                activeOpacity={0.8}
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: CyberRadius.sm,
+                  backgroundColor: billing.isFreeTier
+                    ? 'rgba(245, 158, 11, 0.1)'
+                    : 'rgba(16, 185, 129, 0.1)',
+                  borderColor: billing.isFreeTier
+                    ? 'rgba(245, 158, 11, 0.35)'
+                    : 'rgba(16, 185, 129, 0.35)',
+                  borderWidth: 1,
+                }}
+              >
+                <Text style={{ color: billing.isFreeTier ? '#fcd34d' : '#6ee7b7', fontSize: 11.5, fontWeight: '700' }}>
+                  🔐 {accounts.length}/{billing.maxTotpAccounts === -1 ? '∞' : billing.maxTotpAccounts} 2FA Tokens • {billing.subscription.planName}
+                </Text>
+                <Text style={{ color: CyberColors.cyan, fontSize: 11, fontWeight: '800' }}>
+                  {billing.isFreeTier && billing.canManageBilling ? 'Upgrade →' : 'Plan →'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             {/* Prominent Responsive Add Token Button */}
             {onAddAccount ? (
               <View style={styles.addTokenRow}>
@@ -207,7 +298,16 @@ export function VaultScreen({
                   title="+ Add Authenticator Token"
                   variant="primary"
                   size="md"
-                  onPress={onAddAccount}
+                  onPress={() => {
+                    if (billing) {
+                      const quota = billing.checkTotpQuota(accounts.length);
+                      if (!quota.allowed) {
+                        billing.openBillingModal(quota.reason);
+                        return;
+                      }
+                    }
+                    onAddAccount();
+                  }}
                   testID="vault-add-button"
                 />
               </View>

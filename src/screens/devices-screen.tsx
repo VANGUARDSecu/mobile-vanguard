@@ -8,9 +8,9 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Modal,
   Platform,
   StyleSheet,
-  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,7 +22,7 @@ import { QrCameraScanner } from '@/components/cyber/qr-camera-scanner';
 import { PushApprovalRequest } from '@/models/push-mfa.models';
 import pushMfaService from '@/services/push-mfa.service';
 import biometricService, { BiometricType } from '@/services/biometric-auth.service';
-import { parseDevicePairingQrPayload } from '@/services/qr-payload.service';
+import { parseDevicePairingQrPayload } from '@/utils/pairing-qr';
 
 const getPairedDeviceStorageKey = (email?: string | null): string => {
   const clean = email?.trim().toLowerCase();
@@ -149,10 +149,25 @@ export default function DevicesScreen() {
     }
   };
 
-  const pairWithKey = async (keyToPair: string) => {
-    const rawKey = keyToPair.trim().toUpperCase();
+  const notifyAccountMismatch = (message: string) => {
+    setPairingError(message);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
+      window.alert(message);
+    } else if (Platform.OS !== 'web') {
+      Alert.alert('Account Mismatch', message);
+    }
+  };
+
+  const handlePairDevice = async (overrideKey?: string) => {
+    const activeEmail = currentUser?.email?.trim();
+    if (!activeEmail) {
+      setPairingError('You must be signed in on Vanguard Mobile before pairing a device.');
+      return;
+    }
+
+    const rawKey = (overrideKey ?? pairingKeyInput).trim().toUpperCase();
     if (!rawKey) {
-      setPairingError('Please enter the pairing key from your web dashboard.');
+      setPairingError('Please enter the pairing key or scan the QR code from your web dashboard.');
       return;
     }
 
@@ -183,11 +198,16 @@ export default function DevicesScreen() {
         model: 'Vanguard Mobile Authenticator',
         osVersion,
         biometricType: biometricInfo.biometricType,
-        email: currentUser?.email,
+        email: activeEmail,
       });
 
       if (!res.success || !res.device) {
-        setPairingError(res.error || 'Failed to complete device pairing. Verify pairing key and retry.');
+        const errMsg = res.error || 'Failed to complete device pairing. Verify pairing key and retry.';
+        if (/different Vanguard account/i.test(errMsg)) {
+          notifyAccountMismatch(errMsg);
+        } else {
+          setPairingError(errMsg);
+        }
         return;
       }
 
@@ -215,23 +235,33 @@ export default function DevicesScreen() {
     }
   };
 
-  const handlePairDevice = async () => {
-    await pairWithKey(pairingKeyInput);
-  };
-
   const handleQrPairingScanned = async (rawPayload: string) => {
-    try {
-      setPairingError(null);
-      const parsed = parseDevicePairingQrPayload(rawPayload);
-      setShowQrScannerModal(false);
-      setPairingKeyInput(parsed.pairingKey);
-      await pairWithKey(parsed.pairingKey);
-    } catch (err: unknown) {
-      setShowQrScannerModal(false);
-      setPairingError(
-        err instanceof Error ? err.message : 'Invalid device pairing QR code.'
-      );
+    setShowQrScannerModal(false);
+    setPairingError(null);
+    setPairingSuccess(null);
+
+    const parsed = parseDevicePairingQrPayload(rawPayload);
+    if (!parsed.valid) {
+      setPairingError(parsed.error || 'Unable to read pairing QR code.');
+      return;
     }
+
+    const activeEmail = currentUser?.email?.trim().toLowerCase();
+    if (!activeEmail) {
+      setPairingError('Please sign in with your Vanguard account before scanning a pairing QR code.');
+      return;
+    }
+
+    if (parsed.email && parsed.email !== activeEmail) {
+      const mismatchMsg =
+        `This QR code belongs to ${parsed.email}, while your mobile app is signed in as ${currentUser?.email}. Switch accounts or generate a new QR.`;
+      notifyAccountMismatch(mismatchMsg);
+      return;
+    }
+
+    const resolvedKey = parsed.pairingKey || parsed.pairingToken || '';
+    setPairingKeyInput(resolvedKey);
+    await handlePairDevice(resolvedKey);
   };
 
   const handleUnlinkDevice = async () => {
@@ -467,6 +497,11 @@ export default function DevicesScreen() {
                   style={styles.scanQrBtn}
                   onPress={() => {
                     setPairingError(null);
+                    setPairingSuccess(null);
+                    if (!currentUser?.email?.trim()) {
+                      setPairingError('Please sign in with your Vanguard account before scanning a pairing QR code.');
+                      return;
+                    }
                     setShowQrScannerModal(true);
                   }}
                   disabled={isPairing}
@@ -475,8 +510,14 @@ export default function DevicesScreen() {
                   accessibilityLabel="Scan Dashboard Pairing QR Code"
                   testID="scan-pairing-qr-button"
                 >
-                  <Text style={styles.scanQrBtnText}>📷 Scan Dashboard QR Code</Text>
+                  <Text style={styles.scanQrBtnText}>📷 Scan Mobile Integration QR</Text>
                 </TouchableOpacity>
+
+                <View style={styles.orDividerRow}>
+                  <View style={styles.orDividerLine} />
+                  <Text style={styles.orDividerText}>OR ENTER PAIRING KEY</Text>
+                  <View style={styles.orDividerLine} />
+                </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Or Enter Dashboard Pairing Key</Text>
@@ -500,7 +541,7 @@ export default function DevicesScreen() {
                     pressed && styles.pairActionBtnPressed,
                     isPairing && styles.pairActionBtnDisabled,
                   ]}
-                  onPress={handlePairDevice}
+                  onPress={() => void handlePairDevice()}
                   disabled={isPairing}
                   accessibilityRole="button"
                   accessibilityLabel="Pair Device"
@@ -614,8 +655,10 @@ export default function DevicesScreen() {
           <View style={styles.qrModalCard}>
             <QrCameraScanner
               title="SCAN WEB DASHBOARD PAIRING QR"
-              subtitle="Open Vanguard Web Dashboard → Devices → Pair New Device and scan the QR code."
-              onScan={handleQrPairingScanned}
+              subtitle="Open Vanguard Web Dashboard → Account Security → Pair Vanguard Mobile Authenticator and scan the QR code."
+              onScan={(data) => {
+                void handleQrPairingScanned(data);
+              }}
               onCancel={() => setShowQrScannerModal(false)}
               testID="device-pairing-qr-scanner"
             />
@@ -1024,19 +1067,39 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   scanQrBtn: {
-    backgroundColor: 'rgba(0, 229, 255, 0.14)',
-    borderColor: CyberColors.cyan,
+    backgroundColor: 'rgba(6, 182, 212, 0.14)',
+    borderColor: 'rgba(6, 182, 212, 0.55)',
     borderWidth: 1,
     borderRadius: CyberRadius.md,
-    paddingVertical: 11,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
-    marginBottom: 14,
+    justifyContent: 'center',
+    marginBottom: 10,
   },
   scanQrBtnText: {
     color: CyberColors.cyan,
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
     letterSpacing: 0.4,
+  },
+  orDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 4,
+    marginBottom: 10,
+  },
+  orDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(148, 163, 184, 0.22)',
+  },
+  orDividerText: {
+    color: CyberColors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
   },
   qrModalBackdrop: {
     flex: 1,

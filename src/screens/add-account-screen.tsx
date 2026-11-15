@@ -21,6 +21,8 @@ import {
   QrCameraScanner,
 } from '@/components/cyber';
 import { TotpAccount, TotpAlgorithm } from '@/models/vault.models';
+import { isBillingLimitError } from '@/models/billing.models';
+import { useOptionalBilling } from '@/context/billing-context';
 import vaultService from '@/services/vault.service';
 import { TotpEngine } from '@/services/totp-engine.service';
 import { OtpAuthParser } from '@/services/otpauth-parser.service';
@@ -38,6 +40,7 @@ export function AddAccountScreen({
   onSaved,
   testID = 'add-account-screen',
 }: AddAccountScreenProps) {
+  const billing = useOptionalBilling();
   const [mode, setMode] = useState<'manual' | 'qr'>('manual');
   const [accountName, setAccountName] = useState('');
   const [issuer, setIssuer] = useState('');
@@ -117,6 +120,16 @@ export function AddAccountScreen({
     setValidationError(null);
 
     try {
+      const existing = await vaultService.getAccounts();
+      if (billing) {
+        const quota = billing.checkTotpQuota(existing.length);
+        if (!quota.allowed) {
+          setValidationError(quota.reason || 'Free tier 2FA limit reached.');
+          billing.openBillingModal(quota.reason);
+          return;
+        }
+      }
+
       const created = await vaultService.addAccount({
         name: accountName.trim(),
         issuer: issuer.trim() || 'Authenticator',
@@ -133,6 +146,10 @@ export function AddAccountScreen({
         onClose();
       }
     } catch (err: any) {
+      if (isBillingLimitError(err)) {
+        await billing?.refreshSubscription();
+        billing?.openBillingModal(err.message);
+      }
       setValidationError(err?.message || 'Failed to save account');
     } finally {
       setIsSubmitting(false);

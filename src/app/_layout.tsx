@@ -12,6 +12,8 @@ import { useColorScheme, View, Text, ActivityIndicator, StyleSheet } from 'react
 import AppTabs from '@/components/app-tabs';
 import { AuthProvider, useAuth } from '@/context/auth-context';
 import { AppsProvider } from '@/context/apps-context';
+import { BillingProvider } from '@/context/billing-context';
+import { BillingModal } from '@/components/billing/billing-modal';
 import { CyberColors } from '@/constants/cyber-theme';
 import { resolveAuthRedirectPath } from '@/utils/navigation-guard';
 
@@ -48,6 +50,7 @@ function RootNavigator() {
   return (
     <View style={styles.rootContainer}>
       <AppTabs />
+      <BillingModal />
       {isInitializing ? (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={CyberColors.cyan} />
@@ -63,9 +66,11 @@ export default function TabLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthProvider>
-        <AppsProvider>
-          <RootNavigator />
-        </AppsProvider>
+        <BillingProvider>
+          <AppsProvider>
+            <RootNavigator />
+          </AppsProvider>
+        </BillingProvider>
       </AuthProvider>
     </ThemeProvider>
   );

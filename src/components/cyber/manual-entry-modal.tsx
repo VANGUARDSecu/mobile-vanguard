@@ -16,6 +16,8 @@ import { CyberCard } from './cyber-card';
 import { Badge } from './badge';
 import { ModalHeader } from './modal-header';
 import { TotpAccount, TotpAlgorithm } from '@/models/vault.models';
+import { isBillingLimitError } from '@/models/billing.models';
+import { useOptionalBilling } from '@/context/billing-context';
 import vaultService from '@/services/vault.service';
 import { TotpEngine } from '@/services/totp-engine.service';
 
@@ -32,6 +34,7 @@ export function ManualEntryModal({
   onAccountSaved,
   testID = 'manual-entry-modal',
 }: ManualEntryModalProps) {
+  const billing = useOptionalBilling();
   const [accountName, setAccountName] = useState('');
   const [issuer, setIssuer] = useState('');
   const [secret, setSecret] = useState('');
@@ -114,6 +117,16 @@ export function ManualEntryModal({
     setErrorMessage(null);
 
     try {
+      const existing = await vaultService.getAccounts();
+      if (billing) {
+        const quota = billing.checkTotpQuota(existing.length);
+        if (!quota.allowed) {
+          setErrorMessage(quota.reason || 'Free tier 2FA limit reached.');
+          billing.openBillingModal(quota.reason);
+          return;
+        }
+      }
+
       const created = await vaultService.saveAccount({
         accountName: trimmedName,
         name: trimmedName,
@@ -131,6 +144,12 @@ export function ManualEntryModal({
       }
       onClose();
     } catch (err: any) {
+      if (isBillingLimitError(err)) {
+        await billing?.refreshSubscription();
+        billing?.openBillingModal(err.message);
+        onClose();
+        return;
+      }
       setErrorMessage(err?.message || 'Failed to save account into vault');
     } finally {
       setIsSubmitting(false);

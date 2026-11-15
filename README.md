@@ -50,10 +50,10 @@ The application is configured to connect directly to the live deployed Vanguard 
 
 ### 3. Mobile & Devices Hub (`src/screens/devices-screen.tsx`, `/devices`)
 - **Zero-Trust Hardware Attestation**: Evaluates device platform (`Android` / `iOS`), real biometric sensor availability (`Face ID`, `Touch ID`, `Fingerprint`) via `expo-local-authentication`, and hardware-backed AES-256-GCM Secure Enclave / Keystore integrity.
-- **Web Dashboard Pairing**:
-  - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Mobile & Devices** -> Click **Pair Device**.
-  - Enter the generated Pairing Key (`VG-XXXX-XXXX` or 10-char token) into the mobile app's Devices screen.
-  - Automatically registers device trust and enables push MFA on the authoritative backend (`POST /oauth/mfa/push/preference`).
+- **Web Dashboard Pairing (QR Scanner & Pairing Key - SCRUM-185)**:
+  - Open Vanguard Web Dashboard (`https://vanguard-security.pages.dev`) -> Navigate to **Account Security** / **Mobile & Devices** -> Click **Pair Vanguard Mobile Authenticator** to display the QR code and Pairing Key (`VG-XXXX-XXXX`).
+  - Tap **Scan Mobile Integration QR** (`expo-camera`) on the mobile Devices tab to scan the QR payload (`JSON`, `vanguard-enroll://`, or `VG-XXXX-XXXX` key) or enter the Pairing Key manually.
+  - Validates account email alignment, registers device trust (`POST /oauth/devices/pair`), and enables push MFA on the authoritative backend (`POST /oauth/mfa/push/preference`).
 - **Real-Time Out-of-Band Push MFA**:
   - Background polling listener (`GET /oauth/mfa/push/pending?email=...`) captures out-of-band SSO verification requests dispatched when signing in from **Acme Dummy Web** (`https://vanguard-dummy-web.pages.dev`).
   - Interactive **2-digit number matching challenge** modal prevents MFA fatigue attacks.
@@ -70,13 +70,25 @@ The application is configured to connect directly to the live deployed Vanguard 
   - Application cards display `✓ Approved`, `⚡ Auto-fill Ready`, and `🔑 Account: <username>` badges with cross-workspace delete capability.
 - **Authoritative Identity-Scoped Data Synchronization**:
   - Applications and access requests are strictly scoped per authenticated user email (`@vanguard_personal_apps_<email>`, `@vanguard_enterprise_apps_<email>`, `@vanguard_access_requests_<email>`).
-  - Active enterprise apps synchronize in real time against the backend employee launchpad (`GET https://backend-vanguard.onrender.com/apps/my`).
-  - Access requests automatically sync with backend governance endpoints (`GET /apps/access-requests`, `POST /apps/access-requests`, `POST /apps/access-requests/:id/approve`, `POST /apps/access-requests/:id/reject`).
+  - Active enterprise apps synchronize against the backend employee launchpad (`GET https://backend-vanguard.onrender.com/apps/my`).
+  - Self-service personal applications synchronize bidirectionally across mobile and web via `GET/POST/PATCH/DELETE /apps/personal` (replacing legacy admin-only `/apps` routes).
+  - Connected SSO OIDC applications synchronize authoritatively via `GET/DELETE /oauth/connected-apps` using `Authorization: Bearer <token>`.
+  - 2FA TOTP Authenticator accounts synchronize bidirectionally with server-side AES-256-GCM encryption via `GET/POST/PATCH/DELETE /totp-accounts` (while remaining cached locally in hardware-backed secure keychain storage for offline access).
+  - Automatic background watermark coordinator (`GET /sync/state`, 5s interval + app foreground resume) reconciles additions, updates, and server-authoritative deletions without full payload polling.
+  - Access requests automatically sync with backend governance endpoints (`GET /apps/access-requests`, `POST /apps/access-requests`, `DELETE /apps/access-requests/:id`, `POST /apps/access-requests/:id/approve`, `POST /apps/access-requests/:id/reject`).
   - Authenticator vault payloads are scoped to the active user's identity (`@vanguard:encrypted_totp_vault_<email>`), ensuring zero confusion across multiple user accounts and complete alignment with web frontend state.
 
 ### 5. Production Cloud Connectivity
 - **Deployed Backend Integration**: Every authentication challenge, device pairing verification, and push MFA response is securely submitted to `https://backend-vanguard.onrender.com`.
 - **Extended Warm-Up Tolerance**: Network timeout handlers allocate 30 seconds to gracefully accommodate cloud spin-up latency on server cold starts without aborting verification requests prematurely.
+
+### 6. Billing Isolation, Free-Tier Quotas & Web-Mobile Sync (SCRUM-185)
+- **Bidirectional Subscription Synchronization**:
+  - Subscriptions purchased on the Web Dashboard automatically unlock Unlimited Applications and Unlimited 2FA Authenticator accounts on `mobile-vanguard` via `GET /billing/subscription` and `GET /sync/state` (`billingUpdatedAt` watermark + app foreground `AppState` resume).
+  - Subscriptions purchased on Mobile via PayMongo (`expo-web-browser`) trigger backend `SyncService` + Supabase Realtime updates so `frontend-vanguard` reflects Paid features without a manual page reload.
+- **Identical Free-Tier Quotas & 3-Role Isolation**:
+  - Free accounts (`Individual Free Starter` and `Company Free Trial`) enforce max **1 integrated application** and max **3 third-party 2FA accounts**, rolling back `403 billing_limit_reached` server rejections cleanly.
+  - **Individual** users see Personal plans (`Free Starter`, `Personal Pro $5/mo`), **Company Admins** see Organization plans (`Company Free Trial`, `Business Pro $29/mo`, `Enterprise $79/mo`), and **Tenant Employees** see a read-only **Managed by Company Administrator** status panel that unlocks automatically when their Admin upgrades.
 
 ---
 
@@ -94,6 +106,7 @@ The application is configured to connect directly to the live deployed Vanguard 
 
    *Core Dependencies included:*
    - `expo`: `~57.0.24`
+   - `expo-camera`: `~57.0.6` (Mobile Integration QR pairing scanner)
    - `expo-router`: `~57.0.22`
    - `expo-local-authentication`: `~57.0.2`
    - `expo-secure-store`: `~57.0.4`
@@ -162,7 +175,7 @@ EXPO_PUBLIC_API_URL=https://backend-vanguard.onrender.com npx expo start --tunne
 ```
 
 #### 3. Standalone Android APK Build (`eas build` / `npx expo run:android`)
-The application is pre-configured with Android package identifier `com.vanguard.security.mobile`, required permissions (`INTERNET`, `USE_BIOMETRIC`, `USE_FINGERPRINT`), and URI schemes (`vanguard-auth`, `vanguard-enroll`, `mobilevanguard`):
+The application is pre-configured with Android package identifier `com.vanguard.security.mobile`, required permissions (`INTERNET`, `CAMERA`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, plus iOS `NSCameraUsageDescription` and `NSFaceIDUsageDescription`), and URI schemes (`vanguard-auth`, `vanguard-enroll`, `mobilevanguard`):
 
 ```bash
 # 1. Install EAS CLI globally if not already present
@@ -568,9 +581,9 @@ The Authenticator Vault implements production-grade mobile security standards al
    - Plaintext secrets are never exported unencrypted.
 8. **Device-Bound Push MFA Approvals**:
    - Background polling requires authenticated user email identity (`GET /oauth/mfa/push/pending?email=...`), preventing anonymous challenge enumeration.
-9. **Real Dashboard Pairing & Test Push Sync (SCRUM-183)**:
-   - `DevicesScreen` and `PushMfaService` connect directly to the backend pairing APIs (`POST /oauth/devices/pair`, `GET /oauth/devices`, `DELETE /oauth/devices/:deviceId`, `POST /oauth/mfa/push/test`) scoped per signed-in user email.
-   - Pairing requires a valid dashboard-issued pairing key, unlinking removes the device from the backend directory, and test pushes dispatch real number-matching challenges only when the phone is paired.
+9. **Real Dashboard Pairing & Test Push Sync (SCRUM-183 & SCRUM-180)**:
+   - `DevicesScreen` and `PushMfaService` connect directly to the backend pairing APIs (`POST /oauth/devices/pair`, `GET /oauth/devices`, `DELETE /oauth/devices/:deviceId`, `POST /oauth/mfa/push/test`) scoped per signed-in user email and authenticated with `Authorization: Bearer <token>`.
+   - QR scans and manual pairing reject mismatched accounts immediately (displaying an Alert dialog + inline error on QR mismatch and enforcing `401`/`403` verification on the backend), unlinking removes the device from the backend directory, and test pushes dispatch real number-matching challenges only when the phone is paired.
 
 
 

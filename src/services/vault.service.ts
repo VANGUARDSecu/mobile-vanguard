@@ -14,6 +14,7 @@ import {
 } from './secure-storage.provider.ts';
 import { TotpEngine } from './totp-engine.service.ts';
 import { TotpSyncService, isLiveBackendToken } from './totp-sync.service.ts';
+import { isBillingLimitError } from '../models/billing.models.ts';
 
 const KEYCHAIN_MASTER_KEY = '@vanguard:keychain_master_key_v1';
 const SECURE_VAULT_PAYLOAD_KEY = '@vanguard:encrypted_totp_vault_v1';
@@ -419,10 +420,19 @@ export class VaultService {
     const liveToken = await this.resolveLiveToken();
     if (liveToken) {
       this.pendingCreateIds.add(newAccount.id);
-      void TotpSyncService.pushUpsertTotp(newAccount, liveToken)
-        .finally(() => {
-          this.pendingCreateIds.delete(newAccount.id);
-        });
+      try {
+        await TotpSyncService.pushUpsertTotp(newAccount, liveToken);
+      } catch (err) {
+        if (isBillingLimitError(err)) {
+          // Roll back local optimism so Free tier limit stays aligned with backend & web
+          this.memoryCache = this.memoryCache.filter((a) => a.id !== newAccount.id);
+          await this.persistEncryptedAccounts(this.memoryCache);
+          this.notifyListeners();
+          throw err;
+        }
+      } finally {
+        this.pendingCreateIds.delete(newAccount.id);
+      }
     }
 
     return { ...newAccount };

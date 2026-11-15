@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLauncherService } from '@/services/app-launcher.service';
 import { useAuth } from '@/context/auth-context';
 import { useApps } from '@/context/apps-context';
+import { useOptionalBilling } from '@/context/billing-context';
+import { isBillingLimitError } from '@/models/billing.models';
 import LoginScreen from '@/app/login';
 import {
   CategoryFilterBar,
@@ -38,6 +40,7 @@ import {
 
 export default function MyAppsScreen() {
   const { currentUser, isAuthenticated, isInitializing: authInitializing, logout } = useAuth();
+  const billing = useOptionalBilling();
   const {
     isPersonalWorkspace,
     isCompanyAdmin,
@@ -141,6 +144,13 @@ export default function MyAppsScreen() {
 
   const handleActionPress = () => {
     if (isPersonalWorkspace) {
+      if (billing) {
+        const quota = billing.checkAppQuota(activeAppsList.length);
+        if (!quota.allowed) {
+          billing.openBillingModal(quota.reason);
+          return;
+        }
+      }
       setShowAddPersonalAppModal(true);
     } else {
       setShowRequestAppModal(true);
@@ -148,7 +158,16 @@ export default function MyAppsScreen() {
   };
 
   const handleAddPersonalApp = async (input: PersonalAppInput) => {
-    await addPersonalApp(input);
+    try {
+      await addPersonalApp(input);
+    } catch (err) {
+      if (isBillingLimitError(err)) {
+        setShowAddPersonalAppModal(false);
+        billing?.openBillingModal(err.message);
+        return;
+      }
+      throw err;
+    }
   };
 
   const handleRequestApp = async (input: RequestAppInput) => {
@@ -252,6 +271,48 @@ export default function MyAppsScreen() {
               </Text>
             </View>
 
+            {/* SCRUM-185: Synced Plan Status & Quota Strip */}
+            {billing ? (
+              <TouchableOpacity
+                onPress={() => billing.openBillingModal()}
+                activeOpacity={0.8}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: billing.isFreeTier
+                    ? 'rgba(245, 158, 11, 0.12)'
+                    : 'rgba(16, 185, 129, 0.12)',
+                  borderColor: billing.isFreeTier
+                    ? 'rgba(245, 158, 11, 0.35)'
+                    : 'rgba(16, 185, 129, 0.35)',
+                  borderWidth: 1,
+                  borderRadius: CyberRadius.sm,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  marginBottom: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    color: billing.isFreeTier ? '#fcd34d' : '#6ee7b7',
+                    fontSize: 12,
+                    fontWeight: '700',
+                    flex: 1,
+                  }}
+                >
+                  {billing.isFreeTier
+                    ? billing.isTenantMember
+                      ? `⏳ ${billing.subscription.planName} • ${activeAppsList.length}/1 App (Managed by Admin)`
+                      : `⚡ ${billing.subscription.planName} • ${activeAppsList.length}/1 App Max (Free)`
+                    : `💎 ${billing.subscription.planName} • Unlimited Apps Synced`}
+                </Text>
+                <Text style={{ color: CyberColors.cyan, fontSize: 11.5, fontWeight: '800', marginLeft: 8 }}>
+                  {billing.isFreeTier && billing.canManageBilling ? 'Upgrade →' : 'View Plan →'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             {/* Action Buttons Row */}
             <View style={styles.actionButtonsRow}>
               <Pressable
@@ -259,7 +320,16 @@ export default function MyAppsScreen() {
                   styles.primaryActionBtn,
                   pressed && styles.primaryActionBtnPressed,
                 ]}
-                onPress={() => setShowAddPersonalAppModal(true)}
+                onPress={() => {
+                  if (billing) {
+                    const quota = billing.checkAppQuota(activeAppsList.length);
+                    if (!quota.allowed) {
+                      billing.openBillingModal(quota.reason);
+                      return;
+                    }
+                  }
+                  setShowAddPersonalAppModal(true);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel="Add Application"
                 testID="action-add-app"

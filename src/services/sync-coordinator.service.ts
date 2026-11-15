@@ -7,9 +7,16 @@ export interface SyncWatermarks {
   enterpriseAppsUpdatedAt: string | null;
   connectedAppsUpdatedAt: string | null;
   accessRequestsUpdatedAt: string | null;
+  billingUpdatedAt?: string | null;
 }
 
-export type SyncDomainKey = 'totp' | 'personalApps' | 'enterpriseApps' | 'connectedApps' | 'accessRequests';
+export type SyncDomainKey =
+  | 'totp'
+  | 'personalApps'
+  | 'enterpriseApps'
+  | 'connectedApps'
+  | 'accessRequests'
+  | 'billing';
 
 export interface SyncCoordinatorCallbacks {
   getToken: () => Promise<string | null>;
@@ -90,6 +97,7 @@ export class SyncCoordinatorService {
           'enterpriseApps',
           'connectedApps',
           'accessRequests',
+          'billing',
         ];
         await this.callbacks.onDomainsChanged(all);
         return all;
@@ -101,6 +109,7 @@ export class SyncCoordinatorService {
       if (next.enterpriseAppsUpdatedAt !== prev.enterpriseAppsUpdatedAt) changed.push('enterpriseApps');
       if (next.connectedAppsUpdatedAt !== prev.connectedAppsUpdatedAt) changed.push('connectedApps');
       if (next.accessRequestsUpdatedAt !== prev.accessRequestsUpdatedAt) changed.push('accessRequests');
+      if ((next.billingUpdatedAt ?? null) !== (prev.billingUpdatedAt ?? null)) changed.push('billing');
 
       if (changed.length > 0) {
         await this.callbacks.onDomainsChanged(changed);

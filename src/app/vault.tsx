@@ -1,6 +1,6 @@
 import React from 'react';
-import AuthenticatorNavigator from '@/screens/authenticator-navigator';
+import { AuthenticatorNavigator } from '@/screens/authenticator-navigator';
 
 export default function VaultRoute() {
-  return <AuthenticatorNavigator />;
+  return <AuthenticatorNavigator enableLivePushPolling={false} />;
 }

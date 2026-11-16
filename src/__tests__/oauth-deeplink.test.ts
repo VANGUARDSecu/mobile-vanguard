@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   buildOAuthErrorRedirect,
   buildWebPortalAuthorizeUrl,
+  isCustomMobileSsoCallbackUrl,
+  isPushChallengeDeepLink,
   parseOAuthAuthorizeDeepLink,
 } from '../utils/oauth-deeplink.ts';
 import { AuthService } from '../services/auth.service.ts';
@@ -119,5 +123,36 @@ test('OAuth Deep-Link Handoff Utilities & Approval (SCRUM-188)', async (t) => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  await t.test('SCRUM-207: validates mobile callback schemes, push challenge deep links & global layout push wiring', () => {
+    assert.equal(
+      isCustomMobileSsoCallbackUrl('vanguard-dummy://oauth/callback?code=abc'),
+      true,
+    );
+    assert.equal(
+      isCustomMobileSsoCallbackUrl('exp://192.168.1.25:8081/--/oauth/callback?code=abc'),
+      true,
+    );
+    assert.equal(isCustomMobileSsoCallbackUrl('https://acme.example.com/callback'), false);
+    assert.equal(isCustomMobileSsoCallbackUrl(undefined), false);
+
+    assert.equal(isPushChallengeDeepLink('vanguard-auth://mfa/challenge?id=123'), true);
+    assert.equal(isPushChallengeDeepLink('vanguard-auth://devices/pair'), false);
+    assert.equal(isPushChallengeDeepLink(null), false);
+
+    const layoutPath = path.resolve(import.meta.dirname ?? '.', '../app/_layout.tsx');
+    const vaultRoutePath = path.resolve(import.meta.dirname ?? '.', '../app/vault.tsx');
+    const layoutSource = fs.readFileSync(layoutPath, 'utf8');
+    const vaultSource = fs.readFileSync(vaultRoutePath, 'utf8');
+
+    assert.ok(
+      layoutSource.includes('PushApprovalModal') && layoutSource.includes('pushMfaService.startPolling'),
+      'RootNavigator in _layout.tsx must mount global PushApprovalModal and background push polling across all tabs',
+    );
+    assert.ok(
+      vaultSource.includes('enableLivePushPolling={false}'),
+      'VaultRoute must disable duplicate live push polling inside AuthenticatorNavigator',
+    );
   });
 });

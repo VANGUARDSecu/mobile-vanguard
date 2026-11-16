@@ -19,11 +19,17 @@ import { BillingProvider } from '@/context/billing-context';
 import { GuideProvider } from '@/context/guide-context';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { NewUserGuideModal } from '@/components/cyber/new-user-guide-modal';
+import { PushApprovalModal } from '@/components/cyber/push-approval-modal';
 import { SsoConsentModal } from '@/components/cyber/sso-consent-modal';
+import { PushApprovalRequest } from '@/models/push-mfa.models';
 import { AuthService } from '@/services/auth.service';
+import { biometricService } from '@/services/biometric-auth.service';
+import { pushMfaService } from '@/services/push-mfa.service';
 import {
   buildOAuthErrorRedirect,
   buildWebPortalAuthorizeUrl,
+  isCustomMobileSsoCallbackUrl,
+  isPushChallengeDeepLink,
   OAuthAuthorizeDeepLinkParams,
   parseOAuthAuthorizeDeepLink,
 } from '@/utils/oauth-deeplink';
@@ -38,17 +44,46 @@ function RootNavigator() {
   const router = useRouter();
   const [pendingOAuthRequest, setPendingOAuthRequest] = useState<OAuthAuthorizeDeepLinkParams | null>(null);
   const [consentModalVisible, setConsentModalVisible] = useState(false);
+  const [pausedConsentForSignIn, setPausedConsentForSignIn] = useState(false);
   const [isApprovingSso, setIsApprovingSso] = useState(false);
   const [ssoApprovalError, setSsoApprovalError] = useState<string | null>(null);
+  const [activePushRequest, setActivePushRequest] = useState<PushApprovalRequest | null>(null);
 
-  const handleIncomingDeepLink = useCallback((url: string | null | undefined) => {
-    if (!url) return;
-    const parsed = parseOAuthAuthorizeDeepLink(url);
-    if (!parsed) return;
-    setSsoApprovalError(null);
-    setPendingOAuthRequest(parsed);
-    setConsentModalVisible(true);
-  }, []);
+  const handleIncomingDeepLink = useCallback(
+    (url: string | null | undefined) => {
+      if (!url) return;
+      if (isPushChallengeDeepLink(url)) {
+        if (isAuthenticated && currentUser?.email) {
+          void pushMfaService.fetchPendingPush(currentUser.email);
+        }
+        return;
+      }
+      const parsed = parseOAuthAuthorizeDeepLink(url);
+      if (!parsed) return;
+      setSsoApprovalError(null);
+      setPendingOAuthRequest(parsed);
+      setPausedConsentForSignIn(false);
+      setConsentModalVisible(true);
+    },
+    [isAuthenticated, currentUser],
+  );
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.email) {
+      pushMfaService.stopPolling();
+      return;
+    }
+
+    const unsubscribe = pushMfaService.subscribe((req) => {
+      setActivePushRequest(req);
+    });
+    pushMfaService.startPolling(currentUser.email);
+
+    return () => {
+      unsubscribe();
+      pushMfaService.stopPolling();
+    };
+  }, [isAuthenticated, currentUser?.email]);
 
   useEffect(() => {
     let active = true;
@@ -69,12 +104,6 @@ function RootNavigator() {
       subscription?.remove();
     };
   }, [handleIncomingDeepLink]);
-
-  useEffect(() => {
-    if (isAuthenticated && pendingOAuthRequest) {
-      setConsentModalVisible(true);
-    }
-  }, [isAuthenticated, pendingOAuthRequest]);
 
   const handleApproveSso = useCallback(async () => {
     if (!pendingOAuthRequest) return;
@@ -121,7 +150,7 @@ function RootNavigator() {
   }, [pendingOAuthRequest]);
 
   const handleSignInFirstSso = useCallback(() => {
-    setConsentModalVisible(false);
+    setPausedConsentForSignIn(true);
   }, []);
 
   useEffect(() => {
@@ -153,7 +182,7 @@ function RootNavigator() {
       <BillingModal />
       <NewUserGuideModal />
       <SsoConsentModal
-        visible={consentModalVisible && pendingOAuthRequest !== null}
+        visible={pendingOAuthRequest !== null && consentModalVisible && (isAuthenticated || !pausedConsentForSignIn)}
         request={pendingOAuthRequest}
         currentUser={currentUser}
         isAuthenticated={isAuthenticated}
@@ -163,6 +192,36 @@ function RootNavigator() {
         onDeny={handleDenySso}
         onSignInFirst={handleSignInFirstSso}
         onOpenWebPortal={handleOpenWebPortalSso}
+      />
+      <PushApprovalModal
+        visible={Boolean(isAuthenticated && activePushRequest)}
+        request={activePushRequest}
+        onApprove={async (opts) => {
+          if (!activePushRequest) return undefined;
+          const result = await pushMfaService.approveRequest(activePushRequest.id, opts);
+          if (!result.success) {
+            return { success: false, error: result.error };
+          }
+          biometricService.recordAuthenticationSuccess();
+          if (
+            !result.awaitingAdminApproval &&
+            isCustomMobileSsoCallbackUrl(result.redirectUrl)
+          ) {
+            void Linking.openURL(result.redirectUrl).catch(() => undefined);
+          }
+          return { success: true };
+        }}
+        onDeny={(isFraud) => {
+          if (activePushRequest) {
+            pushMfaService.denyRequest(activePushRequest.id, isFraud);
+          }
+        }}
+        onClose={() => {
+          if (activePushRequest) {
+            pushMfaService.dismissRequest(activePushRequest.id);
+          }
+        }}
+        testID="global-push-approval-modal"
       />
       {isInitializing ? (
         <View style={styles.loadingOverlay}>

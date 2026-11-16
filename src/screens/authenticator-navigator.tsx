@@ -23,22 +23,19 @@ import vaultService from '@/services/vault.service';
 import { AuthService } from '@/services/auth.service';
 import { CyberColors } from '@/constants/cyber-theme';
 import { getAuthenticatorBackScreen } from '@/utils/navigation-guard';
+import {
+  isCustomMobileSsoCallbackUrl,
+  isPushChallengeDeepLink,
+} from '@/utils/oauth-deeplink';
 
 export type { AuthenticatorScreenName };
-
-const ALLOWED_MOBILE_SSO_RETURN_SCHEMES = ['vanguard-dummy://', 'exp://'];
-
-function isCustomMobileSsoCallbackUrl(url: string | undefined): url is string {
-  if (!url) return false;
-  const trimmed = url.trim().toLowerCase();
-  return ALLOWED_MOBILE_SSO_RETURN_SCHEMES.some((prefix) => trimmed.startsWith(prefix));
-}
 
 export interface AuthenticatorNavigatorProps {
   initialScreen?: AuthenticatorScreenName;
   initialAccount?: TotpAccount | null;
   forceLocked?: boolean;
   autoPromptBiometrics?: boolean;
+  enableLivePushPolling?: boolean;
   testID?: string;
 }
 
@@ -47,6 +44,7 @@ export function AuthenticatorNavigator({
   initialAccount = null,
   forceLocked,
   autoPromptBiometrics = true,
+  enableLivePushPolling = true,
   testID = 'authenticator-navigator',
 }: AuthenticatorNavigatorProps) {
   const [currentScreen, setCurrentScreen] =
@@ -61,40 +59,42 @@ export function AuthenticatorNavigator({
   const [activePushRequest, setActivePushRequest] =
     useState<PushApprovalRequest | null>(null);
 
-  // Subscribe to Out-of-Band Push MFA requests and background polling (SCRUM-21 & SCRUM-85)
+  // Subscribe to Out-of-Band Push MFA requests and background polling when owned locally
   useEffect(() => {
     let isMounted = true;
 
-    const unsubscribe = pushMfaService.subscribe((req) => {
-      setActivePushRequest(req);
-    });
+    const unsubscribe = enableLivePushPolling
+      ? pushMfaService.subscribe((req) => {
+          setActivePushRequest(req);
+        })
+      : () => {};
 
     // Auto-discover user session and start polling backend for pending SSO pushes & TOTP sync (SCRUM-85/178)
     vaultService.setAuthTokenProvider(() => AuthService.getAccessToken());
     AuthService.getCurrentUser().then((user) => {
       if (isMounted && user?.email) {
         vaultService.setCurrentUserEmail(user.email);
-        pushMfaService.startPolling(user.email);
+        if (enableLivePushPolling) {
+          pushMfaService.startPolling(user.email);
+        }
         void vaultService.syncWithBackend(user.accessToken || undefined);
       }
     }).catch(() => {});
 
     // Deep link listener for vanguard-auth://mfa/challenge?id=... (SCRUM-85)
     const handleUrl = (url: string | null) => {
-      if (!url) return;
-      if (url.includes('mfa/challenge') || url.includes('challenge')) {
-        AuthService.getCurrentUser().then((user) => {
-          pushMfaService.fetchPendingPush(user?.email);
-        }).catch(() => {});
-      }
+      if (!enableLivePushPolling || !isPushChallengeDeepLink(url)) return;
+      AuthService.getCurrentUser().then((user) => {
+        pushMfaService.fetchPendingPush(user?.email);
+      }).catch(() => {});
     };
 
-    if (Linking && Linking.getInitialURL) {
+    if (enableLivePushPolling && Linking && Linking.getInitialURL) {
       Linking.getInitialURL().then(handleUrl).catch(() => {});
     }
 
     let urlSub: { remove?: () => void } | undefined;
-    if (Linking && Linking.addEventListener) {
+    if (enableLivePushPolling && Linking && Linking.addEventListener) {
       urlSub = Linking.addEventListener('url', (e: { url: string }) => handleUrl(e.url));
     }
 
@@ -102,9 +102,11 @@ export function AuthenticatorNavigator({
       isMounted = false;
       unsubscribe();
       urlSub?.remove?.();
-      pushMfaService.stopPolling();
+      if (enableLivePushPolling) {
+        pushMfaService.stopPolling();
+      }
     };
-  }, []);
+  }, [enableLivePushPolling]);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const isAuthenticatingRef = useRef<boolean>(false);
@@ -339,42 +341,44 @@ export function AuthenticatorNavigator({
       )}
 
       {/* High-Priority Out-of-Band Push Notification MFA Approval Modal (SCRUM-21) */}
-      <PushApprovalModal
-        visible={Boolean(activePushRequest)}
-        request={activePushRequest}
-        onApprove={async (opts) => {
-          if (!activePushRequest) return undefined;
-          const result = await pushMfaService.approveRequest(activePushRequest.id, opts);
-          if (!result.success) {
-            // Keep the request on screen so the user can retry. Do not record a success.
-            return { success: false, error: result.error };
-          }
-          // User successfully verified identity via native biometric/passcode challenge
-          biometricService.recordAuthenticationSuccess();
-          lastUnlockTimestampRef.current = Date.now();
-          isLockedRef.current = false;
-          setIsLocked(false);
-          setAuthError(null);
-          if (
-            !result.awaitingAdminApproval &&
-            isCustomMobileSsoCallbackUrl(result.redirectUrl)
-          ) {
-            void Linking.openURL(result.redirectUrl).catch(() => undefined);
-          }
-          return { success: true };
-        }}
-        onDeny={(isFraud) => {
-          if (activePushRequest) {
-            pushMfaService.denyRequest(activePushRequest.id, isFraud);
-          }
-        }}
-        onClose={() => {
-          if (activePushRequest) {
-            pushMfaService.dismissRequest(activePushRequest.id);
-          }
-        }}
-        testID="global-push-approval-modal"
-      />
+      {enableLivePushPolling ? (
+        <PushApprovalModal
+          visible={Boolean(activePushRequest)}
+          request={activePushRequest}
+          onApprove={async (opts) => {
+            if (!activePushRequest) return undefined;
+            const result = await pushMfaService.approveRequest(activePushRequest.id, opts);
+            if (!result.success) {
+              // Keep the request on screen so the user can retry. Do not record a success.
+              return { success: false, error: result.error };
+            }
+            // User successfully verified identity via native biometric/passcode challenge
+            biometricService.recordAuthenticationSuccess();
+            lastUnlockTimestampRef.current = Date.now();
+            isLockedRef.current = false;
+            setIsLocked(false);
+            setAuthError(null);
+            if (
+              !result.awaitingAdminApproval &&
+              isCustomMobileSsoCallbackUrl(result.redirectUrl)
+            ) {
+              void Linking.openURL(result.redirectUrl).catch(() => undefined);
+            }
+            return { success: true };
+          }}
+          onDeny={(isFraud) => {
+            if (activePushRequest) {
+              pushMfaService.denyRequest(activePushRequest.id, isFraud);
+            }
+          }}
+          onClose={() => {
+            if (activePushRequest) {
+              pushMfaService.dismissRequest(activePushRequest.id);
+            }
+          }}
+          testID="global-push-approval-modal"
+        />
+      ) : null}
     </View>
   );
 }

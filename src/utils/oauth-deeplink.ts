@@ -128,3 +128,26 @@ export function buildWebPortalAuthorizeUrl(
   if (params.prompt) query.set('prompt', params.prompt);
   return `${normalizedBase}/login?${query.toString()}`;
 }
+
+const ALLOWED_MOBILE_SSO_RETURN_SCHEMES = ['vanguard-dummy://', 'exp://'];
+
+/**
+ * Checks whether an OIDC approval redirect URL uses a supported custom mobile scheme.
+ */
+export function isCustomMobileSsoCallbackUrl(
+  url: string | null | undefined,
+): url is string {
+  if (!url) return false;
+  const trimmed = url.trim().toLowerCase();
+  return ALLOWED_MOBILE_SSO_RETURN_SCHEMES.some((prefix) =>
+    trimmed.startsWith(prefix),
+  );
+}
+
+/**
+ * Checks whether an incoming URL is an out-of-band push MFA challenge deep link.
+ */
+export function isPushChallengeDeepLink(url: string | null | undefined): boolean {
+  if (!url || typeof url !== 'string') return false;
+  return url.includes('mfa/challenge') || url.includes('challenge');
+}

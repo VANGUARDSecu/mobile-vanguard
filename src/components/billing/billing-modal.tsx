@@ -18,6 +18,7 @@ export function BillingModal() {
   const billing = useOptionalBilling();
   const { currentUser } = useAuth();
   const responsive = useResponsiveLayout();
+  const [confirmingPlanId, setConfirmingPlanId] = React.useState<string | null>(null);
 
   if (!billing || !billing.showBillingModal) {
     return null;
@@ -49,13 +50,17 @@ export function BillingModal() {
   } = billing;
 
   const orgName = currentUser?.companyName || 'Your Organization';
+  const handleCloseModal = () => {
+    setConfirmingPlanId(null);
+    closeBillingModal();
+  };
 
   return (
     <Modal
       visible={billing.showBillingModal}
       animationType="slide"
       transparent
-      onRequestClose={closeBillingModal}
+      onRequestClose={handleCloseModal}
     >
       <View style={styles.backdrop}>
         <View
@@ -84,7 +89,7 @@ export function BillingModal() {
               </Text>
             </View>
             <TouchableOpacity
-              onPress={closeBillingModal}
+              onPress={handleCloseModal}
               style={styles.closeBtn}
               accessibilityRole="button"
               accessibilityLabel="Close billing modal"
@@ -205,8 +210,49 @@ export function BillingModal() {
                       </View>
 
                       {isCurrent ? (
-                        <View style={styles.currentBadge}>
-                          <Text style={styles.currentBadgeText}>✓ Active Across Web & Mobile</Text>
+                        <View style={styles.activePlanWrap}>
+                          <View style={styles.currentBadge}>
+                            <Text style={styles.currentBadgeText}>✓ Active Across Web & Mobile</Text>
+                          </View>
+                          {isPaid ? (
+                            confirmingPlanId !== plan.id ? (
+                              <TouchableOpacity
+                                testID="btn-unsubscribe-plan"
+                                style={styles.unsubscribeCardBtn}
+                                onPress={() => setConfirmingPlanId(plan.id)}
+                                disabled={isLoadingBilling}
+                              >
+                                <Text style={styles.unsubscribeCardBtnText}>Unsubscribe</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <View testID="unsubscribe-confirm-panel" style={styles.confirmUnsubBox}>
+                                <Text style={styles.confirmUnsubText}>
+                                  Unsubscribe from {plan.name}? Your account reverts to Free immediately, while $0 Restore stays available until your paid cycle ends.
+                                </Text>
+                                <View style={styles.confirmUnsubRow}>
+                                  <TouchableOpacity
+                                    testID="btn-cancel-unsubscribe"
+                                    style={styles.keepPlanBtn}
+                                    onPress={() => setConfirmingPlanId(null)}
+                                    disabled={isLoadingBilling}
+                                  >
+                                    <Text style={styles.keepPlanBtnText}>Keep Plan</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    testID="btn-confirm-unsubscribe"
+                                    style={styles.confirmUnsubBtn}
+                                    onPress={() => {
+                                      setConfirmingPlanId(null);
+                                      void cancelSubscription();
+                                    }}
+                                    disabled={isLoadingBilling}
+                                  >
+                                    <Text style={styles.confirmUnsubBtnText}>Confirm Unsubscribe</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            )
+                          ) : null}
                         </View>
                       ) : isPaid && canRestorePlanWithoutCharge(plan.id) ? (
                         <TouchableOpacity
@@ -266,10 +312,10 @@ export function BillingModal() {
                   {!isFreeTier ? (
                     <TouchableOpacity
                       style={styles.cancelPlanBtn}
-                      onPress={() => void cancelSubscription()}
+                      onPress={() => setConfirmingPlanId(subscription.planId)}
                       disabled={isLoadingBilling}
                     >
-                      <Text style={styles.cancelPlanText}>Downgrade to Free Tier</Text>
+                      <Text style={styles.cancelPlanText}>Unsubscribe / Downgrade to Free</Text>
                     </TouchableOpacity>
                   ) : null}
                 </View>
@@ -514,6 +560,9 @@ const styles = StyleSheet.create({
     color: CyberColors.textSecondary,
     fontSize: 12,
   },
+  activePlanWrap: {
+    gap: 8,
+  },
   currentBadge: {
     backgroundColor: 'rgba(16, 185, 129, 0.16)',
     borderColor: 'rgba(16, 185, 129, 0.4)',
@@ -521,6 +570,62 @@ const styles = StyleSheet.create({
     borderRadius: CyberRadius.sm,
     paddingVertical: 8,
     alignItems: 'center',
+  },
+  unsubscribeCardBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.sm,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  unsubscribeCardBtnText: {
+    color: '#fca5a5',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  confirmUnsubBox: {
+    backgroundColor: 'rgba(127, 29, 29, 0.28)',
+    borderColor: 'rgba(248, 113, 113, 0.45)',
+    borderWidth: 1,
+    borderRadius: CyberRadius.sm,
+    padding: 10,
+    gap: 8,
+  },
+  confirmUnsubText: {
+    color: '#fecaca',
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+  confirmUnsubRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  keepPlanBtn: {
+    flex: 1,
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderWidth: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    borderRadius: CyberRadius.sm,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  keepPlanBtnText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  confirmUnsubBtn: {
+    flex: 1.3,
+    backgroundColor: '#dc2626',
+    borderRadius: CyberRadius.sm,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  confirmUnsubBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   currentBadgeText: {
     color: '#34d399',

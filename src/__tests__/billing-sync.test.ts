@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { BillingService, buildDefaultSubscriptionState } from '../services/billing.service.ts';
 import { isBillingLimitError } from '../models/billing.models.ts';
@@ -408,5 +411,18 @@ test('Mobile Billing Parity, Isolation & Web-Mobile Sync (SCRUM-185)', async (t)
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  await t.test('8. SCRUM-209: Mobile BillingModal includes explicit Unsubscribe CTA and confirmation controls on active paid plans', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const modalSource = readFileSync(
+      join(here, '..', 'components', 'billing', 'billing-modal.tsx'),
+      'utf8',
+    );
+    assert.ok(modalSource.includes('testID="btn-unsubscribe-plan"'));
+    assert.ok(modalSource.includes('testID="unsubscribe-confirm-panel"'));
+    assert.ok(modalSource.includes('testID="btn-confirm-unsubscribe"'));
+    assert.ok(modalSource.includes('testID="btn-cancel-unsubscribe"'));
+    assert.ok(modalSource.includes('>Unsubscribe<'));
   });
 });
